@@ -128,7 +128,7 @@ void EditorPreferencesController::apply(const EditorPreferences& value) {
         if (editor)
             applyFont(editor);
 }
-void EditorPreferencesController::open() {
+void EditorPreferencesController::open(PreferencesPage page) {
     if (!adapter_)
         return;
     if (!dialog_) {
@@ -145,6 +145,7 @@ void EditorPreferencesController::open() {
         connect(dialog_, &PreferencesDialog::systemSchemaVisibilitySaved, this,
                 &EditorPreferencesController::systemSchemaVisibilitySaved);
     }
+    dialog_->showPage(page);
     dialog_->show();
     dialog_->raise();
     dialog_->activateWindow();

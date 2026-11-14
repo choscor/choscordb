@@ -4,9 +4,11 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/json_text_view/json_text_view.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/right_sheet/right_sheet.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
@@ -16,6 +18,7 @@
 #include <QDialog>
 #include <QFutureWatcher>
 #include <QLabel>
+#include <QLocale>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -85,7 +88,8 @@ void QueryWorkspace::appendJsonViewActions(QMenu& menu, const QPersistentModelIn
                 return;
             if (!jsonMenuSlots().tryAcquire()) {
                 if (auto retry = weakAttempt.lock())
-                    QTimer::singleShot(20, menuGuard.data(), [retry] { (*retry)(); });
+                    QTimer::singleShot(EngineAdapter::jsonMenuRetryMs(), menuGuard.data(),
+                                       [retry] { (*retry)(); });
                 return;
             }
             auto cell = model_->jsonViewSnapshot(ResultTableModel::JsonViewScope::Cell,
@@ -192,7 +196,7 @@ void QueryWorkspace::clearRowJson() {
     if (rowJsonText_)
         rowJsonText_->clear();
     if (rowJsonStatus_)
-        rowJsonStatus_->clear();
+        rowJsonStatus_->clearReport();
     if (rowJsonSheet_ && rowJsonSheet_->isVisible())
         rowJsonSheet_->reject();
 }
@@ -201,7 +205,7 @@ void QueryWorkspace::scheduleJsonViewEvaluation(bool afterDeferred) {
         if (afterDeferred)
             failRowJson(tr("This result is no longer available."));
         else
-            rowJsonStatus_->setText(tr("This result is no longer available."));
+            rowJsonStatus_->showError(tr("This result is no longer available."));
         return;
     }
     const auto scope = rowJsonMode_ == JsonViewMode::Cell    ? ResultTableModel::JsonViewScope::Cell
@@ -213,7 +217,7 @@ void QueryWorkspace::scheduleJsonViewEvaluation(bool afterDeferred) {
         if (afterDeferred)
             failRowJson(tr("This result is no longer available."));
         else
-            rowJsonStatus_->setText(tr("This result is no longer available."));
+            rowJsonStatus_->showError(tr("This result is no longer available."));
         return;
     }
     rowJsonRendering_ = true;
@@ -235,21 +239,20 @@ void QueryWorkspace::scheduleJsonViewEvaluation(bool afterDeferred) {
             if (result.state == ResultTableModel::JsonViewState::Ready) {
                 rowJsonText_->setPlainText(result.json);
                 rowJsonCopy_->setEnabled(true);
-                rowJsonStatus_->clear();
-                rowJsonStatus_->hide();
+                rowJsonStatus_->clearReport();
                 rowJsonQuery_.reset();
                 rowJsonResolved_.clear();
             } else if (!afterDeferred &&
                        result.state == ResultTableModel::JsonViewState::NeedsDeferred && query_ &&
                        queryAvailable()) {
                 rowJsonQuery_ = query_;
-                rowJsonStatus_->setText(tr("Loading complete JSON values…"));
+                rowJsonStatus_->showProgress(tr("Loading complete JSON values…"));
                 requestRowJsonChunk();
             } else if (afterDeferred) {
-                failRowJson(result.error.isEmpty() ? tr("The JSON cannot be read.") : result.error);
+                failRowJson(result.error.isEmpty() ? tr("Could not read the JSON.") : result.error);
             } else {
-                rowJsonStatus_->setText(result.error.isEmpty() ? tr("The JSON cannot be read.")
-                                                               : result.error);
+                rowJsonStatus_->showError(result.error.isEmpty() ? tr("Could not read the JSON.")
+                                                                 : result.error);
             }
         });
     watcher->setFuture(QtConcurrent::run([snapshot = std::move(*snapshot)]() mutable {
@@ -268,28 +271,21 @@ void QueryWorkspace::openJsonView(JsonViewMode mode, int row, int column) {
     if (!rowJsonSheet_) {
         rowJsonSheet_ = new design::RightSheet(widgets_.dialogParent);
         rowJsonSheet_->setObjectName("rowJsonSheet");
-        auto* body = new QWidget(rowJsonSheet_);
-        body->setAccessibleName(tr("JSON content"));
-        auto* layout = new QVBoxLayout(body);
-        layout->setContentsMargins(
-            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Three),
-            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Three));
-        layout->setSpacing(design::spacing(design::Spacing::Two));
-        rowJsonStatus_ = new design::Text({}, body);
-        rowJsonStatus_->setObjectName("rowJsonStatus");
-        rowJsonStatus_->setAccessibleName(tr("Row JSON status"));
-        rowJsonStatus_->setWordWrap(true);
-        rowJsonText_ = new design::JsonTextView(body);
+        rowJsonText_ = new design::JsonTextView(rowJsonSheet_);
         rowJsonText_->setObjectName("rowJsonText");
         rowJsonText_->setAccessibleName(tr("Row JSON text"));
-        layout->addWidget(rowJsonStatus_);
-        layout->addWidget(rowJsonText_, 1);
-        rowJsonSheet_->setBody(body);
-        rowJsonCopy_ = new design::Button(tr("Copy JSON"), rowJsonSheet_);
+        rowJsonSheet_->setBody(rowJsonText_);
+        rowJsonStatus_ = rowJsonSheet_->sections()->addStatusLine();
+        rowJsonStatus_->setObjectName("rowJsonStatusLine");
+        rowJsonStatus_->findChild<QLabel*>("statusMessage")->setObjectName("rowJsonStatus");
+        auto* close =
+            rowJsonSheet_->sections()->addAction(design::DialogActionRole::Dismiss, tr("Close"));
+        close->setObjectName("rowJsonClose");
+        connect(close, &QPushButton::clicked, rowJsonSheet_, &QDialog::reject);
+        rowJsonCopy_ = rowJsonSheet_->sections()->addAction(design::DialogActionRole::Primary,
+                                                            tr("Copy JSON"));
         rowJsonCopy_->setObjectName("rowJsonCopy");
-        rowJsonCopy_->setAccessibleName(tr("Copy JSON"));
         rowJsonCopy_->setEnabled(false);
-        rowJsonSheet_->footerLayout()->addWidget(rowJsonCopy_);
         connect(rowJsonCopy_, &QPushButton::clicked, this, [this] {
             if (rowJsonCopy_ && rowJsonCopy_->isEnabled() && rowJsonText_)
                 QApplication::clipboard()->setText(rowJsonText_->toPlainText());
@@ -306,10 +302,7 @@ void QueryWorkspace::openJsonView(JsonViewMode mode, int row, int column) {
     rowJsonSheet_->setTitle(title);
     rowJsonSheet_->setAccessibleName(title);
     rowJsonText_->setAccessibleName(mode == JsonViewMode::Row ? tr("Row JSON text") : title);
-    rowJsonStatus_->setAccessibleName(mode == JsonViewMode::Row ? tr("Row JSON status")
-                                                                : tr("JSON view status"));
-    rowJsonStatus_->show();
-    rowJsonStatus_->setText(tr("Preparing JSON…"));
+    rowJsonStatus_->showProgress(tr("Preparing JSON…"));
     rowJsonSheet_->open();
     scheduleJsonViewEvaluation(false);
 }
@@ -383,8 +376,9 @@ void QueryWorkspace::requestRowJsonChunk() {
             }));
         return;
     }
-    rowJsonStatus_->setText(tr("Loading complete JSON values… %1 bytes")
-                                .arg(rowJsonResolvedBytes_ + rowJsonLoadingOffset_));
+    rowJsonStatus_->showProgress(
+        tr("Loading complete JSON values… %1")
+            .arg(QLocale().formattedDataSize(rowJsonResolvedBytes_ + rowJsonLoadingOffset_)));
     adapter_->loadValueChunk(*rowJsonQuery_, rowJsonLoadingHandle_, rowJsonLoadingOffset_);
 }
 void QueryWorkspace::failRowJson(const QString& error) {
@@ -402,7 +396,7 @@ void QueryWorkspace::failRowJson(const QString& error) {
     if (rowJsonCopy_)
         rowJsonCopy_->setEnabled(false);
     if (rowJsonStatus_)
-        rowJsonStatus_->setText(tr("Unable to show complete JSON: %1").arg(error.left(1024)));
+        rowJsonStatus_->showError(tr("Could not show the complete JSON: %1").arg(error.left(1024)));
 }
 void QueryWorkspace::handleRowJsonEvent(const BridgeEvent& event) {
     if (!rowJsonQuery_ || rowJsonLoadingColumn_ < 0 || event.id != *rowJsonQuery_ ||

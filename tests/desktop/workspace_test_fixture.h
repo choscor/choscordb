@@ -1,5 +1,6 @@
 #pragma once
 
+#include "confirmation_checks.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 
 #include "app/appearance_controller.h"
@@ -110,8 +111,8 @@ struct WorkspaceFixture {
         QObject::connect(&confirm, &QTimer::timeout, &parent, [] {
             auto* box =
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
-            if (box && box->windowTitle() == "Confirm SQL execution") {
-                if (auto* yes = box->button(QMessageBox::Yes))
+            if (box && box->windowTitle() == "Run statement?") {
+                if (auto* yes = confirmationAction(box))
                     yes->click();
             }
         });

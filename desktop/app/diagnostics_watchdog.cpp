@@ -1,4 +1,5 @@
 #include "app/diagnostics_service.h"
+#include "choscordb-bridge/src/lib.rs.h"
 #include <QMetaObject>
 #include <QObject>
 #include <algorithm>
@@ -34,10 +35,11 @@ void DiagnosticsWatchdog::start() {
     state_->beatPending = false;
     const auto state = state_;
     try {
-        state_->worker = std::thread([state] {
-            using namespace std::chrono_literals;
+        const std::chrono::milliseconds tick(diagnostics_watchdog_tick_milliseconds());
+        const std::chrono::milliseconds hangThreshold(diagnostics_hang_threshold_milliseconds());
+        state_->worker = std::thread([state, tick, hangThreshold] {
             while (state->running) {
-                std::this_thread::sleep_for(250ms);
+                std::this_thread::sleep_for(tick);
                 if (!state->running)
                     break;
                 if (!state->beatPending.exchange(true)) {
@@ -67,7 +69,7 @@ void DiagnosticsWatchdog::start() {
                 }
                 std::lock_guard lock(state->beatMutex);
                 const auto now = std::chrono::steady_clock::now();
-                if (!state->hangStart && now - state->lastAck >= 2s) {
+                if (!state->hangStart && now - state->lastAck >= hangThreshold) {
                     state->hangStart = state->lastAck;
                     state->service->record({.event = DiagnosticEvent::UiHangStart});
                 }

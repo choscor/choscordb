@@ -1,5 +1,6 @@
 #pragma once
 #include "models/shortcut_catalog.h"
+#include "widgets/preferences_dialog/preferences_dialog.h"
 #include <QHash>
 #include <QKeySequence>
 #include <QObject>
@@ -21,7 +22,7 @@ class EditorPreferencesController final : public QObject {
     void addGrid(QueryWorkspace* grid);
     void initialize(EngineAdapter* adapter);
     void setAppearanceController(AppearanceController* appearance);
-    void open();
+    void open(PreferencesPage page);
 
   signals:
     void queryPreferencesSaveSubmitted(quint64 token);

@@ -21,6 +21,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QStringList>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTemporaryDir>
@@ -46,6 +47,8 @@ int pinRow(QTreeView* pins, const QString& key) {
     return -1;
 }
 void clickArrow(QTreeView* pins, const QModelIndex& index) {
+    pins->doItemsLayout();
+    pins->scrollTo(index);
     const auto rect = pins->visualRect(index);
     const auto arrow = QPoint(rect.left() - pins->indentation() / 2, rect.center().y());
     QTest::mouseClick(pins->viewport(), Qt::LeftButton, Qt::NoModifier, arrow);
@@ -60,6 +63,8 @@ void clickPin(QTreeView* pins) {
 class PinnedMenuProbe : public QObject {
   public:
     bool sawUnpin = false;
+    bool sawNavigatorUnpin = false;
+    QStringList actionTexts;
 
   protected:
     bool eventFilter(QObject* object, QEvent* event) override {
@@ -68,6 +73,10 @@ class PinnedMenuProbe : public QObject {
         auto* menu = qobject_cast<QMenu*>(object);
         auto* action = menu ? menu->findChild<QAction*>("unpinPinnedObject") : nullptr;
         if (action) {
+            for (auto* entry : menu->actions()) {
+                actionTexts.append(entry->text());
+                sawNavigatorUnpin |= entry->objectName() == QStringLiteral("unpinObject");
+            }
             sawUnpin = true;
             action->trigger();
         }
@@ -464,6 +473,10 @@ class PinningFlowTest : public QObject {
             QMenu after;
             navigator->populateContextMenu(&after, table);
             QVERIFY(after.findChild<QAction*>("unpinObject"));
+            auto* pinnedModel = qobject_cast<PinnedTreeModel*>(pins->model());
+            QVERIFY(pinnedModel);
+            pins->expand(pinRoot(pins));
+            QTRY_VERIFY(pinnedModel->sourceIndex(pinRoot(pins)).isValid());
             const auto pinPoint = pins->visualRect(pinRoot(pins)).center();
             QCOMPARE(pins->indexAt(pinPoint), pinRoot(pins));
             PinnedMenuProbe probe;
@@ -472,11 +485,22 @@ class PinningFlowTest : public QObject {
                                               Q_ARG(QPoint, pinPoint)));
             qApp->removeEventFilter(&probe);
             QVERIFY(probe.sawUnpin);
+            QVERIFY(!probe.sawNavigatorUnpin);
+            QVERIFY(probe.actionTexts.contains(QStringLiteral("Copy qualified name")));
+            QVERIFY(probe.actionTexts.contains(QStringLiteral("Show DDL")));
+            QCOMPARE(probe.actionTexts.count(QStringLiteral("Unpin")), 1);
             QTRY_COMPARE(pinCount(pins), 0);
-            QVERIFY(!pinnedSection->isVisible());
-            QCOMPARE(table.data(Qt::DisplayRole).toString(), QString("orders"));
+            QTRY_VERIFY(!pinnedSection->isVisible());
+            const auto orders = [model] {
+                const auto hits =
+                    model->match(model->index(0, 0), NavigatorModel::QualifiedNameRole,
+                                 QStringLiteral("\"main\".\"orders\""), 1,
+                                 Qt::MatchExactly | Qt::MatchRecursive);
+                return hits.isEmpty() ? QModelIndex() : hits.first();
+            };
+            QTRY_COMPARE(orders().data(Qt::DisplayRole).toString(), QString("orders"));
             QMenu again;
-            navigator->populateContextMenu(&again, table);
+            navigator->populateContextMenu(&again, orders());
             auto* repin = again.findChild<QAction*>("pinObject");
             QVERIFY(repin && repin->isEnabled());
             repin->trigger();

@@ -177,7 +177,6 @@ bool QueryWorkspace::applyStagedEdits() {
     dismiss->setObjectName("gridEditDismiss");
     connect(dismiss, &QPushButton::clicked, &box, &QDialog::reject);
     auto* layout = sections->bodyLayout();
-    layout->setSpacing(design::spacing(design::Spacing::Two));
     auto* description = new QLabel(tr("Statements and bound parameter values"), sections);
     description->setProperty("designRole", "description");
     description->setTextFormat(Qt::PlainText);
@@ -190,21 +189,13 @@ bool QueryWorkspace::applyStagedEdits() {
     preview->setFont(
         design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
     layout->addWidget(preview);
-    auto* buttons = sections->footerLayout();
-    buttons->addStretch();
-    auto* cancel = new design::Button(tr("Cancel"), &box);
+    auto* cancel = sections->addAction(design::DialogActionRole::Dismiss, tr("Cancel"));
     cancel->setObjectName("gridEditCancel");
-    cancel->setVariant(design::ButtonVariant::Outline);
-    cancel->setAutoDefault(false);
-    auto* apply = new design::Button(tr("Apply"), &box);
+    auto* apply = sections->addAction(design::DialogActionRole::Primary, tr("Apply changes"));
     apply->setObjectName("gridEditApply");
-    apply->setDefault(true);
     connect(cancel, &QPushButton::clicked, &box, &QDialog::reject);
     connect(apply, &QPushButton::clicked, &box, &QDialog::accept);
-    buttons->addWidget(cancel);
-    buttons->addWidget(apply);
-    if (widgets_.dialogParent)
-        box.resize(widgets_.dialogParent->size() * (2.0 / 3.0));
+    box.resize(design::dialogInitialSize(design::DialogSize::Detail));
     const auto accepted = box.exec() == QDialog::Accepted;
     if (!self)
         return false;

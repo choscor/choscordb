@@ -4,6 +4,8 @@
 #include "app/query_workspace.h"
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
+#include "confirmation_checks.h"
+#include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/table/table_style.h"
@@ -21,6 +23,8 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFile>
+#include <QFrame>
+#include <QHash>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -37,8 +41,11 @@
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QToolBar>
 #include <QToolButton>
 #include <QtTest>
+#include <algorithm>
+#include <array>
 #include <functional>
 #include <tuple>
 class GridEditWorkspaceTest : public QObject {
@@ -86,7 +93,7 @@ class GridEditWorkspaceTest : public QObject {
         QVERIFY(model);
         focusGrid(grid);
         grid->setCurrentIndex(model->index(0, 1));
-        QTest::keyClick(grid, Qt::Key_N, Qt::ControlModifier);
+        QTest::keyClick(grid, Qt::Key_N, Qt::ControlModifier | Qt::ShiftModifier);
         QCOMPARE(model->rowCount(), 3);
         QVERIFY(model->hasPendingEdits());
         grid->setCurrentIndex(model->index(1, 1));
@@ -169,7 +176,7 @@ class GridEditWorkspaceTest : public QObject {
         QTest::keyClicks(editor, "zz");
         QTest::keyClick(editor, Qt::Key_Backspace);
         QTest::keyClick(editor, Qt::Key_Delete);
-        QTest::keyClick(editor, Qt::Key_N, Qt::ControlModifier);
+        QTest::keyClick(editor, Qt::Key_N, Qt::ControlModifier | Qt::ShiftModifier);
         QCOMPARE(editor->text(), QString("az"));
         QCOMPARE(model->rowCount(), 2);
         QVERIFY(!model->index(0, 1).data(choscordb::design::CellNullRole).toBool());
@@ -180,14 +187,67 @@ class GridEditWorkspaceTest : public QObject {
         const auto discard = [grid] {
             QTest::keyClick(grid, Qt::Key_Backspace, Qt::ControlModifier | Qt::ShiftModifier);
         };
-        QCOMPARE(answerDialog(discard, "Cancel"), QString("Discard all staged grid changes?"));
+        QCOMPARE(answerDialog(discard, "Cancel"),
+                 QString("The staged grid changes are not applied."));
         QVERIFY(model->hasPendingEdits());
-        QCOMPARE(answerDialog(discard, "Discard"), QString("Discard all staged grid changes?"));
+        QCOMPARE(answerDialog(discard, "Discard changes"),
+                 QString("The staged grid changes are not applied."));
         QVERIFY(!model->hasPendingEdits());
         QCOMPARE(cell.data().toString(), QString("a"));
     }
 
   private slots:
+    void gridCommandsHaveOneLabelInBothToolbarsAndTheCommandTable() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        QHash<QString, QString> labels;
+        for (const auto& row : choscordb::QueryWorkspace::gridShortcuts())
+            labels.insert(row.id, row.label);
+        const QList<std::array<const char*, 3>> commands = {
+            {"grid_add_row", "queryResultAddRow", "objectDataAddRow"},
+            {"grid_delete_rows", "queryResultDeleteRows", "objectDataDeleteRows"},
+            {"grid_restore_rows", "queryResultRestoreRows", "objectDataRestoreRows"},
+            {"grid_set_null", "queryResultSetNull", "objectDataSetNull"},
+            {"grid_discard_edits", "queryResultDiscardEdits", "objectDataDiscardEdits"},
+            {"grid_apply_edits", "queryResultApplyEdits", "objectDataApply"}};
+        for (const auto& [id, sqlName, dataName] : commands) {
+            QVERIFY2(labels.contains(id), id);
+            QCOMPARE(window.findChild<QPushButton*>(sqlName)->accessibleName(), labels.value(id));
+            QCOMPARE(data.findChild<QPushButton*>(dataName)->accessibleName(), labels.value(id));
+        }
+        QCOMPARE(window.findChild<QPushButton*>("exportResult")->accessibleName(),
+                 data.findChild<QPushButton*>("objectDataExport")->accessibleName());
+        auto* cancel = window.findChild<QPushButton*>("cancelQueryButton");
+        QCOMPARE(cancel->accessibleName(), QString("Cancel query"));
+        QCOMPARE(data.findChild<QPushButton*>("objectDataCancel")->accessibleName(),
+                 cancel->accessibleName());
+        auto* addRow = data.findChild<QPushButton*>("objectDataAddRow");
+        auto* row = qobject_cast<QBoxLayout*>(addRow->parentWidget()->layout());
+        QVERIFY(row);
+        const int at = row->indexOf(addRow);
+        QVERIFY(at > 0);
+        auto* separator = qobject_cast<QFrame*>(row->itemAt(at - 1)->widget());
+        QVERIFY(separator && separator->objectName() == "toolbarSeparator");
+        auto* queryToolbar = window.findChild<QToolBar*>("queryToolbar");
+        const auto queryActions = queryToolbar->actions();
+        const auto addRowAt = std::find_if(
+            queryActions.cbegin(), queryActions.cend(), [queryToolbar](QAction* action) {
+                auto* widget = queryToolbar->widgetForAction(action);
+                return widget && widget->objectName() == "queryResultAddRow";
+            });
+        QVERIFY(addRowAt != queryActions.cbegin() && addRowAt != queryActions.cend());
+        auto* querySeparator = queryToolbar->widgetForAction(*std::prev(addRowAt));
+        QVERIFY(querySeparator && querySeparator->objectName() == "toolbarSeparator");
+        choscordb::ObjectExplorer explorer(sql->adapter());
+        for (auto* button : explorer.findChildren<choscordb::design::Button*>()) {
+            if (button->objectName().startsWith("objectGenerate") ||
+                button->objectName() == "objectRefresh" ||
+                button->objectName() == "objectOpenQuery")
+                QCOMPARE(button->variant(), choscordb::design::ButtonVariant::Outline);
+        }
+        QVERIFY(explorer.findChild<choscordb::design::Button*>("objectGenerateSql"));
+    }
     void gridKeysStageRowEditsInBothGrids() {
         choscordb::MainWindow window;
         window.findChild<QAction*>("newQuery")->trigger();
@@ -230,7 +290,7 @@ class GridEditWorkspaceTest : public QObject {
             QTRY_VERIFY(messages->toPlainText().contains("Completed"));
         }
         QTRY_VERIFY(run->isEnabled());
-        auto* save = window.findChild<QAction*>("command_save_sql_file");
+        auto* save = window.findChild<QAction*>("saveSql");
         QVERIFY(save);
         QSignalSpy saved(save, &QAction::triggered);
         editor->setFocus();
@@ -254,7 +314,9 @@ class GridEditWorkspaceTest : public QObject {
         const auto cell = model->index(0, 1);
         QTRY_VERIFY(model->flags(cell) & Qt::ItemIsEditable);
         focusGrid(grid);
-        const auto applyKey = [grid] { QTest::keyClick(grid, Qt::Key_S, Qt::ControlModifier); };
+        const auto applyKey = [grid] {
+            QTest::keyClick(grid, Qt::Key_S, Qt::ControlModifier | Qt::ShiftModifier);
+        };
         QCOMPARE(answerDialog(applyKey), QString());
         grid->setCurrentIndex(cell);
         grid->edit(cell);
@@ -264,7 +326,7 @@ class GridEditWorkspaceTest : public QObject {
         QTest::keyClick(inline_, Qt::Key_End);
         QTest::keyClicks(inline_, "!");
         const auto commitKey = [inline_] {
-            QTest::keyClick(inline_, Qt::Key_S, Qt::ControlModifier);
+            QTest::keyClick(inline_, Qt::Key_S, Qt::ControlModifier | Qt::ShiftModifier);
         };
         QCOMPARE(answerDialog(commitKey), QString("gridEditReview"));
         QCOMPARE(cell.data().toString(), QString("before!"));
@@ -318,7 +380,7 @@ class GridEditWorkspaceTest : public QObject {
                  QStringList({"editCell", "duplicateRow", "objectDataAddRow",
                               "objectDataDeleteRows", "objectDataRestoreRows", "objectDataSetNull",
                               "objectDataApply", "objectDataDiscardEdits"}));
-        const auto key = QKeySequence(QKeySequence::Save).toString(QKeySequence::NativeText);
+        const auto key = QKeySequence("Ctrl+Shift+S").toString(QKeySequence::NativeText);
         QVERIFY(model->setData(model->index(0, 1), QString("changed")));
         QCOMPARE(data.findChild<QPushButton*>("objectDataApply")->toolTip(), "Apply… · " + key);
     }
@@ -353,6 +415,8 @@ class GridEditWorkspaceTest : public QObject {
         QVERIFY(model->setPage({column}, {{QString("a")}}, 0));
         openMenu();
         QCOMPARE(shown.value("queryResultAddRow")->toolTip(), QString("This result is read only."));
+        QTRY_COMPARE(window.findChild<QPushButton*>("queryResultDeleteRows")->toolTip(),
+                     QString("This result is read only."));
     }
     void editKeyOpensInlineEditorAndKeypadOrShiftedKeysRunCommands() {
         choscordb::MainWindow window;
@@ -404,12 +468,12 @@ class GridEditWorkspaceTest : public QObject {
         focusGrid(grid);
         grid->setCurrentIndex(model->index(0, 0));
         messages->clear();
-        QTest::keyClick(grid, Qt::Key_N, Qt::ControlModifier);
+        QTest::keyClick(grid, Qt::Key_N, Qt::ControlModifier | Qt::ShiftModifier);
         QCOMPARE(model->rowCount(), 1);
         QCOMPARE(tabs->count(), tabCount);
         QVERIFY(messages->toPlainText().contains("This result is read only."));
         messages->clear();
-        QTest::keyClick(grid, Qt::Key_S, Qt::ControlModifier);
+        QTest::keyClick(grid, Qt::Key_S, Qt::ControlModifier | Qt::ShiftModifier);
         QTest::keyClick(grid, Qt::Key_Equal, Qt::ControlModifier | Qt::AltModifier);
         QCoreApplication::processEvents();
         QVERIFY(!choscordb::design::DialogPresentation::activeDialog());
@@ -448,7 +512,7 @@ class GridEditWorkspaceTest : public QObject {
         auto* summary = data.findChild<QLabel*>("objectDataSummary");
         QAction* cancelAction = nullptr;
         for (auto* action : data.findChildren<QAction*>())
-            if (action->text() == QStringLiteral("Cancel")) {
+            if (action->text() == QStringLiteral("Cancel query")) {
                 cancelAction = action;
                 break;
             }
@@ -488,7 +552,7 @@ class GridEditWorkspaceTest : public QObject {
         connect(&reviewGuard, &QTimer::timeout, &data, [&] {
             if (auto* dialog =
                     qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog())) {
-                if (dialog->windowTitle() == QStringLiteral("Disconnect database session")) {
+                if (dialog->windowTitle() == QStringLiteral("Disconnect from the database")) {
                     disconnectDialogShown = true;
                     dialog->reject();
                 } else if (dialog->findChild<QPlainTextEdit*>("gridEditReview")) {
@@ -684,7 +748,7 @@ class GridEditWorkspaceTest : public QObject {
                 return;
             }
             auto* body = sections->bodyLayout()->parentWidget();
-            auto* footer = sections->footerLayout()->parentWidget();
+            auto* footer = sections->findChild<QWidget*>("dialogSectionsFooter");
             auto* description = body->findChild<QLabel*>();
             auto* apply = footer->findChild<QPushButton*>("gridEditApply");
             reviewSectioned =
@@ -752,7 +816,7 @@ class GridEditWorkspaceTest : public QObject {
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             for (auto* button : dialog->buttons())
-                if (button->text() == "Discard") {
+                if (button->text() == "Discard changes") {
                     button->click();
                     return;
                 }

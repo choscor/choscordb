@@ -13,8 +13,12 @@ inline design::Icon objectKindIcon(const QString& kind) {
         return design::Icon::Folder;
     if (kind == QLatin1String("view"))
         return design::Icon::Eye;
+    if (kind == QLatin1String("keyword"))
+        return design::Icon::Code;
+    if (kind == QLatin1String("column"))
+        return design::Icon::Table;
     if (kind == QLatin1String("table"))
-        return design::Icon::Grid2x2;
+        return design::Icon::GridFour;
     if (kind == QLatin1String("index") || kind.contains(QLatin1String("key")))
         return design::Icon::Key;
     return design::Icon::File;

@@ -1,6 +1,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -92,7 +93,7 @@ void answer(QObject* context, bool accept, bool* rollbackNotice = nullptr) {
             *rollbackNotice = box->text().contains("roll", Qt::CaseInsensitive);
         if (accept) {
             for (auto* button : box->buttons())
-                if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                if (destructiveConfirmation(button)) {
                     button->click();
                     return;
                 }
@@ -188,7 +189,7 @@ class DisconnectWorkspaceTest : public QObject {
             QVERIFY(box->defaultButton() == box->button(QMessageBox::Cancel));
             f.workspace.disconnectConnection(id);
             for (auto* button : box->buttons())
-                if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                if (destructiveConfirmation(button)) {
                     QVERIFY(button->text().contains("Roll back"));
                     button->click();
                     return;
@@ -243,7 +244,7 @@ class DisconnectWorkspaceTest : public QObject {
             QVERIFY(box);
             QVERIFY(box->text().contains("cancel", Qt::CaseInsensitive));
             for (auto* button : box->buttons())
-                if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                if (destructiveConfirmation(button)) {
                     button->click();
                     return;
                 }
@@ -304,7 +305,7 @@ class DisconnectWorkspaceTest : public QObject {
             QVERIFY(box->text().contains("export", Qt::CaseInsensitive));
             QVERIFY(box->text().contains("cancel", Qt::CaseInsensitive));
             for (auto* button : box->buttons())
-                if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                if (destructiveConfirmation(button)) {
                     button->click();
                     return;
                 }
@@ -335,7 +336,7 @@ class DisconnectWorkspaceTest : public QObject {
             QVERIFY(f.workspace.adapter()->disconnectConnection(id));
             QTRY_COMPARE(f.workspace.liveConnections().size(), 0);
             for (auto* button : box->buttons())
-                if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                if (destructiveConfirmation(button)) {
                     button->click();
                     return;
                 }

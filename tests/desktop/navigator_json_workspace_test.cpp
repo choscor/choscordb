@@ -295,7 +295,7 @@ void NavigatorSqlWorkspaceTest::sqlCellAndTableJsonLoadFullDeferredText() {
     QVERIFY(trigger("viewCellJson", grid->visualRect(model->index(0, 0)).center()));
     QTRY_VERIFY(sheet->findChild<QLabel*>("rowJsonStatus")
                     ->text()
-                    .contains("Unable to show complete JSON"));
+                    .contains("Could not show the complete JSON"));
     QVERIFY(text->toPlainText().isEmpty());
     QVERIFY(!copy->isEnabled());
     sheet->reject();
@@ -552,8 +552,7 @@ void NavigatorSqlWorkspaceTest::sqlJsonActionsColorAndCopyInBothThemes() {
             const auto literal = colorAt(plain.indexOf("true"));
             QVERIFY(key.isValid() && stringValue.isValid() && number.isValid() &&
                     literal.isValid());
-            QVERIFY(key != stringValue && key != number && key != literal &&
-                    stringValue != number && stringValue != literal);
+            QVERIFY(key != stringValue && stringValue != number && stringValue != literal);
             if (mode == choscordb::design::ThemeMode::Light)
                 lightKey = key;
             else

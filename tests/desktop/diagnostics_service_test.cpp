@@ -363,8 +363,8 @@ class DiagnosticsServiceTest : public QObject {
         QProcess child;
         child.start(QCoreApplication::applicationFilePath(), {"--hold-diagnostics", root.path()});
         QVERIFY2(child.waitForStarted(10000), qPrintable(child.errorString()));
-        QVERIFY2(child.waitForReadyRead(10000), qPrintable(child.errorString()));
-        QVERIFY(child.readAllStandardOutput().contains("ready"));
+        QTRY_VERIFY_WITH_TIMEOUT(child.canReadLine(), 10000);
+        QCOMPARE(child.readLine().trimmed(), QByteArray("ready"));
         const auto folder = QDir(root.path()).filePath("diagnostics");
         {
             choscordb::DiagnosticsService service(root.path(), "1.2.3");
@@ -427,8 +427,8 @@ class DiagnosticsServiceTest : public QObject {
         holder.start(QCoreApplication::applicationFilePath(),
                      {"--hold-io-lock", service.folderPath()});
         QVERIFY2(holder.waitForStarted(10000), qPrintable(holder.errorString()));
-        QVERIFY2(holder.waitForReadyRead(10000), qPrintable(holder.errorString()));
-        QVERIFY(holder.readAllStandardOutput().contains("ready"));
+        QTRY_VERIFY_WITH_TIMEOUT(holder.canReadLine(), 10000);
+        QCOMPARE(holder.readLine().trimmed(), QByteArray("ready"));
         service.record({.event = choscordb::DiagnosticEvent::QueryFailed});
         auto drained = std::async(std::launch::async, [&service] { service.flush(); });
         const bool blocked = drained.wait_for(250ms) == std::future_status::timeout;
@@ -454,8 +454,8 @@ class DiagnosticsServiceTest : public QObject {
         holder.start(QCoreApplication::applicationFilePath(),
                      {"--hold-io-lock", service.folderPath()});
         QVERIFY2(holder.waitForStarted(10000), qPrintable(holder.errorString()));
-        QVERIFY2(holder.waitForReadyRead(10000), qPrintable(holder.errorString()));
-        QVERIFY(holder.readAllStandardOutput().contains("ready"));
+        QTRY_VERIFY_WITH_TIMEOUT(holder.canReadLine(), 10000);
+        QCOMPARE(holder.readLine().trimmed(), QByteArray("ready"));
         for (int i = 0; i < 40; ++i)
             service.record({.event = choscordb::DiagnosticEvent::ResultPage});
         service.record({.event = choscordb::DiagnosticEvent::Error});
@@ -478,8 +478,8 @@ class DiagnosticsServiceTest : public QObject {
         QProcess child;
         child.start(QCoreApplication::applicationFilePath(), {"--drop-after-signal", root.path()});
         QVERIFY2(child.waitForStarted(10000), qPrintable(child.errorString()));
-        QVERIFY2(child.waitForReadyRead(10000), qPrintable(child.errorString()));
-        QVERIFY(child.readAllStandardOutput().contains("ready"));
+        QTRY_VERIFY_WITH_TIMEOUT(child.canReadLine(), 10000);
+        QCOMPARE(child.readLine().trimmed(), QByteArray("ready"));
         const auto day = QDateTime::currentDateTimeUtc().date();
         const auto artifact =
             QDir(service.folderPath()).filePath(day.toString("yyyy-MM-dd") + ".jsonl");
@@ -488,8 +488,8 @@ class DiagnosticsServiceTest : public QObject {
         service.record({.event = choscordb::DiagnosticEvent::QueryFailed});
         service.flush();
         child.write("x");
-        QVERIFY2(child.waitForReadyRead(10000), qPrintable(child.errorString()));
-        QVERIFY(child.readAllStandardOutput().contains("done"));
+        QTRY_VERIFY_WITH_TIMEOUT(child.canReadLine(), 10000);
+        QCOMPARE(child.readLine().trimmed(), QByteArray("done"));
         QCOMPARE(service.preview().droppedRecords, quint64(2));
         QVERIFY(QDir().rmdir(artifact));
         child.write("x");

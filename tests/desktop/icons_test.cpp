@@ -10,12 +10,9 @@
 #include <algorithm>
 
 namespace {
-QByteArray lucideSvg(const QColor& color, const QByteArray& elements) {
-    return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" "
-           "stroke=\"" +
-           color.name().toUtf8() +
-           "\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">" + elements +
-           "</svg>";
+QByteArray phosphorSvg(const QColor& color, const QByteArray& path) {
+    return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\" fill=\"" +
+           color.name().toUtf8() + "\"><path d=\"" + path + "\"/></svg>";
 }
 
 QImage renderReference(const QByteArray& svg) {
@@ -29,8 +26,10 @@ QImage renderReference(const QByteArray& svg) {
     return expected.toImage();
 }
 
-const QByteArray playElements = "<path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 "
-                                ".003 3.458l-12 7A2 2 0 0 1 5 19z\"/>";
+const QByteArray playPath =
+    "M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87"
+    "V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,"
+    "141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z";
 }
 
 class IconsTest final : public QObject {
@@ -62,66 +61,86 @@ class IconsTest final : public QObject {
         expected.fill(Qt::transparent);
         QPainter vectorPainter(&expected);
         vectorPainter.scale(painterScale, painterScale);
-        QSvgRenderer reference(lucideSvg(Qt::black, playElements));
+        QSvgRenderer reference(phosphorSvg(Qt::black, playPath));
         reference.render(&vectorPainter, QRectF(0, 0, 24, 24));
         vectorPainter.end();
         QCOMPARE(actual, expected);
     }
-    void lucideGlyphsMatchUpstreamInBothThemes() {
+    void phosphorGlyphsMatchUpstreamInBothThemes() {
         using namespace choscordb::design;
         const QList<std::pair<Icon, QByteArray>> specimens{
-            {Icon::Run, playElements},
-            {Icon::Database, "<ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/>"
-                             "<path d=\"M3 5V19A9 3 0 0 0 21 19V5\"/>"
-                             "<path d=\"M3 12A9 3 0 0 0 21 12\"/>"},
-            {Icon::Export, "<path d=\"M12 15V3\"/>"
-                           "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/>"
-                           "<path d=\"m7 10 5 5 5-5\"/>"},
-            {Icon::Code, "<path d=\"m16 18 6-6-6-6\"/><path d=\"m8 6-6 6 6 6\"/>"},
-            {Icon::Table, "<path d=\"M12 3v18\"/>"
-                          "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/>"
-                          "<path d=\"M3 9h18\"/><path d=\"M3 15h18\"/>"},
-            {Icon::Folder, "<path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9"
-                           "L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/>"},
-            {Icon::File, "<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706"
-                         "l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\"/>"
-                         "<path d=\"M14 2v5a1 1 0 0 0 1 1h5\"/>"},
-            {Icon::Key,
-             "<path d=\"m2 21 9.6-9.6\"/>"
-             "<path d=\"m7.5 15.5 2.3 2.3a1 1 0 0 1 0 1.4l-2.1 2.1a1 1 0 0 1-1.4 0L4 19\"/>"
-             "<circle cx=\"15.5\" cy=\"7.5\" r=\"5.5\"/>"},
-            {Icon::Grid2x2, "<path d=\"M12 3v18\"/><path d=\"M3 12h18\"/>"
-                            "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/>"},
-            {Icon::Cancel, "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/>"}};
-        for (const auto& [role, elements] : specimens) {
+            {Icon::Run, playPath},
+            {Icon::Cancel,
+             "M200,40H56A16,16,0,0,0,40,56V200a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16"
+             "V56A16,16,0,0,0,200,40Zm0,160H56V56H200V200Z"},
+            {Icon::Close, "M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-"
+                          "11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66."
+                          "34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"},
+            {Icon::Check,
+             "M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,"
+             "188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"},
+            {Icon::CaretDown, "M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34"
+                              "L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"}};
+        for (const auto& [role, path] : specimens) {
             QVERIFY(choscordb::test::iconResourceDecodes(role));
             for (const QColor color : {QColor("#171717"), QColor("#fafafa")}) {
                 const auto actual = themedIcon(role, color, 24).pixmap(QSize(24, 24), 2.0);
                 QVERIFY2(!actual.isNull(), qPrintable(iconResourcePath(role)));
-                QCOMPARE(actual.toImage(), renderReference(lucideSvg(color, elements)));
+                QCOMPARE(actual.toImage(), renderReference(phosphorSvg(color, path)));
             }
         }
     }
-    void rolesUseTheirLucideFiles() {
+    void rolesUseTheKumoPhosphorFiles() {
         using namespace choscordb::design;
-        QCOMPARE(iconResourcePath(Icon::Settings), QString(":/icons/sliders-horizontal.svg"));
-        QCOMPARE(iconResourcePath(Icon::Cancel), QString(":/icons/square.svg"));
-        QCOMPARE(iconResourcePath(Icon::Square), QString(":/icons/square.svg"));
-        QCOMPARE(iconResourcePath(Icon::Run), QString(":/icons/play.svg"));
+        const QList<std::pair<Icon, QString>> expected{{Icon::Run, "play"},
+                                                       {Icon::Cancel, "stop"},
+                                                       {Icon::Square, "square"},
+                                                       {Icon::Prohibit, "prohibit"},
+                                                       {Icon::Add, "plus"},
+                                                       {Icon::Refresh, "arrow-clockwise"},
+                                                       {Icon::Close, "x"},
+                                                       {Icon::CaretDown, "caret-down"},
+                                                       {Icon::CaretRight, "caret-right"},
+                                                       {Icon::CaretLeft, "caret-left"},
+                                                       {Icon::CaretUpDown, "caret-up-down"},
+                                                       {Icon::Search, "magnifying-glass"},
+                                                       {Icon::Database, "database"},
+                                                       {Icon::Check, "check"},
+                                                       {Icon::CheckCircle, "check-circle"},
+                                                       {Icon::Settings, "sliders-horizontal"},
+                                                       {Icon::Warning, "warning"},
+                                                       {Icon::Error, "warning-octagon"},
+                                                       {Icon::Loader, "circle-notch"},
+                                                       {Icon::Copy, "copy"},
+                                                       {Icon::Export, "download-simple"},
+                                                       {Icon::Code, "code"},
+                                                       {Icon::Table, "table"},
+                                                       {Icon::GridFour, "grid-four"},
+                                                       {Icon::Folder, "folder"},
+                                                       {Icon::File, "file"},
+                                                       {Icon::Key, "key"},
+                                                       {Icon::Link, "link"},
+                                                       {Icon::Eye, "eye"},
+                                                       {Icon::EyeSlash, "eye-slash"},
+                                                       {Icon::Trash, "trash"},
+                                                       {Icon::ArrowUp, "arrow-up"},
+                                                       {Icon::ArrowDown, "arrow-down"}};
+        for (const auto& [role, name] : expected)
+            QCOMPARE(iconResourcePath(role), QStringLiteral(":/icons/%1.svg").arg(name));
         for (const auto& definition : iconCatalog()) {
             const auto stem = QFileInfo(iconResourcePath(definition.role)).completeBaseName();
             QCOMPARE(definition.name, stem);
             QCOMPARE(QFileInfo(definition.source).completeBaseName(), stem);
         }
     }
-    void strokeCoverageMatchesLucideAtRetinaScale() {
+    void regularWeightCoverageMatchesPhosphorAtRetinaScale() {
         using namespace choscordb::design;
         const auto image =
             themedIcon(Icon::Add, Qt::black, 24).pixmap(QSize(24, 24), 2.0).toImage();
         double coverage = 0;
         for (int y = 0; y < image.height(); ++y)
             coverage += image.pixelColor(16, y).alphaF();
-        QVERIFY2(qAbs(coverage - 4.0) < 0.1, qPrintable(QString::number(coverage)));
+        QVERIFY2(qAbs(coverage - 3.0) < 0.1, qPrintable(QString::number(coverage)));
     }
     void semanticAssetsRenderTheRequestedColorAndScale() {
         using namespace choscordb::design;
@@ -253,13 +272,13 @@ class IconsTest final : public QObject {
         QVERIFY(bottom.red() > 230 && bottom.green() > 140 && bottom.green() < 230);
         QVERIFY(bottom.green() > top.green() + 30);
 
-        const QList<QPoint> pawStrokeSamples{{120, 48}, {176, 80}, {192, 144}, {91, 112}};
+        const QList<QPoint> pawStrokeSamples{{63, 115}, {105, 73}, {150, 73}, {193, 115}};
         for (const auto& point : pawStrokeSamples) {
             const auto pixel = dark.pixelColor(point);
-            QVERIFY2(pixel.red() > 245 && pixel.green() > 245 && pixel.blue() > 245,
-                     qPrintable(QStringLiteral("Expected white paw stroke at %1,%2")
-                                    .arg(point.x())
-                                    .arg(point.y())));
+            QVERIFY2(
+                pixel.red() > 245 && pixel.green() > 245 && pixel.blue() > 245,
+                qPrintable(
+                    QStringLiteral("Expected white paw at %1,%2").arg(point.x()).arg(point.y())));
         }
     }
 
@@ -273,12 +292,12 @@ class IconsTest final : public QObject {
             QVERIFY(!definition.source.isEmpty());
             QVERIFY(QFile::exists(iconResourcePath(definition.role)));
         }
-        QVERIFY(names.contains("search"));
+        QVERIFY(names.contains("magnifying-glass"));
         QVERIFY(names.contains("database"));
         QVERIFY(names.contains("mysql"));
         QVERIFY(names.contains("copy"));
         QVERIFY(names.contains("square"));
-        QCOMPARE(names.removeDuplicates(), 1);
+        QCOMPARE(names.removeDuplicates(), 0);
     }
 
     void driversMapToTheirLogos() {
@@ -292,9 +311,10 @@ class IconsTest final : public QObject {
         using namespace choscordb::design;
         QVERIFY(!themedIcon(Icon::Add, Qt::black, 16).isNull());
         for (const auto* filename :
-             {"refresh-cw.svg", "x.svg", "chevron-down.svg", "chevron-right.svg",
-              "chevron-left.svg", "search.svg", "database.svg", "check.svg", "triangle-alert.svg",
-              "circle-alert.svg", "loader-circle.svg", "copy.svg", "download.svg"}) {
+             {"arrow-clockwise.svg", "x.svg", "caret-down.svg", "caret-right.svg", "caret-left.svg",
+              "magnifying-glass.svg", "database.svg", "check.svg", "check-circle.svg",
+              "warning.svg", "warning-octagon.svg", "circle-notch.svg", "copy.svg",
+              "download-simple.svg"}) {
             const auto path = QStringLiteral(":/icons/%1").arg(QLatin1String(filename));
             QVERIFY2(QFile::exists(path), qPrintable(path));
         }

@@ -1,4 +1,5 @@
 #include "app/main_window.h"
+#include "app/object_kind_icon.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
@@ -9,6 +10,7 @@
 #include <QAction>
 #include <QComboBox>
 #include <QCompleter>
+#include <QIcon>
 #include <QTabWidget>
 #include <QVBoxLayout>
 #include <QtTest>
@@ -32,7 +34,7 @@ class EditorCompletionTest : public QObject {
         editor.show();
         editor.setFocus();
         QTRY_VERIFY(editor.hasFocus());
-        choscordb::EditorCompletionController controller;
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
         controller.setEditor(&editor);
         editor.setText("sel");
         editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 3);
@@ -55,7 +57,7 @@ class EditorCompletionTest : public QObject {
         editor.show();
         editor.setFocus();
         QTRY_VERIFY(editor.hasFocus());
-        choscordb::EditorCompletionController controller;
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
         controller.setEditor(&editor);
         controller.setCatalog(
             choscordb::CompletionService({{"users", "\"main\".\"users\"", "table"}}));
@@ -70,7 +72,7 @@ class EditorCompletionTest : public QObject {
         QCOMPARE(editor.text(), QString("us"));
     }
     void embeddedSuggestionsKeepTypingFocusAndFollowOwnerLifetime() {
-        choscordb::EditorCompletionController controller;
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
         auto* completer = controller.findChild<QCompleter*>();
         QPointer<QAbstractItemView> popup = completer->popup();
         auto owner = std::make_unique<QWidget>();
@@ -144,7 +146,7 @@ class EditorCompletionTest : public QObject {
         editor.activateWindow();
         editor.setFocus();
         QTRY_VERIFY(editor.hasFocus());
-        choscordb::EditorCompletionController controller;
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
         controller.setEditor(&editor);
         controller.setCatalog(choscordb::CompletionService(
             {{"zxalpha", "zxalpha", "table"}, {"zxalpine", "zxalpine", "table"}}));
@@ -164,7 +166,7 @@ class EditorCompletionTest : public QObject {
         editor.show();
         editor.setFocus();
         QTRY_VERIFY(editor.hasFocus());
-        choscordb::EditorCompletionController controller;
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
         controller.setEditor(&editor);
         controller.setCatalog(
             choscordb::CompletionService({{"users", "\"public\".\"users\"", "table"},
@@ -180,6 +182,27 @@ class EditorCompletionTest : public QObject {
         QVERIFY(first != second);
         QVERIFY(first.contains("audit") || second.contains("audit"));
         QVERIFY(first.contains("public") || second.contains("public"));
+    }
+    void suggestionsShowKindIconsInTheSharedPopoverLook() {
+        choscordb::SqlEditor editor;
+        editor.show();
+        editor.setFocus();
+        QTRY_VERIFY(editor.hasFocus());
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
+        controller.setEditor(&editor);
+        controller.setCatalog(
+            choscordb::CompletionService({{"users", "\"public\".\"users\"", "table"}}));
+        editor.setText("us");
+        editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 2);
+        QCoreApplication::processEvents();
+        controller.requestCompletion();
+        auto* completer = controller.findChild<QCompleter*>();
+        QTRY_VERIFY(completer->popup()->isVisible());
+        const auto icon =
+            completer->completionModel()->index(0, 0).data(Qt::DecorationRole).value<QIcon>();
+        QVERIFY(!icon.isNull());
+        QVERIFY(completer->popup()->graphicsEffect());
+        QVERIFY(completer->popup()->styleSheet().contains("border-radius"));
     }
     void mainWindowUsesActiveNavigatorMetadata() {
         choscordb::MainWindow window;
@@ -300,7 +323,7 @@ class EditorCompletionTest : public QObject {
         editor.show();
         editor.setFocus();
         QTRY_VERIFY(editor.hasFocus());
-        choscordb::EditorCompletionController controller;
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
         controller.setEditor(&editor);
         controller.setCatalog(
             choscordb::CompletionService({{"é name", "\"main\".\"é name\"", "table"}}));

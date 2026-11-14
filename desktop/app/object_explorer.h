@@ -16,6 +16,7 @@ class QStackedWidget;
 class QPlainTextEdit;
 namespace choscordb {
 namespace design {
+class Button;
 class Text;
 class StatusLine;
 }
@@ -53,6 +54,8 @@ class ObjectExplorer final : public QWidget {
 
   private:
     void requestPane();
+    [[nodiscard]] bool refreshAllowed() const;
+    void setRefreshEnabled(bool enabled);
     void generateSql(const QString& kind);
     void updateActions();
     void updateFooter();
@@ -71,8 +74,9 @@ class ObjectExplorer final : public QWidget {
     ObjectErdWidget* erd_;
     design::Text* status_;
     design::Text* placeholder_;
-    QAction* retry_;
+    QAction* refreshAction_;
     QAction* reconnect_;
+    design::Button* reconnectButton_;
     QPushButton* refresh_;
     QPushButton* open_;
     QPushButton* generate_;

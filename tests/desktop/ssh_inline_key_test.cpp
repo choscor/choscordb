@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QPlainTextEdit>
 
 void WorkspaceTest::inlineSshKeysStayMaskedAndOutsideProfileMetadata() {
@@ -16,6 +17,12 @@ void WorkspaceTest::inlineSshKeysStayMaskedAndOutsideProfileMetadata() {
     auto* preview = dialog.findChild<QPlainTextEdit*>("profileSshPrivateKeyPreview");
     auto* paste = dialog.findChild<QPushButton*>("profileSshPrivateKeyPaste");
     QVERIFY(source && preview && paste);
+    QVERIFY(preview->placeholderText().isEmpty());
+    auto* keyHelp = dialog.findChild<QLabel*>("profileSshPrivateKeyHelp");
+    QVERIFY(keyHelp);
+    QCOMPARE(keyHelp->property("designRole").toString(), QString("description"));
+    QVERIFY(keyHelp->text().contains("stay hidden"));
+    QVERIFY(!keyHelp->isVisibleTo(&dialog));
     dialog.findChild<QComboBox*>("profileDriver")->setCurrentIndex(1);
     dialog.findChild<QLineEdit*>("profileName")->setText("Inline private key");
     dialog.findChild<QLineEdit*>("profileUser")->setText("operator");
@@ -25,6 +32,7 @@ void WorkspaceTest::inlineSshKeysStayMaskedAndOutsideProfileMetadata() {
     auto* auth = dialog.findChild<QComboBox*>("profileSshAuthentication");
     auth->setCurrentIndex(auth->findData("public_key"));
     source->setCurrentIndex(source->findData("inline"));
+    QVERIFY(keyHelp->isVisibleTo(&dialog));
     const QString key = "-----BEGIN OPENSSH PRIVATE KEY-----\nprivate-key-material\n-----END "
                         "OPENSSH PRIVATE KEY-----\n";
     QApplication::clipboard()->setText(key);

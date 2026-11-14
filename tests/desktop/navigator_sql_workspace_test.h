@@ -25,6 +25,8 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void statusLineShowsTheTargetOfEachDocument();
     void changeConnectionMenuRebindsOnlyIdleSqlTabs();
     void tabContextMenuFollowsCursor();
+    void documentTabsCloseOnMiddleClickAndShowTheFullTitle();
+    void objectTabsMarkStagedEditsAndKeepTheMarkVisible();
     void tabContextMenuClosesRequestedDocuments_data();
     void tabContextMenuClosesRequestedDocuments();
     void tabContextMenuDisablesEmptyGroupsAndIgnoresEmptySpace();
@@ -38,6 +40,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void savedPanelFiltersFolderTreeAndReusesEditedTab();
     void savedPanelRapidDistinctFilesOpenBothAndFocusLatest();
     void savedPanelRejectsFileReplacedBySymlink();
+    void editorFileErrorsUseTheSharedErrorFeedback();
     void savedPanelUsesTheFolderBesideTheApplicationDatabase();
     void historySearchAppliesToRefreshedFullSql();
     void historySidebarFormatsSqlAndShowsEntryDetails();

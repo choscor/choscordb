@@ -1,6 +1,8 @@
 #include "design_system/button/button.h"
+#include "design_system/menu/menu.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/status_line/status_line.h"
+#include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include "dialog_sections_checks.h"
 #include "preview_test.h"
@@ -11,9 +13,9 @@
 #include <QDialog>
 #include <QEnterEvent>
 #include <QEvent>
-#include <QGraphicsOpacityEffect>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QTimer>
 #include <QToolButton>
@@ -40,11 +42,11 @@ void PreviewTest::toastCardUsesTokenInsetsWidthAndSharedDismissButton() {
     QCOMPARE(dismiss->toolTip(), QString("Dismiss notification"));
     auto* icon = toast.findChild<QLabel*>("toastIcon");
     QVERIFY(icon);
-    const int inset = spacing(Spacing::Three);
+    const int inset = spacing(Spacing::Four);
     QCOMPARE(icon->geometry().left(), inset);
-    QCOMPARE(dismiss->geometry().top(), inset);
-    QCOMPARE(toast.width() - 1 - dismiss->geometry().right(), inset);
-    QCOMPARE(icon->geometry().center().y(), dismiss->geometry().center().y());
+    QCOMPARE(icon->geometry().top(), inset + spacing(Spacing::Half));
+    QCOMPARE(dismiss->geometry().top(), spacing(Spacing::Two));
+    QCOMPARE(toast.width() - 1 - dismiss->geometry().right(), spacing(Spacing::Two));
     QVERIFY(toast.contentsRect().top() >= inset);
     QVERIFY(toast.height() - toast.contentsRect().bottom() - 1 >= inset);
     QTest::mouseClick(dismiss, Qt::LeftButton);
@@ -328,18 +330,17 @@ void PreviewTest::toastVariantsShowTitleBodyAndUseConfiguredTimeout() {
     auto* host = window.findChild<QWidget*>("previewLight");
     QVERIFY(host);
     auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
-    auto* opacity = toast ? toast->findChild<QGraphicsOpacityEffect*>() : nullptr;
     auto* seconds = host->findChild<QSpinBox*>("previewToastSeconds");
-    QVERIFY(toast && opacity && seconds);
+    QVERIFY(toast && seconds);
     seconds->setValue(1);
     for (const auto& variant : {"success", "warning", "danger"}) {
         auto* button = host->findChild<QPushButton*>(QString("previewToast_%1").arg(variant));
         QVERIFY(button);
         button->click();
         QTRY_VERIFY(toast->isVisible());
-        QTRY_VERIFY(opacity->opacity() > 0.9);
+        QTRY_VERIFY(choscordb::design::detail::popoverOpacity(*toast) > 0.9);
         QCOMPARE(toast->property("variant").toString(), QString(variant));
-        QVERIFY(toast->text().contains("<b>"));
+        QVERIFY(toast->text().contains("font-weight:500"));
         QVERIFY(toast->text().contains("<br/>"));
         auto* timer = toast->findChild<QTimer*>();
         if (QString(variant) == "success")
@@ -352,17 +353,88 @@ void PreviewTest::toastVariantsShowTitleBodyAndUseConfiguredTimeout() {
     toast->showToast("Warning", "Persistent warning", choscordb::ToastVariant::Warning, 0);
     QVERIFY(toast->text().contains("Persistent warning"));
     QCOMPARE(toast->property("variant").toString(), QString("warning"));
-    QTRY_VERIFY(opacity->opacity() > 0.9);
+    QTRY_VERIFY(choscordb::design::detail::popoverOpacity(*toast) > 0.9);
     QTest::qWait(1200);
     QVERIFY(toast->isVisible());
     toast->clearNotice();
-    QTRY_VERIFY(opacity->opacity() < 0.1);
+    QTRY_VERIFY(choscordb::design::detail::popoverOpacity(*toast) < 0.1);
     QTRY_VERIFY(toast->isHidden());
     toast->showToast("Saved", "First", choscordb::ToastVariant::Success, 5000);
     toast->clearNotice();
     toast->showToast("Error", "Replacement", choscordb::ToastVariant::Danger, 5000);
-    QTRY_VERIFY(opacity->opacity() > 0.9);
+    QTRY_VERIFY(choscordb::design::detail::popoverOpacity(*toast) > 0.9);
     QVERIFY(toast->isVisible());
     QVERIFY(toast->text().contains("Replacement"));
     QCOMPARE(toast->property("variant").toString(), QString("danger"));
+}
+
+void PreviewTest::toastPortalIsPresentInBothThemes() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("feedback"));
+    window.show();
+    for (const auto* name : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(name);
+        QVERIFY(host);
+        const auto& colors = choscordb::design::resolvedThemeForWidget(*host).colors;
+        const auto expectedSurface =
+            choscordb::design::composite(choscordb::design::withOpacity(colors.successTint, 0.2),
+                                         colors.base)
+                .name();
+        const auto successRule =
+            host->styleSheet()
+                .section(QStringLiteral("QLabel#toastRegion[variant=\"success\"]"), 1)
+                .section('}', 0, 0);
+        QVERIFY2(successRule.contains(QStringLiteral("background-color: rgba(%1,%2,%3,255)")
+                                          .arg(QColor(expectedSurface).red())
+                                          .arg(QColor(expectedSurface).green())
+                                          .arg(QColor(expectedSurface).blue())),
+                 qPrintable(successRule));
+        auto* scroll = host->findChild<QScrollArea*>("previewContentScroll");
+        auto* toast = host->findChild<choscordb::ToastRegion*>("toastRegion");
+        QVERIFY(scroll && toast);
+        toast->showToast("Saved", "Portal specimen", choscordb::ToastVariant::Success, 0);
+        QTest::qWait(200);
+        QCOMPARE(toast->grab().toImage().pixelColor(3, toast->height() / 2),
+                 QColor(expectedSurface));
+        const auto sample =
+            toast->mapTo(&window, QPoint(toast->width() - 20, toast->height() - 20));
+        const auto capture = window.grab();
+        const auto scale = capture.devicePixelRatioF();
+        QCOMPARE(
+            capture.toImage().pixelColor(qRound(sample.x() * scale), qRound(sample.y() * scale)),
+            QColor(expectedSurface));
+        QCOMPARE(toast->parentWidget(), scroll->viewport());
+        QCOMPARE(toast->geometry().right(), scroll->viewport()->width() - 33);
+        QCOMPARE(toast->geometry().bottom(), scroll->viewport()->height() - 33);
+        auto* dismiss = toast->findChild<QAbstractButton*>("toastDismiss");
+        QVERIFY(dismiss);
+        QCOMPARE(dismiss->accessibleName(), QString("Dismiss notification"));
+        QVERIFY(dismiss->isVisible());
+        QVERIFY(dismiss->geometry().right() > toast->width() / 2);
+        QVERIFY(dismiss->geometry().top() < toast->height() / 2);
+        QVERIFY(toast->contentsRect().right() < dismiss->geometry().left());
+        QTest::mouseClick(dismiss, Qt::LeftButton);
+        QTRY_VERIFY(toast->isHidden());
+        toast->showToast("Warning",
+                         "Suggestions use loaded navigator objects. Expand nodes for "
+                         "more names; large catalogs may be limited.",
+                         choscordb::ToastVariant::Warning, 0);
+        QVERIFY(toast->isVisible());
+        QVERIFY(dismiss->isVisible());
+        QCOMPARE(toast->grab().toImage().pixelColor(3, toast->height() / 2), [toast] {
+            const auto& colors = choscordb::design::resolvedThemeForWidget(*toast).colors;
+            return choscordb::design::composite(
+                choscordb::design::withOpacity(colors.warningTint, 0.5), colors.base);
+        }());
+        toast->showToast("Error", "Failure", choscordb::ToastVariant::Danger, 0);
+        QCOMPARE(toast->property("variant").toString(), QString("warning"));
+        QTest::mouseClick(dismiss, Qt::LeftButton);
+        QCOMPARE(toast->grab().toImage().pixelColor(3, toast->height() / 2), [toast] {
+            const auto& colors = choscordb::design::resolvedThemeForWidget(*toast).colors;
+            return choscordb::design::composite(
+                choscordb::design::withOpacity(colors.dangerTint, 0.5), colors.base);
+        }());
+        QTest::mouseClick(dismiss, Qt::LeftButton);
+        QTRY_VERIFY(toast->isHidden());
+    }
 }

@@ -17,9 +17,12 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QStackedWidget>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTemporaryDir>
+#include <QTest>
 #include <QtTest>
 
 void ModernUiTest::executionStripKeepsVisibleAndAccessibleTerminalState() {
@@ -59,12 +62,12 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
     QVERIFY(startFooter);
     auto* startLabel = startFooter->findChild<choscordb::design::Text*>();
     QVERIFY(startLabel);
-    QCOMPARE(startLabel->font().pixelSize(), 14);
+    QCOMPARE(startLabel->font().pixelSize(), 13);
     QCOMPARE(startLabel->text(), QString("Choose a connection to get started"));
     QCOMPARE(startLabel->alignment(), Qt::AlignCenter);
     QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
              QString("choscordb::design::StatusLine"));
-    QCOMPARE(footer->font().pixelSize(), 14);
+    QCOMPARE(footer->font().pixelSize(), 13);
     QCOMPARE(summary->font().pixelSize(), footer->font().pixelSize());
     for (const char* name : {"executionStateCompact", "executionDuration", "executionPage",
                              "executionRows", "executionVisibleSize"}) {
@@ -73,15 +76,15 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
         QCOMPARE(label->font().pixelSize(), footer->font().pixelSize());
     }
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.surfaceRaised);
+             choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
 
     workspace->connectSqlite(":memory:");
     QTRY_VERIFY(run->isEnabled());
     QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.surfaceRaised);
+                 choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     theme->setMode(choscordb::design::ThemeMode::Dark);
     QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.surfaceRaised);
+                 choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     theme->setMode(choscordb::design::ThemeMode::Light);
     auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     QVERIFY(editor);
@@ -89,16 +92,18 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
     run->trigger();
     QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Failed);
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.dangerSurface);
-    QTRY_VERIFY(summary->toolTip().contains("Failed:"));
-    QVERIFY(summary->toolTip().contains("nowhere"));
+             choscordb::design::composite(theme->resolvedTheme().colors.dangerTint,
+                                          theme->resolvedTheme().colors.base));
+    QTRY_VERIFY(summary->toolTip().contains("Failed. Retry the query."));
+    QVERIFY(!summary->toolTip().contains("nowhere"));
+    QVERIFY(window.findChild<QPlainTextEdit*>("queryMessages")->toPlainText().contains("nowhere"));
 
     window.findChild<QAction*>("newQuery")->trigger();
     auto* other = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     QVERIFY(other && other != editor);
     other->setConnectionTarget(std::nullopt, {});
     QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.surfaceRaised);
+                 choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     other->setConnectionTarget(editor->connectionTarget(), editor->targetLabel());
     QTRY_VERIFY(run->isEnabled());
     other->setText("SELECT 2");
@@ -106,14 +111,15 @@ void ModernUiTest::resultFooterTracksOperationOutcome() {
     QTRY_VERIFY(queryCompleted(summaryState(summary)));
     tabs->setCurrentWidget(editor);
     QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.dangerSurface);
+                 choscordb::design::composite(theme->resolvedTheme().colors.dangerTint,
+                                              theme->resolvedTheme().colors.base));
     QVERIFY(window.findChild<QPlainTextEdit*>("queryMessages")->toPlainText().contains("nowhere"));
     QTRY_VERIFY(run->isEnabled());
     editor->setText("SELECT 1");
     run->trigger();
     QTRY_VERIFY(queryCompleted(summaryState(summary)));
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.successSurface);
+             choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
 }
 
 void ModernUiTest::connectionAttemptFailureIsAnOperationError() {
@@ -126,10 +132,24 @@ void ModernUiTest::connectionAttemptFailureIsAnOperationError() {
     workspace->connectSqlite(directory.filePath("missing/database.sqlite"));
     auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
     QTRY_VERIFY(!messages->toPlainText().isEmpty());
+    auto* panes = window.findChild<QTabBar*>("sqlResultPaneTabs");
+    QVERIFY(panes && panes->isVisible());
+    QCOMPARE(panes->count(), 2);
+    QCOMPARE(panes->tabText(0), QString("Results"));
+    QCOMPARE(panes->tabText(1), QString("Messages"));
+    QTRY_COMPARE(panes->currentIndex(), 1);
+    QVERIFY(messages->isVisible());
+    QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(0).center());
+    QVERIFY(!messages->isVisible());
+    QCOMPARE(window.findChild<QStackedWidget*>("sqlResultViews")->currentIndex(), 0);
+    QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(1).center());
+    QVERIFY(messages->isVisible());
     auto* footer = window.findChild<QWidget*>("sqlResultFooter");
     QCOMPARE(footer->palette().color(QPalette::Window),
-             choscordb::design::resolvedThemeForWidget(window).colors.dangerSurface);
-    QVERIFY(footer->toolTip().contains("Failed:"));
+             choscordb::design::composite(
+                 choscordb::design::resolvedThemeForWidget(window).colors.dangerTint,
+                 choscordb::design::resolvedThemeForWidget(window).colors.base));
+    QVERIFY(footer->toolTip().contains("Failed. Retry the query."));
 }
 
 void ModernUiTest::sqlDocumentSwitchKeepsFooterAndResultOwnershipTogether() {
@@ -172,8 +192,10 @@ void ModernUiTest::sqlDocumentSwitchKeepsFooterAndResultOwnershipTogether() {
     tabs->setCurrentWidget(first);
     QVERIFY(!grid->isVisible());
     QVERIFY(page->text().isEmpty());
-    QCOMPARE(window.findChild<QWidget*>("sqlResultFooter")->palette().color(QPalette::Window),
-             choscordb::design::resolvedThemeForWidget(window).colors.surfaceRaised);
+    QCOMPARE(
+        window.findChild<QWidget*>("sqlResultFooter")->palette().color(QPalette::Window),
+        choscordb::design::secondaryBanner(choscordb::design::resolvedThemeForWidget(window).colors)
+            .fill);
     tabs->setCurrentWidget(second);
     QTRY_VERIFY(grid->isVisible());
     QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("42"));
@@ -215,9 +237,11 @@ void ModernUiTest::completedResultFooterSeparatesAndClearsMetrics() {
     run->trigger();
     QTRY_VERIFY(queryCompleted(summaryState(source)));
     QTRY_COMPARE(page->text(), QString("Page 1"));
-    QCOMPARE(rows->text(), QString("1 rows"));
+    QCOMPARE(rows->text(), QString("1 row"));
     QTRY_VERIFY(duration->text().endsWith(" ms"));
-    QVERIFY(size->text().endsWith(" KiB visible"));
+    QVERIFY(QRegularExpression("^\\d+(\\.\\d+)? (bytes|KiB|MiB) in memory$")
+                .match(size->text())
+                .hasMatch());
     QVERIFY(duration->isVisible() && page->isVisible() && rows->isVisible() && size->isVisible());
     QVERIFY(outcome->text().contains("Completed"));
     QVERIFY(source->text().contains(editor->property("documentTitle").toString()));
@@ -283,7 +307,7 @@ void ModernUiTest::narrowResultFooterPreservesOutcomeNavigationAndDetails() {
     QVERIFY(source->toolTip().contains(longTitle));
     QVERIFY(source->toolTip().contains("Page 1"));
     QVERIFY(source->accessibleName().contains(longTitle));
-    QVERIFY(source->accessibleName().contains("KiB visible"));
+    QVERIFY(source->accessibleName().contains("iB in memory"));
     QVERIFY(outcome->isVisible());
     QVERIFY(outcome->text().contains("Completed"));
     QVERIFY(footer->rect().contains(QRect(previous->mapTo(footer, QPoint()), previous->size())));
@@ -411,8 +435,10 @@ void ModernUiTest::operationFailureRemainsRedAfterDisconnectCleanup() {
     adapter->eventReady(cleanup);
     auto* footer = window.findChild<QWidget*>("sqlResultFooter");
     QCOMPARE(footer->palette().color(QPalette::Window),
-             choscordb::design::resolvedThemeForWidget(window).colors.dangerSurface);
-    QVERIFY(footer->toolTip().contains("Failed: Connection closed [Code: 08006]"));
+             choscordb::design::composite(
+                 choscordb::design::resolvedThemeForWidget(window).colors.dangerTint,
+                 choscordb::design::resolvedThemeForWidget(window).colors.base));
+    QVERIFY(footer->toolTip().contains("Failed. Retry the query."));
     QVERIFY(window.findChild<QPlainTextEdit*>("queryMessages")
                 ->toPlainText()
                 .contains("[Code: 08006]"));
@@ -420,8 +446,10 @@ void ModernUiTest::operationFailureRemainsRedAfterDisconnectCleanup() {
     QSignalSpy recovered(workspace, &choscordb::QueryWorkspace::connectionReady);
     workspace->connectSqlite(":memory:");
     QTRY_COMPARE(recovered.count(), 1);
-    QCOMPARE(footer->palette().color(QPalette::Window),
-             choscordb::design::resolvedThemeForWidget(window).colors.surfaceRaised);
+    QCOMPARE(
+        footer->palette().color(QPalette::Window),
+        choscordb::design::secondaryBanner(choscordb::design::resolvedThemeForWidget(window).colors)
+            .fill);
 }
 
 void ModernUiTest::embeddedDataFailureRemainsVisibleAfterDisconnectCleanup_data() {
@@ -495,8 +523,13 @@ void ModernUiTest::embeddedDataFailureRemainsVisibleAfterDisconnectCleanup() {
     QVERIFY(footer->isVisible());
     QVERIFY(!explorer->findChild<QWidget*>("objectFooter")->isVisible());
     QCOMPARE(footer->palette().color(QPalette::Window),
-             choscordb::design::resolvedThemeForWidget(window).colors.dangerSurface);
-    QVERIFY(footer->toolTip().contains("Failed: Data connection closed"));
+             choscordb::design::composite(
+                 choscordb::design::resolvedThemeForWidget(window).colors.dangerTint,
+                 choscordb::design::resolvedThemeForWidget(window).colors.base));
+    QVERIFY(footer->toolTip().contains("Failed. Retry the query."));
+    QVERIFY(explorer->findChild<QPlainTextEdit*>("objectDataMessages")
+                ->toPlainText()
+                .contains("Data connection closed"));
     QVERIFY(!explorer->findChild<QPushButton*>("objectDataNext")->isEnabled());
     QVERIFY(explorer->findChild<QAction*>("objectReconnect")->isEnabled());
 }

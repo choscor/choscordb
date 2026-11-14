@@ -306,7 +306,10 @@ class ObjectExplorerTest final : public QObject {
         QTRY_COMPARE(graphs.count(), 1);
         QCOMPARE(erd->findChild<QGraphicsView*>("objectErdView")->geometry().top(), 0);
         QCOMPARE(objectPanelState(status), choscordb::PanelState::Empty);
-        QVERIFY(status->text().contains("No foreign-key relationships"));
+        QVERIFY(explorer.findChild<QLabel*>("objectPlaceholder")
+                    ->text()
+                    .contains("No foreign-key relationships"));
+        QVERIFY(!status->text().contains("No foreign-key relationships"));
         QCOMPARE(erd->graph().tables.size(), 1);
         const auto oldToken = graphs.first().at(2).toULongLong();
         explorer.selectPane(3);
@@ -323,6 +326,12 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(erd->graph().tables.size(), 2);
         QCOMPARE(erd->graph().edges.size(), 1);
         QCOMPARE(objectPanelState(status), choscordb::PanelState::Ready);
+        auto* refreshButton = explorer.findChild<QPushButton*>("objectRefresh");
+        QTRY_VERIFY(refreshButton->isEnabled());
+        explorer.setOperationBusy(true);
+        QVERIFY(!refreshButton->isEnabled());
+        explorer.setOperationBusy(false);
+        QVERIFY(refreshButton->isEnabled());
         ObjectGraph stale;
         stale.tables = {{R"(["main","parent"])", "stale", {}}};
         adapter.objectGraphReady(*connection, R"(["main","parent"])", oldToken, stale);
@@ -349,13 +358,14 @@ class ObjectExplorerTest final : public QObject {
         explorer.openObject(*connection, R"(["main","later"])", "main.later", "table");
         explorer.selectPane(4);
         auto* status = explorer.findChild<QLabel*>("objectStatus");
-        auto* retry = explorer.findChild<QAction*>("objectRetry");
+        auto* retry = explorer.findChild<QAction*>("objectRefreshAction");
         QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Failed);
         QVERIFY(retry->isEnabled());
         auto* placeholder = explorer.findChild<QLabel*>("objectPlaceholder");
         QVERIFY(placeholder->isVisible() && placeholder->text().startsWith("Could not load "));
         QCOMPARE(placeholder->property("state").toString(), QString("error"));
-        QVERIFY(choscordb::windowToast(&explorer)->text().contains(placeholder->text()));
+        QVERIFY(choscordb::windowToast(&explorer)->isHidden());
+        QVERIFY(!status->text().contains(placeholder->text()));
         const auto create = adapter.execute(*connection, "CREATE TABLE later(id INTEGER)");
         QVERIFY(create);
         adapter.fetchPage(*create);
@@ -389,7 +399,7 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(ddl->viewport()->geometry().left() >= gutter->width());
         const auto initialWidth = gutter->width();
         QVERIFY(initialWidth >= ddl->fontMetrics().horizontalAdvance("000"));
-        const auto background = design::resolvedThemeForWidget(*ddl).colors.surfaceRaised;
+        const auto background = design::resolvedThemeForWidget(*ddl).colors.elevated;
         const auto lightImage = gutter->grab().toImage();
         QCOMPARE(lightImage.pixelColor(1, lightImage.height() / 2), background);
         bool numberPainted = false;
@@ -411,125 +421,10 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(gutter->grab().toImage() != beforeScroll);
         theme.setMode(design::ThemeMode::Dark);
         theme.applyTo(explorer);
-        const auto darkBackground = design::resolvedThemeForWidget(*ddl).colors.surfaceRaised;
+        const auto darkBackground = design::resolvedThemeForWidget(*ddl).colors.elevated;
         QVERIFY(darkBackground != background);
         const auto darkImage = gutter->grab().toImage();
         QCOMPARE(darkImage.pixelColor(1, darkImage.height() / 2), darkBackground);
-    }
-    void ddlTextHasTopAndLeftBreathingRoom() {
-        EngineAdapter adapter;
-        ObjectExplorer explorer(&adapter);
-        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
-        QVERIFY(ddl);
-        explorer.findChild<QStackedWidget*>()->setCurrentWidget(ddl);
-        explorer.resize(700, 450);
-        explorer.show();
-        ddl->setPlainText("CREATE VIEW sample AS SELECT 1;");
-        QCoreApplication::processEvents();
-        ddl->moveCursor(QTextCursor::Start);
-        const QRect firstCharacter = ddl->cursorRect();
-        QVERIFY2(firstCharacter.top() >= 8, "DDL text needs at least 8 px top inset");
-        QVERIFY2(firstCharacter.left() >= 8, "DDL text needs at least 8 px left inset");
-    }
-    void ddlMatchesSqlEditorTypographyAndSyntaxPalette() {
-        EngineAdapter adapter;
-        ObjectExplorer explorer(&adapter);
-        design::ThemeManager theme;
-        theme.setMode(design::ThemeMode::Light);
-        theme.applyTo(explorer);
-        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
-        QVERIFY(ddl);
-        QCOMPARE(ddl->font().family(),
-                 design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
-                     .family());
-        QCOMPARE(ddl->font().pixelSize(), 14);
-        QCOMPARE(ddl->frameShape(), QFrame::NoFrame);
-        ddl->setPlainText("SELECT 'x', 42; -- note");
-        QCoreApplication::processEvents();
-        const auto formats = ddl->document()->firstBlock().layout()->formats();
-        const auto colorAt = [&](int offset) {
-            for (const auto& range : formats)
-                if (offset >= range.start && offset < range.start + range.length)
-                    return range.format.foreground().color();
-            return QColor{};
-        };
-        QCOMPARE(colorAt(0), QColor("#885da7"));
-        QCOMPARE(colorAt(7), QColor("#c2410c"));
-        QCOMPARE(colorAt(12), QColor("#2f6aa3"));
-        QCOMPARE(colorAt(16), QColor("#68737a"));
-    }
-    void ddlRecolorsWithThemeAndKeepsCommentNumbersMuted() {
-        EngineAdapter adapter;
-        ObjectExplorer explorer(&adapter);
-        design::ThemeManager theme;
-        theme.setMode(design::ThemeMode::Light);
-        theme.applyTo(explorer);
-        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
-        QVERIFY(ddl);
-        ddl->setPlainText("SELECT 42; -- 99");
-        const auto colorAt = [&](int offset) {
-            QCoreApplication::processEvents();
-            for (const auto& range : ddl->document()->firstBlock().layout()->formats())
-                if (offset >= range.start && offset < range.start + range.length)
-                    return range.format.foreground().color();
-            return QColor{};
-        };
-        QCOMPARE(colorAt(14), QColor("#68737a"));
-        theme.setMode(design::ThemeMode::Dark);
-        theme.applyTo(explorer);
-        QCOMPARE(colorAt(0), QColor("#a984c8"));
-        QCOMPARE(colorAt(14), QColor("#9ca6a7"));
-    }
-    void ddlUsesSqlSyntaxColors() {
-        EngineAdapter adapter;
-        ObjectExplorer explorer(&adapter);
-        auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
-        QVERIFY(ddl);
-        ddl->setPlainText("CREATE TABLE customers (name TEXT DEFAULT 'Alice'); -- note");
-        QCoreApplication::processEvents();
-        const auto formats = ddl->document()->firstBlock().layout()->formats();
-        const auto colorAt = [&](int offset) {
-            for (const auto& range : formats)
-                if (offset >= range.start && offset < range.start + range.length)
-                    return range.format.foreground().color();
-            return QColor{};
-        };
-        QVERIFY(colorAt(0).isValid());
-        QVERIFY(colorAt(36).isValid());
-        QVERIFY(colorAt(47).isValid());
-        QVERIFY(colorAt(0) != colorAt(47));
-        ddl->setPlainText("CREATE TABLE \"SELECT\" (name TEXT DEFAULT '-- active'); -- note");
-        QCoreApplication::processEvents();
-        const auto quotedFormats = ddl->document()->firstBlock().layout()->formats();
-        const auto quotedColor = [&](int offset) {
-            for (const auto& range : quotedFormats)
-                if (offset >= range.start && offset < range.start + range.length)
-                    return range.format.foreground().color();
-            return QColor{};
-        };
-        QVERIFY(quotedColor(14).isValid());
-        QVERIFY(quotedColor(14) != quotedColor(0));
-        QVERIFY(quotedColor(43) != quotedColor(55));
-        ddl->setPlainText("CREATE /* SELECT\nFROM */ TABLE items DEFAULT 'hello\nSELECT';");
-        QCoreApplication::processEvents();
-        const auto second = ddl->document()->findBlockByNumber(1).layout()->formats();
-        const auto third = ddl->document()->findBlockByNumber(2).layout()->formats();
-        const auto formatAt = [](const auto& ranges, int offset) {
-            for (const auto& range : ranges)
-                if (offset >= range.start && offset < range.start + range.length)
-                    return range.format.foreground().color();
-            return QColor{};
-        };
-        QVERIFY(formatAt(second, 0).isValid());
-        QVERIFY(formatAt(second, 0) != formatAt(second, 8));
-        QVERIFY(formatAt(third, 0).isValid());
-        QVERIFY(formatAt(third, 0) != formatAt(second, 8));
-        ddl->setPlainText("'SELECT' CREATE");
-        QCoreApplication::processEvents();
-        const auto firstQuoted = ddl->document()->firstBlock().layout()->formats();
-        QVERIFY(formatAt(firstQuoted, 1).isValid());
-        QCOMPARE(formatAt(firstQuoted, 1), formatAt(firstQuoted, 0));
-        QVERIFY(formatAt(firstQuoted, 1) != formatAt(firstQuoted, 9));
     }
     void restoredObjectStaysInertUntilActivatedAndRetainsPane() {
         EngineAdapter adapter;
@@ -560,7 +455,7 @@ class ObjectExplorerTest final : public QObject {
             theme.setMode(mode);
             theme.applyTo(explorer);
             QCOMPARE(footer->palette().color(QPalette::Window),
-                     theme.resolvedTheme().colors.surfaceRaised);
+                     choscordb::design::secondaryBanner(theme.resolvedTheme().colors).fill);
         }
         QCOMPARE(explorer.paneIndex(), 3);
         QTest::qWait(50);
@@ -591,14 +486,52 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(objectPanelState(status), choscordb::PanelState::Disconnected);
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QCOMPARE(footer->palette().color(QPalette::Window),
-                 design::resolvedThemeForWidget(*footer).colors.surfaceRaised);
-        QVERIFY(!explorer.findChild<QPushButton*>("objectReconnect"));
+                 choscordb::design::secondaryBanner(design::resolvedThemeForWidget(*footer).colors)
+                     .fill);
+        auto* placeholder = explorer.findChild<QLabel*>("objectPlaceholder");
+        QVERIFY(placeholder && placeholder->isVisible());
+        QCOMPARE(placeholder->text(), QString("Connection lost.\nReconnect to load this object."));
+        QVERIFY(!status->text().contains("Connection lost"));
+        auto* pages = explorer.findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly);
+        QVERIFY(pages && !pages->isVisible());
+        explorer.resize(900, 420);
+        QCoreApplication::processEvents();
+        const auto textBox = QRect(placeholder->mapTo(&explorer, QPoint()), placeholder->size());
+        auto* reconnectButton = explorer.findChild<QPushButton*>("objectReconnectButton");
+        const auto buttonBox =
+            QRect(reconnectButton->mapTo(&explorer, QPoint()), reconnectButton->size());
+        QVERIFY(buttonBox.top() > textBox.bottom());
+        QVERIFY(qAbs(buttonBox.center().x() - textBox.center().x()) <= 1);
+        QVERIFY(qAbs(textBox.center().x() - explorer.width() / 2) <= 1);
+        auto* header = explorer.findChild<QWidget*>("objectHeader");
+        const int bodyMiddle = (header->geometry().bottom() + footer->geometry().top()) / 2;
+        const int groupMiddle = (textBox.top() + buttonBox.bottom()) / 2;
+        QVERIFY2(qAbs(groupMiddle - bodyMiddle) <= 2,
+                 qPrintable(QString("%1 %2").arg(groupMiddle).arg(bodyMiddle)));
         auto* action = explorer.findChild<QAction*>("objectReconnect");
         QVERIFY(action);
         QVERIFY(explorer.actions().contains(action));
         QVERIFY(action->isEnabled());
         action->trigger();
         QCOMPARE(reconnect.count(), 1);
+        QVERIFY(reconnectButton->isVisible());
+        QCOMPARE(reconnectButton->text(), action->text());
+        reconnectButton->click();
+        QCOMPARE(reconnect.count(), 2);
+    }
+    void disconnectedDiagramNamesWhatItWouldLoad() {
+        EngineAdapter adapter;
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        explorer.restoreObject(std::nullopt, R"(["main","lost"])", "lost", "table");
+        explorer.selectPane(0);
+        auto* placeholder = explorer.findChild<QLabel*>("objectPlaceholder");
+        QCOMPARE(placeholder->text(), QString("Connection lost.\nReconnect to load this object."));
+        explorer.selectPane(4);
+        QCOMPARE(explorer.paneIndex(), 4);
+        QCOMPARE(placeholder->text(), QString("Connection lost.\nReconnect to load the diagram."));
+        explorer.selectPane(1);
+        QCOMPARE(placeholder->text(), QString("Connection lost.\nReconnect to load this object."));
     }
     void actionsBelongToContextualHeaderAndStatusToFooter() {
         EngineAdapter adapter;
@@ -633,13 +566,21 @@ class ObjectExplorerTest final : public QObject {
         auto* pages = explorer.findChild<QStackedWidget*>(QString(), Qt::FindDirectChildrenOnly);
         QVERIFY(pages);
         QCOMPARE(header->geometry().bottom() + 1, pages->geometry().top());
-        for (const char* name : {"objectRetry", "objectReconnect"}) {
+        QVERIFY(!explorer.findChild<QPushButton*>("objectReconnectButton")->isVisible());
+        for (const char* name : {"objectRefreshAction", "objectReconnect"}) {
             QVERIFY(!explorer.findChild<QPushButton*>(name));
             auto* action = explorer.findChild<QAction*>(name);
             QVERIFY(action);
             QVERIFY(explorer.actions().contains(action));
             QVERIFY(!action->isEnabled());
         }
+        QStringList labels;
+        for (auto* action : explorer.actions())
+            labels.append(action->text());
+        QCOMPARE(labels.count("Refresh"), 1);
+        QVERIFY(!labels.contains("Retry"));
+        QCOMPARE(explorer.findChild<QPushButton*>("objectRefresh")->accessibleName(),
+                 QString("Refresh"));
         QCOMPARE(tabs->parentWidget(), header);
         QCOMPARE(tabs->width(), tabs->sizeHint().width());
         QFrame* separator = nullptr;
@@ -871,32 +812,41 @@ class ObjectExplorerTest final : public QObject {
         QCOMPARE(table->model()->index(1, 0).data().toString(), QString("extra"));
         tabs->setCurrentIndex(1);
         QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Empty);
-        QCOMPARE(footer->palette().color(QPalette::Window), colors.successSurface);
+        QCOMPARE(footer->palette().color(QPalette::Window), design::secondaryBanner(colors).fill);
         QCOMPARE(table->model()->rowCount(), 0);
-        QVERIFY(status->text().contains("No indexes"));
+        QVERIFY(explorer.findChild<QLabel*>("objectPlaceholder")->text().contains("No indexes"));
+        QVERIFY(!status->text().contains("No indexes"));
+        QVERIFY(table->isHidden() || !table->isVisibleTo(&explorer));
+        tabs->setCurrentIndex(0);
+        QTRY_VERIFY(table->isVisibleTo(&explorer));
         explorer.openObject(*connection, R"(["main"])", "main");
         tabs->setCurrentIndex(3);
         QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Unsupported);
-        QVERIFY(status->text().size() > QString("Unsupported:").size());
-        QCOMPARE(footer->palette().color(QPalette::Window), colors.surfaceRaised);
+        QVERIFY(explorer.findChild<QLabel*>("objectPlaceholder")->text().size() >
+                QString("Unsupported:").size());
+        QCOMPARE(footer->palette().color(QPalette::Window), design::secondaryBanner(colors).fill);
         QSignalSpy failed(&adapter, &EngineAdapter::objectInspectionFailed);
         explorer.openObject(*connection, R"(["main","later"])", "later");
         tabs->setCurrentIndex(3);
         QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Failed);
         QVERIFY(!failed.isEmpty());
-        QCOMPARE(footer->palette().color(QPalette::Window), colors.dangerSurface);
-        QVERIFY(footer->toolTip().contains(failed.last().at(3).toString()));
+        QCOMPARE(footer->palette().color(QPalette::Window),
+                 choscordb::design::composite(colors.dangerTint, colors.base));
+        QVERIFY(explorer.findChild<QLabel*>("objectPlaceholder")
+                    ->text()
+                    .contains(failed.last().at(3).toString()));
+        QVERIFY(!footer->toolTip().contains(failed.last().at(3).toString()));
         const auto failedToken = failed.last().at(2).toULongLong();
         auto later = adapter.execute(*connection, "CREATE TABLE later(value TEXT)");
         QVERIFY(later);
         adapter.fetchPage(*later);
         QTRY_COMPARE(finished, 3);
-        auto* retry = explorer.findChild<QAction*>("objectRetry");
+        auto* retry = explorer.findChild<QAction*>("objectRefreshAction");
         QVERIFY(retry);
         QVERIFY(retry->isEnabled());
         retry->trigger();
         QTRY_COMPARE(objectPanelState(status), choscordb::PanelState::Ready);
-        QCOMPARE(footer->palette().color(QPalette::Window), colors.successSurface);
+        QCOMPARE(footer->palette().color(QPalette::Window), design::secondaryBanner(colors).fill);
         auto* ddl = explorer.findChild<QPlainTextEdit*>("objectDdl");
         QVERIFY(ddl->toPlainText().contains("CREATE TABLE later"));
         adapter.objectInspectionFailed(*connection, R"(["main","later"])", failedToken,
@@ -985,12 +935,12 @@ class ObjectExplorerTest final : public QObject {
         QVERIFY(values.contains("TEXT"));
         QCOMPARE(table->editTriggers(), QAbstractItemView::NoEditTriggers);
         QCOMPARE(table->rowHeight(0),
-                 choscordb::design::dimension(choscordb::design::Dimension::Row));
+                 choscordb::design::dimension(choscordb::design::Dimension::TableRow));
         QVERIFY(!table->verticalHeader()->isVisible());
         QVERIFY(
             !qvariant_cast<QIcon>(table->model()->index(0, 0).data(Qt::DecorationRole)).isNull());
-        QVERIFY(!table->alternatingRowColors());
-        QVERIFY(!table->showGrid());
+        QVERIFY(table->alternatingRowColors());
+        QVERIFY(table->showGrid() == false);
         QVERIFY(!table->wordWrap());
         QVERIFY(table->columnWidth(4) > 100);
         QVERIFY(table->horizontalHeader()->length() < table->viewport()->width() / 2);

@@ -7,6 +7,8 @@
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/field/field.h"
+#include "design_system/spinner/spinner.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -95,6 +97,14 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     navigator->populateContextMenu(&renameMenu, table);
     auto* rename = renameMenu.findChild<QAction*>("renameObject");
     QVERIFY(rename && rename->isEnabled());
+    auto* dropCommand = renameMenu.findChild<QAction*>("dropObject");
+    QVERIFY(dropCommand);
+    QCOMPARE(rename->text(), QString("Rename…"));
+    QCOMPARE(dropCommand->text(), QString("Drop…"));
+    const auto menuActions = renameMenu.actions();
+    const auto dropAt = menuActions.indexOf(dropCommand);
+    QVERIFY(menuActions.indexOf(rename) < dropAt);
+    QVERIFY(dropAt > 0 && menuActions.at(dropAt - 1)->isSeparator());
     workspace->setExternalWork(true);
     rename->trigger();
     QCOMPARE(finished, settledFinished);
@@ -131,15 +141,19 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
         auto* name = dialog->findChild<QLineEdit*>("renameObjectName");
         auto* preview = dialog->findChild<QPlainTextEdit*>("renameObjectSql");
         auto* confirm = dialog->findChild<QPushButton*>("renameObjectConfirm");
-        if (name && preview && confirm) {
-            const auto initial =
-                name->text() == QStringLiteral("old.name") && !confirm->isEnabled();
+        auto* validation = static_cast<choscordb::design::FieldValidation*>(
+            dialog->findChild<QWidget*>("renameObjectValidation"));
+        if (name && preview && confirm && validation) {
+            const auto unchanged = name->text() == QStringLiteral("old.name");
+            confirm->click();
+            const auto initial = unchanged && confirm->isEnabled() && dialog->isVisible() &&
+                                 !validation->error().isEmpty();
             name->setText("new.name");
             renameDialogChecked = initial &&
                                   preview->toPlainText() ==
                                       QStringLiteral("ALTER TABLE \"main\".\"old.name\" RENAME TO "
                                                      "\"new.name\";") &&
-                                  confirm->isEnabled();
+                                  validation->error().isEmpty();
             if (renameDialogChecked) {
                 confirm->click();
                 return;
@@ -155,7 +169,7 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QTRY_VERIFY(finished > settledFinished);
     QTRY_VERIFY(!refreshRequested.isEmpty());
     auto* objectsBusy = window.findChild<QWidget*>("sidebarObjectsSection")
-                            ->findChild<QLabel*>("sidebarSectionBusy");
+                            ->findChild<choscordb::design::Spinner*>("sidebarSectionBusy");
     QVERIFY(objectsBusy && objectsBusy->isVisible());
     QVERIFY(!toast->accessibleDescription().contains("new.name"));
     connect(model, &NavigatorModel::childrenRequested, adapter, &EngineAdapter::loadMetadata);
@@ -167,6 +181,7 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     QTRY_COMPARE(model->index(0, 0, group).data().toString(), QString("new.name"));
     QTRY_VERIFY(toast->accessibleDescription().contains("new.name"));
     QVERIFY(!toast->accessibleDescription().contains("Refreshing"));
+    QVERIFY(toast->text().contains("Object renamed"));
     QCOMPARE(tabs->count(), 3);
     QCOMPARE(tabs->tabText(tabs->indexOf(object)), QString("new.name"));
     QCOMPARE(tabs->tabText(tabs->indexOf(secondObject)), QString("new.name"));

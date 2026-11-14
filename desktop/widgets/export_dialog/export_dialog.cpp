@@ -18,6 +18,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -31,23 +32,17 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), format_(new QComboBox(this)),
       dialect_(new QComboBox(this)), destination_(new QLineEdit(this)),
       schema_(new QLineEdit(this)), table_(new QLineEdit(this)), sqlFields_(new QWidget(this)),
-      browse_(new design::Button(tr("&Browse…"), this)),
-      start_(new design::Button(tr("&Export"), this)),
-      cancel_(new design::Button(tr("Cancel export"), this)), scope_(createDescription({}, this)) {
+      browse_(new design::Button(tr("Browse…"), this)), scope_(createDescription({}, this)) {
     browse_->setVariant(design::ButtonVariant::Outline);
-    start_->setDesignIcon(design::Icon::Export);
-    cancel_->setVariant(design::ButtonVariant::Secondary);
     setObjectName("exportDialog");
     setWindowTitle(tr("Export results"));
     setAppModal();
-    resize(design::dialogInitialSize(design::DialogSize::Export));
+    resize(design::dialogInitialSize(design::DialogSize::Form));
     format_->setObjectName("exportFormat");
     destination_->setObjectName("exportDestination");
     schema_->setObjectName("exportSchema");
     table_->setObjectName("exportTable");
     dialect_->setObjectName("exportDialect");
-    start_->setObjectName("exportStart");
-    cancel_->setObjectName("exportCancel");
     format_->addItem(tr("CSV"), "csv");
     format_->addItem(tr("JSON"), "json");
     format_->addItem(tr("JSON Lines"), "jsonl");
@@ -55,27 +50,6 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     dialect_->addItem(tr("SQLite"), "sqlite");
     dialect_->addItem(tr("PostgreSQL"), "postgres");
     dialect_->addItem(tr("MySQL"), "mysql");
-    schema_->setPlaceholderText(tr("Optional"));
-    table_->setToolTip(tr("One literal identifier; dots are not separators."));
-    schema_->setToolTip(table_->toolTip());
-    auto* destinationRow = new QHBoxLayout;
-    destinationValidation_ = new design::FieldValidation(destination_, this);
-    destinationRow->addWidget(destinationValidation_, 1);
-    destinationRow->addWidget(browse_, 0, Qt::AlignTop);
-    auto* form = new QFormLayout;
-    form->setRowWrapPolicy(QFormLayout::WrapLongRows);
-    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    formatValidation_ = new design::FieldValidation(format_, this);
-    form->addRow(tr("&Format:"), formatValidation_);
-    auto* destinationLabel = new QLabel(tr("&Destination:"), this);
-    destinationLabel->setBuddy(destination_);
-    form->addRow(destinationLabel, destinationRow);
-    auto* sqlForm = new QFormLayout(sqlFields_);
-    sqlForm->setContentsMargins(0, 0, 0, 0);
-    sqlForm->addRow(tr("SQL &dialect:"), dialect_);
-    sqlForm->addRow(tr("&Schema:"), schema_);
-    tableValidation_ = new design::FieldValidation(table_, this);
-    sqlForm->addRow(tr("&Table:"), tableValidation_);
     auto* sections = createSections();
     auto* headerLayout = sections->headerLayout();
     auto* header = headerLayout->parentWidget();
@@ -89,30 +63,41 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     auto* body = bodyLayout->parentWidget();
     body->setProperty("designSurface", "panel");
     body->setAttribute(Qt::WA_StyledBackground);
-    bodyLayout->setSpacing(design::spacing(design::Spacing::Two));
     bodyLayout->addWidget(scope_);
     setResultViewActive(false);
-    bodyLayout->addLayout(form);
+    auto* destinationRow = new QWidget(this);
+    auto* destinationLayout = new QHBoxLayout(destinationRow);
+    destinationLayout->setContentsMargins(0, 0, 0, 0);
+    destinationLayout->setSpacing(design::spacing(design::Spacing::Two));
+    destinationValidation_ = new design::FieldValidation(destination_, destinationRow);
+    destinationLayout->addWidget(destinationValidation_, 1);
+    destinationLayout->addWidget(browse_, 0, Qt::AlignTop);
+    browse_->setParent(destinationRow);
+    auto* form = sections->addForm();
+    formatValidation_ = new design::FieldValidation(format_, this);
+    sections->addFormRow(form, tr("Format"), formatValidation_);
+    sections->addFormRow(form, tr("Destination"), destinationRow);
+    auto* sqlLayout = new QVBoxLayout(sqlFields_);
+    sqlLayout->setContentsMargins(0, 0, 0, 0);
+    auto* sqlForm = sections->addForm(sqlLayout);
+    sections->addFormRow(sqlForm, tr("SQL dialect"), dialect_);
+    sections->addFormRow(sqlForm, tr("Schema"), schema_, design::FieldNeed::Optional);
+    tableValidation_ = new design::FieldValidation(table_, this);
+    sections->addFormRow(sqlForm, tr("Table"), tableValidation_);
+    auto* identifierHelp = createDescription(
+        tr("The schema and the table are each one identifier. A dot is part of the name."),
+        sqlFields_);
+    identifierHelp->setObjectName("exportIdentifierHelp");
+    sqlForm->addRow(QString(), identifierHelp);
     bodyLayout->addWidget(sqlFields_);
-    bodyLayout->addStretch();
-    statusLine_ = new design::StatusLine(this);
+    statusLine_ = sections->addStatusLine();
     statusLine_->setObjectName("exportStatusLine");
     status_ = statusLine_->findChild<QLabel*>("statusMessage");
     status_->setObjectName("exportStatus");
-    status_->setWordWrap(true);
-    status_->setTextFormat(Qt::PlainText);
-    status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-    statusLine_->hide();
-    bodyLayout->addWidget(statusLine_);
-    auto* buttons = sections->footerLayout();
-    auto* footer = buttons->parentWidget();
-    buttons->addStretch();
-    auto* close = new design::Button(tr("Close"), footer);
-    close->setObjectName("exportClose");
-    close->setVariant(design::ButtonVariant::Outline);
-    buttons->addWidget(close);
-    buttons->addWidget(cancel_);
-    buttons->addWidget(start_);
+    cancel_ = sections->addAction(design::DialogActionRole::Dismiss, tr("Cancel"));
+    cancel_->setObjectName("exportCancel");
+    start_ = sections->addAction(design::DialogActionRole::Primary, tr("Export"));
+    start_->setObjectName("exportStart");
     connect(format_, &QComboBox::currentIndexChanged, this, &ExportDialog::updateActions);
     connect(format_, &QComboBox::currentIndexChanged, this,
             [this] { formatValidation_->setError({}); });
@@ -122,8 +107,7 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     connect(table_, &QLineEdit::textChanged, this, &ExportDialog::updateActions);
     connect(table_, &QLineEdit::textChanged, this, [this] { tableValidation_->setError({}); });
     connect(start_, &QPushButton::clicked, this, &ExportDialog::start);
-    connect(cancel_, &QPushButton::clicked, this, &ExportDialog::cancel);
-    connect(close, &QPushButton::clicked, this, &ExportDialog::reject);
+    connect(cancel_, &QPushButton::clicked, this, &ExportDialog::reject);
     connect(browse_, &QPushButton::clicked, this, [this] {
         const auto path =
             QFileDialog::getSaveFileName(this, tr("Export destination"), destination_->text(), {},
@@ -180,9 +164,8 @@ void ExportDialog::updateActions() {
     format_->setEnabled(!running);
     destination_->setEnabled(!running);
     browse_->setEnabled(!running);
-    start_->setEnabled(adapter_ && query_ && !running && !destination_->text().isEmpty() &&
-                       (!sql || !table_->text().isEmpty()));
-    cancel_->setEnabled(running && state_ != ExportState::Cancelling);
+    start_->setEnabled(adapter_ && query_ && !running);
+    cancel_->setEnabled(state_ != ExportState::Cancelling);
 }
 void ExportDialog::start() {
     QStringList table;
@@ -216,7 +199,7 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
     apply(ExportEvent::Submit, tr("Checking destination…"));
     if (state_ != ExportState::Submitting)
         return;
-    start_->setText(tr("&Export"));
+    start_->setText(tr("Export"));
     updateActions();
     emit exportRunningChanged(true);
     if (!adapter_ || query_ != query || submissionToken_ != token)
@@ -236,17 +219,14 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
                 return;
             }
             if (result.exists) {
-                ConfirmationDialog confirmation(
-                    QMessageBox::Question, tr("Replace destination?"),
+                const bool replace = ConfirmationDialog::confirm(
+                    this, tr("Replace destination"),
                     tr("Replace the existing file after export completes?\n%1").arg(path),
-                    QMessageBox::Yes | QMessageBox::No, this);
-                confirmation.setTextFormat(Qt::PlainText);
-                confirmation.setDefaultButton(QMessageBox::No);
-                const auto answer = confirmation.exec();
+                    tr("Replace"), ConfirmationDialog::Consequence::Destructive);
                 if (!adapter_ || query_ != query || submissionToken_ != token ||
                     state_ != ExportState::Submitting)
                     return;
-                if (answer != QMessageBox::Yes) {
+                if (!replace) {
                     apply(ExportEvent::Cancel);
                     settle(ExportEvent::CancelSettled, tr("Export cancelled."));
                     return;
@@ -264,7 +244,7 @@ void ExportDialog::startExportToDialect(const QString& path, const QString& form
             exportQuery_ = started ? std::optional<quint64>(query) : std::nullopt;
             if (!export_) {
                 settle(ExportEvent::Fail, submissionError_.isEmpty()
-                                              ? tr("Export could not be started.")
+                                              ? tr("Could not start the export.")
                                               : submissionError_);
                 return;
             }
@@ -297,14 +277,15 @@ void ExportDialog::handleEvent(const BridgeEvent& value) {
     const auto kind = fromRust(value.kind);
     if (kind == "export_progress") {
         if (state_ == ExportState::Running)
-            showState(tr("Exporting: %1 rows · %2 bytes")
-                          .arg(value.exported_rows)
-                          .arg(value.exported_bytes));
+            showState(tr("Exporting: %1 · %2")
+                          .arg(tr("%n row(s)", nullptr, int(value.exported_rows)),
+                               QLocale().formattedDataSize(qint64(value.exported_bytes))));
     } else if (kind == "export_finished") {
-        settle(ExportEvent::Finish, tr("Export complete: %1 rows · %2 bytes\n%3")
-                                        .arg(value.exported_rows)
-                                        .arg(value.exported_bytes)
-                                        .arg(destination_->text()));
+        settle(ExportEvent::Finish,
+               tr("%1 · %2 saved to %3")
+                   .arg(tr("%n row(s)", nullptr, int(value.exported_rows)),
+                        QLocale().formattedDataSize(qint64(value.exported_bytes)),
+                        destination_->text()));
     } else if (kind == "export_failed") {
         if (fromRust(value.error_kind) == "Cancelled") {
             if (state_ != ExportState::Cancelling)
@@ -339,16 +320,16 @@ void ExportDialog::settle(ExportEvent event, const QString& detail) {
     exportQuery_.reset();
     if (!apply(event, detail))
         apply(ExportEvent::Fail, EngineAdapter::exportTransition(state_, event).error);
-    auto* toast = state_ == ExportState::Succeeded ? windowToast(this) : nullptr;
-    if (toast) {
-        toast->showToast(tr("Success"), EngineAdapter::exportPresentation(state_, detail).message,
-                         ToastVariant::Success);
-        statusLine_->setMessage({});
-        statusLine_->hide();
-    }
     submissionError_.clear();
-    start_->setText(state_ == ExportState::Failed ? tr("&Retry") : tr("&Export"));
+    start_->setText(state_ == ExportState::Failed ? tr("Retry") : tr("Export"));
     updateActions();
+    if (state_ == ExportState::Succeeded) {
+        statusLine_->clearReport();
+        closeAfter_ = false;
+        emit exportRunningChanged(false);
+        closeWithSuccess(tr("Export complete"), detail);
+        return;
+    }
     if (closeAfter_) {
         closeAfter_ = false;
         if (state_ != ExportState::Failed)
@@ -370,7 +351,7 @@ void ExportDialog::reject() {
         closeAfter_ = true;
         cancel();
     } else {
-        QDialog::reject();
+        DialogShell::reject();
     }
 }
 }

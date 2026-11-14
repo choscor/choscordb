@@ -7,6 +7,7 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
 #include "design_system/toast_region/toast_region.h"
@@ -228,7 +229,7 @@ void WorkspaceTest::formErrorsAppearBelowTheRelevantFields() {
     auto* name = profile.findChild<QLineEdit*>("profileName");
     auto* nameValidation = dynamic_cast<choscordb::design::FieldValidation*>(name->parentWidget());
     QVERIFY(nameValidation);
-    QVERIFY(nameValidation->error().contains("profile name"));
+    QVERIFY(nameValidation->error().contains("connection name"));
     name->setText("Valid name");
     QCOMPARE(nameValidation->error(), QString());
 
@@ -419,7 +420,7 @@ void WorkspaceTest::connectionPanelRetainsFailedSaveConnectDraftAndRetries() {
     auto* completion =
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(completion && completion->isVisible());
-    QVERIFY(completion->text().contains("Profile saved."));
+    QVERIFY(completion->text().contains("Connection saved."));
     completion->findChild<QAbstractButton*>("toastDismiss")->click();
     QTRY_VERIFY(completion->text().contains("Connected."));
 }
@@ -566,7 +567,7 @@ void WorkspaceTest::transactionCloseRequiresExplicitChoice() {
             if (!box || !box->isVisible())
                 continue;
             for (auto* button : box->buttons()) {
-                if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                if (destructiveConfirmation(button)) {
                     approved = true;
                     approveTimer.stop();
                     button->click();
@@ -677,7 +678,7 @@ void WorkspaceTest::mainWindowHistoryRecordsOpensDisablesAndFlushes() {
     QTimer::singleShot(0, &window, [] {
         for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget))
-                box->button(QMessageBox::Yes)->click();
+                confirmationAction(box)->click();
     });
     history->findChild<QPushButton*>("clearHistory")->click();
     QTRY_COMPARE(model->rowCount(), 0);
@@ -739,7 +740,7 @@ void WorkspaceTest::cancelledUpdateDoesNotInstallOnLaterNormalClose() {
                     return;
                 }
                 for (auto* button : box->buttons())
-                    if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                    if (destructiveConfirmation(button)) {
                         chooser.stop();
                         button->click();
                         return;
@@ -796,7 +797,7 @@ void WorkspaceTest::closingActiveQueryFlushesDisconnectedHistory() {
         for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget))
                 for (auto* button : box->buttons())
-                    if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                    if (destructiveConfirmation(button)) {
                         confirmed = true;
                         chooser.stop();
                         button->click();

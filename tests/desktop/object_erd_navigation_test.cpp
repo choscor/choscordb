@@ -53,7 +53,8 @@ class ObjectErdNavigationTest final : public QObject {
         QVERIFY(status->toolTip().contains("missing"));
         auto* footer = explorer.findChild<QWidget*>("objectFooter");
         QCOMPARE(footer->palette().color(QPalette::Window),
-                 design::resolvedThemeForWidget(explorer).colors.surfaceRaised);
+                 choscordb::design::secondaryBanner(design::resolvedThemeForWidget(explorer).colors)
+                     .fill);
         QCOMPARE(erd->graph().edges.size(), 1);
         QCOMPARE(erd->graph().tables.size(), 2);
     }
@@ -140,7 +141,42 @@ class ObjectErdNavigationTest final : public QObject {
         QVERIFY(qAbs(erd.zoomFactor() - initialScale) < 0.001);
         QVERIFY(QLineF(sceneAtAnchor, view->mapToScene(anchor)).length() < 3);
     }
-    void erdHasNoControlRowAndTrackpadGesturesPanOrZoom() {
+    void erdShowsZoomControlsAndTheirKeys() {
+        ObjectErdWidget erd;
+        erd.resize(640, 400);
+        erd.show();
+        ObjectGraph graph;
+        graph.tables.append({"center", "main.center", {{"id", "INTEGER", true, false}}});
+        graph.tables.append({"child", "main.child", {{"center_id", "INTEGER", false, true}}});
+        graph.edges.append({"fk", "child", "center", {"center_id"}, {"id"}});
+        erd.setGraph(graph, "center");
+        QCoreApplication::processEvents();
+        auto* zoomIn = erd.findChild<QPushButton*>("objectErdZoomIn");
+        auto* zoomOut = erd.findChild<QPushButton*>("objectErdZoomOut");
+        auto* fit = erd.findChild<QPushButton*>("objectErdFit");
+        auto* level = erd.findChild<QLabel*>("objectErdZoomLevel");
+        QVERIFY(zoomIn && zoomOut && fit && level);
+        QCOMPARE(zoomIn->accessibleName(), QString("Zoom in"));
+        QCOMPARE(zoomOut->accessibleName(), QString("Zoom out"));
+        QCOMPARE(level->text(), QString("%1%").arg(qRound(erd.zoomFactor() * 100)));
+        const auto before = erd.zoomFactor();
+        zoomIn->click();
+        QVERIFY(erd.zoomFactor() > before);
+        QCOMPARE(level->text(), QString("%1%").arg(qRound(erd.zoomFactor() * 100)));
+        zoomOut->click();
+        zoomOut->click();
+        QVERIFY(erd.zoomFactor() < before);
+        fit->click();
+        QCOMPARE(level->text(), QString("%1%").arg(qRound(erd.zoomFactor() * 100)));
+        auto* hints = erd.findChild<QWidget*>("objectErdKeyHints");
+        QVERIFY(hints && hints->isVisible());
+        QStringList keys;
+        for (auto* label : hints->findChildren<QLabel*>())
+            if (label->property("designRole").toString() == "kbd")
+                keys << label->text();
+        QCOMPARE(keys, QStringList({"+", "-", "0"}));
+    }
+    void erdTrackpadGesturesPanOrZoom() {
         ObjectErdWidget erd;
         erd.resize(440, 300);
         erd.show();
@@ -159,9 +195,6 @@ class ObjectErdNavigationTest final : public QObject {
         auto* view = erd.findChild<QGraphicsView*>("objectErdView");
         QVERIFY(view);
         QCOMPARE(view->geometry().top(), 0);
-        QVERIFY(!erd.findChild<QPushButton*>("objectErdZoomIn"));
-        QVERIFY(!erd.findChild<QPushButton*>("objectErdZoomOut"));
-        QVERIFY(!erd.findChild<QPushButton*>("objectErdFit"));
         const QPoint anchor(130, 90);
         const auto atAnchor = view->mapToScene(anchor);
         const auto before = erd.zoomFactor();
@@ -217,6 +250,46 @@ class ObjectErdNavigationTest final : public QObject {
         QVERIFY(erd.zoomFactor() > overviewScale);
         QCoreApplication::sendEvent(view->viewport(), &pinchOut);
         QVERIFY(qAbs(erd.zoomFactor() - overviewScale) < 0.001);
+    }
+    void erdTableBoxShowsHoverPressedAndSelectedLooks() {
+        ObjectErdWidget erd;
+        erd.resize(640, 400);
+        erd.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&erd));
+        ObjectGraph graph;
+        graph.tables.append({"center", "main.center", {{"id", "INTEGER", true, false}}});
+        graph.tables.append({"other", "main.other", {{"center_id", "INTEGER", false, true}}});
+        graph.edges.append({"fk", "other", "center", {"center_id"}, {"id"}});
+        erd.setGraph(graph, "center");
+        QCoreApplication::processEvents();
+        auto* view = erd.findChild<QGraphicsView*>("objectErdView");
+        QGraphicsRectItem* other = nullptr;
+        for (auto* item : view->scene()->items())
+            if (auto* box = dynamic_cast<QGraphicsRectItem*>(item);
+                box && box->data(0).toString() == "other")
+                other = box;
+        QVERIFY(other);
+        QCOMPARE(other->cursor().shape(), Qt::PointingHandCursor);
+        const auto inside = other->rect().topLeft() + QPointF(3, 3);
+        const QPoint probe = view->mapFromScene(inside);
+        const auto colors = design::resolvedThemeForWidget(erd).colors;
+        const auto fill = [view, probe] {
+            const auto image = view->viewport()->grab().toImage();
+            return image.pixelColor(probe * image.devicePixelRatio());
+        };
+        QTest::mouseMove(view->viewport(), QPoint(1, 1));
+        QTRY_COMPARE(fill(), colors.elevated);
+        QTest::mouseMove(view->viewport(), probe);
+        QTRY_COMPARE(fill(), design::composite(colors.tint, colors.elevated));
+        QTest::mousePress(view->viewport(), Qt::LeftButton, {}, probe);
+        QTRY_COMPARE(fill(), design::composite(colors.fill, colors.elevated));
+        QTest::mouseRelease(view->viewport(), Qt::LeftButton, {}, probe);
+        QTest::mouseMove(view->viewport(), QPoint(1, 1));
+        QTRY_COMPARE(fill(), colors.elevated);
+        view->setFocus();
+        QTest::keyClick(view, Qt::Key_Right);
+        QVERIFY(other->isSelected());
+        QTRY_COMPARE(fill(), colors.tint);
     }
     void erdDenseGraphKeepsBoxesReadableAndStable() {
         ObjectErdWidget erd;

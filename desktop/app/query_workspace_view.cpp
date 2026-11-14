@@ -2,16 +2,20 @@
 #include "app/query_workspace_p.h"
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/menu/menu.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/table/table_style.h"
 #include "widgets/screen_state/screen_state.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QBoxLayout>
+#include <QClipboard>
 #include <QFutureWatcher>
+#include <QGuiApplication>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMenu>
 #include <QPlainTextEdit>
+#include <QStackedWidget>
 #include <QStyle>
 #include <QTableView>
 #include <QVariantMap>
@@ -44,13 +48,13 @@ bool QueryWorkspace::quickFilterAvailable(const QPersistentModelIndex& clicked) 
 void QueryWorkspace::appendQuickFilterActions(QMenu& menu, const QPersistentModelIndex& clicked) {
     if (!filterBar_)
         return;
-    auto* quick = menu.addMenu(tr("Quick Filter"));
+    auto* quick = menu.addMenu(tr("Quick filter"));
     quick->setObjectName("resultQuickFilter");
     quick->setToolTipsVisible(true);
     if (!quickFilterAvailable(clicked)) {
         quick->menuAction()->setEnabled(false);
         quick->menuAction()->setToolTip(
-            tr("Quick Filter requires an available cell and an idle result."));
+            tr("Quick filter requires an available cell and an idle result."));
         return;
     }
     const auto value = model_->cellValue(clicked);
@@ -137,38 +141,69 @@ void QueryWorkspace::requestCellMetadata() {
 }
 
 void QueryWorkspace::setupResultViewControls() {
-    widgets_.grid->horizontalHeader()->setSectionsClickable(widgets_.objectReadOnly);
-    if (widgets_.objectReadOnly) {
-        auto* resultParent = widgets_.grid->parentWidget();
-        filterBar_ = new ResultFilterBar(resultParent ? resultParent : widgets_.grid);
-        if (auto* layout =
-                resultParent ? qobject_cast<QBoxLayout*>(resultParent->layout()) : nullptr) {
-            const int index = layout->indexOf(widgets_.grid);
-            if (index >= 0)
-                layout->insertWidget(index, filterBar_);
-        } else
-            filterBar_->hide();
-        connect(filterBar_, &ResultFilterBar::applyRequested, this,
-                [this](const QList<ResultFilterCondition>& filters) {
-                    requestResultView(filters, viewSortColumn_, viewSortDirection_);
-                });
-        connect(filterBar_, &ResultFilterBar::clearRequested, this,
-                [this] { requestResultView({}, viewSortColumn_, viewSortDirection_); });
-        connect(widgets_.grid->horizontalHeader(), &QHeaderView::sectionClicked, this,
-                [this](int column) {
-                    if (referenceFilterFailed_)
-                        return;
-                    QString direction = QStringLiteral("ascending");
-                    qint32 nextColumn = column;
-                    if (viewSortColumn_ == column && viewSortDirection_ == "ascending")
-                        direction = QStringLiteral("descending");
-                    else if (viewSortColumn_ == column && viewSortDirection_ == "descending") {
-                        nextColumn = -1;
-                        direction.clear();
-                    }
-                    requestResultView(viewFilters_, nextColumn, direction);
-                });
-    }
+    widgets_.grid->horizontalHeader()->setSectionsClickable(true);
+    QWidget* anchor = widgets_.grid;
+    for (auto* ancestor = anchor->parentWidget(); ancestor; ancestor = ancestor->parentWidget())
+        if (qobject_cast<QStackedWidget*>(ancestor)) {
+            anchor = ancestor;
+            break;
+        }
+    auto* resultParent = anchor->parentWidget();
+    filterBar_ = new ResultFilterBar(resultParent ? resultParent : widgets_.grid);
+    if (auto* layout = resultParent ? qobject_cast<QBoxLayout*>(resultParent->layout()) : nullptr) {
+        const int index = layout->indexOf(anchor);
+        if (index >= 0)
+            layout->insertWidget(index, filterBar_);
+    } else
+        filterBar_->hide();
+    connect(filterBar_, &ResultFilterBar::applyRequested, this,
+            [this](const QList<ResultFilterCondition>& filters) {
+                requestResultView(filters, viewSortColumn_, viewSortDirection_);
+            });
+    connect(filterBar_, &ResultFilterBar::clearRequested, this,
+            [this] { requestResultView({}, viewSortColumn_, viewSortDirection_); });
+    connect(widgets_.grid->horizontalHeader(), &QHeaderView::sectionClicked, this,
+            [this](int column) {
+                if (referenceFilterFailed_)
+                    return;
+                QString direction = QStringLiteral("ascending");
+                qint32 nextColumn = column;
+                if (viewSortColumn_ == column && viewSortDirection_ == "ascending")
+                    direction = QStringLiteral("descending");
+                else if (viewSortColumn_ == column && viewSortDirection_ == "descending") {
+                    nextColumn = -1;
+                    direction.clear();
+                }
+                requestResultView(viewFilters_, nextColumn, direction);
+            });
+    auto* header = widgets_.grid->horizontalHeader();
+    header->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(header, &QWidget::customContextMenuRequested, this, [this, header](const QPoint& at) {
+        const int column = header->logicalIndexAt(at);
+        if (column < 0 || !header->model())
+            return;
+        QMenu menu(header);
+        menu.setObjectName("resultHeaderMenu");
+        const bool sortable = !referenceFilterFailed_;
+        const auto addSort = [&](const QString& label, qint32 sortColumn, const QString& order) {
+            auto* action = menu.addAction(label);
+            action->setEnabled(sortable);
+            connect(action, &QAction::triggered, this, [this, sortColumn, order] {
+                requestResultView(viewFilters_, sortColumn, order);
+            });
+        };
+        addSort(tr("Sort ascending"), column, QStringLiteral("ascending"));
+        addSort(tr("Sort descending"), column, QStringLiteral("descending"));
+        addSort(tr("Clear sort"), -1, {});
+        menu.actions().constLast()->setEnabled(sortable && viewSortColumn_ >= 0);
+        menu.addSeparator();
+        const auto name = header->model()
+                              ->headerData(column, Qt::Horizontal, ResultTableModel::HeaderNameRole)
+                              .toString();
+        connect(menu.addAction(tr("Copy column name")), &QAction::triggered, this,
+                [name] { QGuiApplication::clipboard()->setText(name); });
+        design::execContextMenu(menu, header->viewport()->mapToGlobal(at));
+    });
 }
 
 EngineAdapter* QueryWorkspace::adapter() const {
@@ -334,7 +369,7 @@ void QueryWorkspace::clearViewState() {
 
 void QueryWorkspace::requestResultView(const QList<ResultFilterCondition>& filters,
                                        qint32 sortColumn, const QString& sortDirection) {
-    if (!widgets_.objectReadOnly || !query_ || !queryAvailable() || workInFlight() || stopping_)
+    if (!query_ || !queryAvailable() || workInFlight() || stopping_)
         return;
     const auto originalQuery = query_;
     const auto originalConnection = queryConnection_;
@@ -366,7 +401,7 @@ void QueryWorkspace::requestResultView(const QList<ResultFilterCondition>& filte
 
 void QueryWorkspace::submitResultView(const QList<ResultFilterCondition>& filters,
                                       qint32 sortColumn, const QString& sortDirection) {
-    if (!widgets_.objectReadOnly || !query_)
+    if (!query_)
         return;
     proposedViewFilters_ = filters;
     proposedFiltersFromDraft_ = filterBar_->draftMatches(filters);

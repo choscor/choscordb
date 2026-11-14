@@ -5,7 +5,6 @@
 class QAction;
 class QDockWidget;
 class QLabel;
-class QLineEdit;
 class QListWidget;
 class QMenu;
 class QPlainTextEdit;
@@ -17,6 +16,7 @@ class QTreeView;
 class QTreeWidget;
 class QWidget;
 namespace choscordb {
+class FilterField;
 class SidebarSection;
 namespace main_window_detail {
 class WorkspaceTabs;
@@ -45,15 +45,15 @@ struct MainWindow::Ui {
     SidebarSection* pinnedSection{};
     QTreeView* pinnedList{};
     design::Text* pinnedEmpty{};
-    QLineEdit* filter{};
+    FilterField* filter{};
     QTreeView* tree{};
     design::Text* objectsEmpty{};
     SidebarSection* objectSection{};
-    QLineEdit* savedSearch{};
+    FilterField* savedSearch{};
     SidebarSection* savedSection{};
     design::Text* savedStatus{};
     QTreeWidget* savedFiles{};
-    QLineEdit* historySearch{};
+    FilterField* historySearch{};
     SidebarSection* historySection{};
     design::Text* historyStatus{};
     QListWidget* historyItems{};
@@ -85,6 +85,7 @@ struct MainWindow::Ui {
     design::Button* nullResultCell{};
     design::Button* discardResultEdits{};
     design::Button* applyResultEdits{};
+    QLabel* resultEditReason{};
     QPlainTextEdit* messages{};
     QList<QAction*> searchActions{};
     ToastRegion* toast{};

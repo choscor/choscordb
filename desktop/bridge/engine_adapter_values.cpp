@@ -339,6 +339,9 @@ CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, Objects);
 CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, ObjectDetails);
 CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, Diagram);
 CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, QuickSearch);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, Connections);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, Welcome);
+CHOSCORDB_SAME_ENUMERATOR(PanelKind, PanelKindDto, ObjectSelection);
 CHOSCORDB_SAME_ENUMERATOR(PanelWork, PanelWorkDto, None);
 CHOSCORDB_SAME_ENUMERATOR(PanelWork, PanelWorkDto, Loading);
 CHOSCORDB_SAME_ENUMERATOR(PanelWork, PanelWorkDto, Clearing);
@@ -443,9 +446,11 @@ Presentation fromDto(const PresentationDto& dto) {
                        static_cast<ResultPane>(dto.pane),
                        static_cast<RowRetry>(dto.retry),
                        fromRust(dto.message),
-                       std::nullopt};
+                       std::nullopt,
+                       {}};
     if (dto.has_toast) {
         shown.toast = fromRust(dto.toast);
+        shown.toastTitle = fromRust(dto.toast_title);
         shown.toastTone = static_cast<ToastTone>(dto.toast_variant);
     }
     return shown;
@@ -497,7 +502,7 @@ PanelObservation EngineAdapter::panelObservation(PanelKind kind, const PanelFact
 }
 const Presentation& EngineAdapter::panelPresentation(PanelKind kind, PanelState state) {
     constexpr auto states = std::size_t(PanelState::Unsupported) + 1;
-    constexpr auto kinds = std::size_t(PanelKind::QuickSearch) + 1;
+    constexpr auto kinds = std::size_t(PanelKind::ObjectSelection) + 1;
     static const auto cache = [] {
         std::array<Presentation, states * kinds> loaded;
         for (std::size_t i = 0; i < loaded.size(); ++i)
@@ -595,6 +600,55 @@ const QString& EngineAdapter::recoveryHint(RecoveryHint hint) {
 int EngineAdapter::panelNoticeMs() {
     static const int milliseconds = int(panel_notice_milliseconds());
     return milliseconds;
+}
+int EngineAdapter::filterDelayMs() {
+    static const int milliseconds = int(filter_delay_milliseconds());
+    return milliseconds;
+}
+int EngineAdapter::layoutSaveDelayMs() {
+    static const int milliseconds = int(layout_save_delay_milliseconds());
+    return milliseconds;
+}
+int EngineAdapter::tabCountSampleMs() {
+    static const int milliseconds = int(tab_count_sample_milliseconds());
+    return milliseconds;
+}
+int EngineAdapter::pinRevealRetryMs() {
+    static const int milliseconds = int(pin_reveal_retry_milliseconds());
+    return milliseconds;
+}
+int EngineAdapter::recoverySaveDelayMs() {
+    static const int milliseconds = int(recovery_save_delay_milliseconds());
+    return milliseconds;
+}
+int EngineAdapter::completionDelayMs() {
+    static const int milliseconds = int(completion_delay_milliseconds());
+    return milliseconds;
+}
+int EngineAdapter::jsonMenuRetryMs() {
+    static const int milliseconds = int(json_menu_retry_milliseconds());
+    return milliseconds;
+}
+int EngineAdapter::trustValidityPollMs() {
+    static const int milliseconds = int(trust_validity_poll_milliseconds());
+    return milliseconds;
+}
+int EngineAdapter::signalCoalesceMs() {
+    static const int milliseconds = int(signal_coalesce_milliseconds());
+    return milliseconds;
+}
+
+int EngineAdapter::startupPollMs() {
+    static const int milliseconds = int(startup_poll_milliseconds());
+    return milliseconds;
+}
+quint32 EngineAdapter::historyPageRows() {
+    static const quint32 rows = history_page_rows();
+    return rows;
+}
+quint32 EngineAdapter::recentHistoryRows() {
+    static const quint32 rows = recent_history_rows();
+    return rows;
 }
 const NavigatorSearchBudget& EngineAdapter::navigatorSearchBudget() {
     static const NavigatorSearchBudget budget = [] {

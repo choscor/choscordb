@@ -53,7 +53,16 @@ void PreviewTest::panelStateSpecimenShowsEachPlaceholderInBothThemes() {
             auto* label = host->findChild<Text*>(placeholder);
             QVERIFY(label && label->isVisible());
             QCOMPARE(label->property("designRole").toString(), QString("description"));
-            QCOMPARE(label->foregroundRole(), QPalette::PlaceholderText);
+            QVERIFY(label->foregroundRole() != QPalette::PlaceholderText);
+            const auto colors = resolvedThemeForWidget(*label).colors;
+            QVERIFY(contrastRatio(colors.textSubtle, colors.base) >= 4.5);
+            QCOMPARE(label->palette().color(label->foregroundRole()), colors.textSubtle);
+            const auto capture = label->grab();
+            const auto image = capture.toImage();
+            const qreal scale = capture.devicePixelRatio();
+            const int middle = label->height() / 2;
+            QCOMPARE(image.pixelColor(QPoint(0, middle) * scale),
+                     image.pixelColor(QPoint(6, middle) * scale));
         }
         auto* failed = host->findChild<Text*>("previewPanelFailed");
         QVERIFY(failed && failed->isVisible());

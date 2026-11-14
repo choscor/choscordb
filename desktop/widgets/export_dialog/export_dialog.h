@@ -57,8 +57,8 @@ class ExportDialog final : public DialogShell {
     QLineEdit* table_;
     QWidget* sqlFields_;
     design::Button* browse_;
-    design::Button* start_;
-    design::Button* cancel_;
+    design::Button* start_ = nullptr;
+    design::Button* cancel_ = nullptr;
     QLabel* scope_;
     QLabel* status_;
     design::StatusLine* statusLine_;

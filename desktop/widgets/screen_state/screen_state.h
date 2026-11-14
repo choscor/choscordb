@@ -5,7 +5,6 @@
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/toast_region/toast_region.h"
-#include <QCoreApplication>
 
 namespace choscordb {
 
@@ -40,16 +39,13 @@ inline void showPresentationToast(QWidget* context, const Presentation& shown) {
         return;
     switch (shown.toastTone) {
     case ToastTone::Success:
-        toast->showToast(QCoreApplication::translate("ScreenState", "Success"), *shown.toast,
-                         ToastVariant::Success);
+        toast->showToast(shown.toastTitle, *shown.toast, ToastVariant::Success);
         return;
     case ToastTone::Warning:
-        toast->showToast(QCoreApplication::translate("ScreenState", "Warning"), *shown.toast,
-                         ToastVariant::Warning);
+        toast->showToast(shown.toastTitle, *shown.toast, ToastVariant::Warning);
         return;
     case ToastTone::Error:
-        toast->showToast(QCoreApplication::translate("ScreenState", "Error"), *shown.toast,
-                         ToastVariant::Danger);
+        toast->showToast(shown.toastTitle, *shown.toast, ToastVariant::Danger);
         return;
     }
 }

@@ -87,7 +87,7 @@ void NavigatorSqlWorkspaceTest::recoveryFailuresUsePersistentWindowToast() {
     QVERIFY(toast->geometry().right() <= window.width());
     QVERIFY(toast->geometry().bottom() <= window.height());
     QVERIFY(toast->geometry().right() > window.width() - 40);
-    QVERIFY(toast->geometry().bottom() > window.height() - 40);
+    QVERIFY(toast->geometry().bottom() > window.height() / 2);
     QTRY_VERIFY(recovery->isReady());
     QVERIFY(QMetaObject::invokeMethod(recovery, "errorOccurred", Qt::DirectConnection,
                                       Q_ARG(QString, QStringLiteral("save error 42")),
@@ -115,7 +115,9 @@ void NavigatorSqlWorkspaceTest::recoveryToastDismissalKeepsActionsAndLaterFailur
     QVERIFY(toast->accessibleDescription().startsWith(
         QStringLiteral("Could not save workspace for recovery.")));
     QVERIFY(toast->accessibleDescription().contains(QStringLiteral("autosave error 17")));
-    window.showToast(QStringLiteral("Another warning"), choscordb::ToastVariant::Warning);
+    window.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly)
+        ->showToast(QStringLiteral("Warning"), QStringLiteral("Another warning"),
+                    choscordb::ToastVariant::Warning);
     QVERIFY(toast->accessibleDescription().contains(QStringLiteral("autosave error 17")));
     QVERIFY(QMetaObject::invokeMethod(recovery, "persistenceSucceeded", Qt::DirectConnection));
     QVERIFY(toast->accessibleDescription().contains(QStringLiteral("Another warning")));
@@ -131,7 +133,9 @@ void NavigatorSqlWorkspaceTest::recoveryToastDismissalKeepsActionsAndLaterFailur
     QVERIFY(!window.findChild<QToolBar*>()->isEnabled());
     dismiss->click();
     QTRY_VERIFY(toast->isHidden());
-    window.showToast(QStringLiteral("After dismissal"), choscordb::ToastVariant::Warning);
+    window.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly)
+        ->showToast(QStringLiteral("Warning"), QStringLiteral("After dismissal"),
+                    choscordb::ToastVariant::Warning);
     QVERIFY(QMetaObject::invokeMethod(recovery, "persistenceSucceeded", Qt::DirectConnection));
     QVERIFY(toast->accessibleDescription().contains(QStringLiteral("After dismissal")));
     QVERIFY(QMetaObject::invokeMethod(recovery, "errorOccurred", Qt::DirectConnection,
@@ -187,7 +191,9 @@ void NavigatorSqlWorkspaceTest::startNewAfterRestoreFailureResolvesNotice() {
     auto* history = window.findChild<QLabel*>("historyPlaceholder");
     QVERIFY(history);
     QTRY_COMPARE(history->property("state").toString(), QString("error"));
-    window.showToast(QStringLiteral("Independent notice"), choscordb::ToastVariant::Warning);
+    window.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly)
+        ->showToast(QStringLiteral("Warning"), QStringLiteral("Independent notice"),
+                    choscordb::ToastVariant::Warning);
     QVERIFY(
         toast->accessibleDescription().startsWith(QStringLiteral("Could not restore workspace.")));
     startNew->trigger();
@@ -196,10 +202,9 @@ void NavigatorSqlWorkspaceTest::startNewAfterRestoreFailureResolvesNotice() {
     QVERIFY(toolbar->isEnabled());
     QTRY_VERIFY(
         !toast->accessibleDescription().startsWith(QStringLiteral("Could not restore workspace.")));
-    QTRY_VERIFY(toast->accessibleDescription().contains(
-        QStringLiteral("Could not load query history: Could not open local workspace storage.")));
-    toast->findChild<QAbstractButton*>("toastDismiss")->click();
     QTRY_VERIFY(toast->accessibleDescription().contains(QStringLiteral("Independent notice")));
+    QVERIFY(
+        !toast->accessibleDescription().contains(QStringLiteral("Could not load query history")));
 }
 
 void NavigatorSqlWorkspaceTest::rejectedRecoverySubmissionShowsBackendDetail() {
@@ -266,13 +271,13 @@ void NavigatorSqlWorkspaceTest::startNavigationPreservesDocumentsAndIndependentF
     window.reportError("Saved file could not open");
     auto* dialog = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog");
     QTRY_VERIFY(dialog && dialog->isVisible());
-    QCOMPARE(dialog->text(), QString("1 error:\n\n• Saved file could not open"));
+    QCOMPARE(dialog->text(), QString("1 error:\n• Saved file could not open"));
     dialog->reject();
     window.reportError("Second file could not open");
     QTRY_VERIFY(
         (dialog = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog")) &&
         dialog->isVisible());
-    QCOMPARE(dialog->text(), QString("1 error:\n\n• Second file could not open"));
+    QCOMPARE(dialog->text(), QString("1 error:\n• Second file could not open"));
     dialog->reject();
     QTRY_VERIFY(!window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog"));
     auto* blocker = new choscordb::ConfirmationDialog(QMessageBox::Information, "Busy", "Busy",
@@ -287,7 +292,7 @@ void NavigatorSqlWorkspaceTest::startNavigationPreservesDocumentsAndIndependentF
     QTRY_VERIFY(
         (dialog = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog")) &&
         dialog->isVisible());
-    QCOMPARE(dialog->text(), QString("1 error:\n\n• Third file could not open"));
+    QCOMPARE(dialog->text(), QString("1 error:\n• Third file could not open"));
     dialog->reject();
     delete blocker;
 }

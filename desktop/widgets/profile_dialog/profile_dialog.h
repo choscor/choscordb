@@ -7,10 +7,7 @@
 #include <QPointer>
 class QComboBox;
 class QFormLayout;
-class QGridLayout;
 class QLabel;
-class QDialog;
-class QHideEvent;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
@@ -20,8 +17,10 @@ namespace choscordb {
 class SshHostKeyDialog;
 class ToastRegion;
 namespace design {
+class DialogSections;
 class FieldValidation;
 class StatusLine;
+class Text;
 }
 class ProfileDialog final : public DialogShell {
     Q_OBJECT
@@ -32,25 +31,22 @@ class ProfileDialog final : public DialogShell {
     void manageProfile(const QString& id, const QString& action);
     void saveDraft(const SavedProfile& profile);
     void testDraft(const SavedProfile& profile);
+    [[nodiscard]] bool hasDraft() const override;
   signals:
     void connectionSubmitted(const choscordb::SavedProfile& profile, quint64 id, bool savedProfile);
     void openQueryRequested(quint64 connection);
 
-  protected:
-    void showEvent(QShowEvent* event) override;
-    void hideEvent(QHideEvent* event) override;
-
   private:
-    void createTrustControls(QFormLayout* form);
+    void createTrustControls();
     void inspectHostKeys();
     void updateTrustControls();
     bool stepTrust(ProfileTestEvent event, const QString& detail = {});
     QWidget* validated(QWidget* field);
     design::FieldValidation* validationFor(QWidget* field) const;
     void showFieldError(QWidget* field, const QString& message);
-    void createPrivateKeyControls(QFormLayout* form, QGridLayout* grid);
+    void createPrivateKeyControls();
     void updatePrivateKeyControls();
-    void createConnectionControls(QFormLayout* ssh, QGridLayout* grid);
+    void updateRowVisibility();
     void setSecurityDraft(const SavedProfile& profile);
     ProfileSecretDrafts secretDrafts() const;
     QWidget* fieldWidget(const QString& field) const;
@@ -89,9 +85,11 @@ class ProfileDialog final : public DialogShell {
     bool filling_ = false;
     QListWidget* list_;
     QWidget* form_;
-    QWidget* sqliteFields_;
-    QWidget* postgresFields_;
-    QWidget* sshFields_;
+    design::DialogSections* sections_ = nullptr;
+    design::Text* heading_ = nullptr;
+    QFormLayout* formLayout_ = nullptr;
+    QLabel* databaseHelp_ = nullptr;
+    QList<QWidget*> sqliteRows_, serverRows_, sshRows_;
     QLineEdit *name_, *path_, *host_, *database_, *user_, *password_;
     QComboBox *driver_, *sshAuthentication_;
     QCheckBox *readOnly_, *saveCredentials_;
@@ -102,18 +100,14 @@ class ProfileDialog final : public DialogShell {
     QLineEdit* tlsSecret_;
     QWidget* tlsSecretField_ = nullptr;
     QComboBox* sshIdentitySource_ = nullptr;
-    QLabel *sshIdentitySourceLabel_ = nullptr, *sshIdentityFileLabel_ = nullptr,
-           *sshSecretLabel_ = nullptr;
     SshPrivateKeyEditor* sshPrivateKey_ = nullptr;
+    QLabel* sshPrivateKeyHelp_ = nullptr;
     std::optional<SshPrivateKeyDraft> pendingPrivateKey_;
     QPushButton* inspectSshKeys_ = nullptr;
     quint64 trustToken_ = 0, trustRevision_ = 0;
     QString trustPath_;
     QPointer<SshHostKeyDialog> trustDialog_;
-    QLabel* status_;
     design::StatusLine* statusLine_;
-    QPointer<QDialog> progressDialog_;
-    QLabel* progressMessage_ = nullptr;
     QPointer<ToastRegion> feedbackToast_;
     QHash<QWidget*, design::FieldValidation*> validations_;
     design::FieldValidation* nameValidation_;

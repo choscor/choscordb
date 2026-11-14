@@ -1,5 +1,7 @@
 #include "design_system/button/button.h"
 #include "design_system/dialog_sections/dialog_sections.h"
+#include "design_system/spinner/spinner.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/theme.h"
 #include "dialog_sections_checks.h"
 #include "preview_test.h"
@@ -7,6 +9,7 @@
 #include "tools/preview/preview_window.h"
 #include <QCheckBox>
 #include <QDialog>
+#include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLineEdit>
@@ -38,11 +41,11 @@ void PreviewTest::dialogSectionsPreviewUsesRealComponentInBothThemes() {
         QTRY_VERIFY(dialog->isVisible());
         QCOMPARE(sections->geometry(), dialog->rect());
         QCOMPARE(sections->bodyLayout()->contentsMargins().left(),
-                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+                 choscordb::design::spacing(choscordb::design::Spacing::Six));
         QCOMPARE(sections->bodyLayout()->contentsMargins().right(),
-                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+                 choscordb::design::spacing(choscordb::design::Spacing::Six));
         QVERIFY(sections->headerLayout()->parentWidget()->height() < 66);
-        QVERIFY(sections->footerLayout()->parentWidget()->height() < 70);
+        QVERIFY(sections->findChild<QWidget*>("dialogSectionsFooter")->height() < 70);
         QVERIFY(sections->bodyLayout()->parentWidget()->height() > 0);
         auto* hostField = dialog->findChild<QLineEdit*>("previewProfileHost");
         auto* port = dialog->findChild<QSpinBox*>("previewProfilePort");
@@ -50,11 +53,18 @@ void PreviewTest::dialogSectionsPreviewUsesRealComponentInBothThemes() {
         auto* username = dialog->findChild<QLineEdit*>("previewProfileUsername");
         auto* password = dialog->findChild<QLineEdit*>("previewProfilePassword");
         QVERIFY(hostField && port && database && username && password);
-        const auto rowCenter = [](QWidget* control) { return control->geometry().center().y(); };
-        QVERIFY(qAbs(rowCenter(hostField) - rowCenter(port)) <= 4);
-        QVERIFY(qAbs(rowCenter(hostField) - rowCenter(database)) <= 4);
-        QVERIFY(qAbs(rowCenter(username) - rowCenter(password)) <= 4);
-        QVERIFY(port->width() < hostField->width());
+        auto* form = sections->findChild<QFormLayout*>();
+        QVERIFY(form);
+        for (QWidget* field : QList<QWidget*>{hostField, port, database, username, password}) {
+            auto* label = qobject_cast<QLabel*>(form->labelForField(field));
+            QVERIFY(label);
+            QCOMPARE(label->buddy(), field);
+            QVERIFY(label->geometry().right() < field->geometry().left());
+            QVERIFY(qAbs(label->geometry().center().y() - field->geometry().center().y()) <= 2);
+            QCOMPARE(field->geometry().left(), hostField->geometry().left());
+        }
+        QCOMPARE(qobject_cast<QLabel*>(form->labelForField(database))->text(),
+                 QString("&Database (optional)"));
         QCOMPARE(password->echoMode(), QLineEdit::Password);
         auto* saveCredentials = dialog->findChild<QCheckBox*>("previewProfileSaveCredentials");
         QVERIFY(saveCredentials);
@@ -77,22 +87,25 @@ void PreviewTest::dialogSectionsHaveMutedPaddedFooterInBothThemes() {
         auto* sections = dialog->findChild<choscordb::design::DialogSections*>();
         QVERIFY(sections);
         const auto headerMargins = sections->headerLayout()->contentsMargins();
-        const auto footerMargins = sections->footerLayout()->contentsMargins();
-        QVERIFY(headerMargins.right() <= 8);
+        const auto footerMargins =
+            sections->findChild<QWidget*>("dialogSectionsFooter")->layout()->contentsMargins();
+        QCOMPARE(headerMargins.right(),
+                 choscordb::design::spacing(choscordb::design::Spacing::Six));
+        QCOMPARE(headerMargins.top(), headerMargins.bottom());
+        QCOMPARE(headerMargins.top(), choscordb::design::spacing(choscordb::design::Spacing::Four));
         QVERIFY(footerMargins.top() >= 10);
         QVERIFY(footerMargins.bottom() >= 10);
-        auto* footer = sections->footerLayout()->parentWidget();
+        auto* footer = sections->findChild<QWidget*>("dialogSectionsFooter");
         auto* body = sections->bodyLayout()->parentWidget();
-        const auto footerColor = footer->grab().toImage().pixelColor(20, footer->height() / 2);
+        const auto footerColor = footer->grab().toImage().pixelColor(20, footerMargins.top() / 2);
         const auto bodyColor = body->grab().toImage().pixelColor(20, body->height() - 10);
         QVERIFY(footerColor != bodyColor);
-        QCOMPARE(footerColor,
-                 choscordb::design::resolvedThemeForWidget(*footer).colors.surfaceRaised);
+        QCOMPARE(footerColor, choscordb::design::resolvedThemeForWidget(*footer).colors.elevated);
         dialog->reject();
     }
 }
 
-void PreviewTest::dialogSectionsHideEmptyFooterInBothThemes() {
+void PreviewTest::dialogSectionsShowBusyStateInTheStatusLineInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("dialog-sections"));
     window.show();
@@ -104,15 +117,17 @@ void PreviewTest::dialogSectionsHideEmptyFooterInBothThemes() {
         auto* sections =
             dialog->findChild<choscordb::design::DialogSections*>("previewDialogSectionsProgress");
         QVERIFY(sections);
-        QVERIFY(sections->findChild<QProgressBar*>());
+        QVERIFY(!sections->findChild<QProgressBar*>());
         open->click();
         QTRY_VERIFY(dialog->isVisible());
-        auto* separator = sections->findChild<QFrame*>("dialogSectionsFooterSeparator");
-        QVERIFY(separator);
-        QVERIFY(!sections->footerLayout()->parentWidget()->isVisible());
-        QVERIFY(!separator->isVisible());
-        QCOMPARE(sections->bodyLayout()->parentWidget()->geometry().bottom(),
-                 sections->rect().bottom());
+        auto* status =
+            sections->findChild<choscordb::design::StatusLine*>("previewDialogSectionsStatus");
+        QVERIFY(status && status->isVisible());
+        auto* spinner = status->findChild<choscordb::design::Spinner*>();
+        QVERIFY(spinner && spinner->isVisible());
+        auto* footer = sections->findChild<QWidget*>("dialogSectionsFooter");
+        QVERIFY(footer->isVisible());
+        QCOMPARE(footer->findChildren<choscordb::design::Button*>().size(), 1);
         dialog->reject();
     }
 }

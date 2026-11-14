@@ -1,25 +1,33 @@
+#include "app/appearance_controller.h"
 #include "app/main_window.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/menu/menu.h"
+#include "design_system/spinner/spinner.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "modern_ui_test.h"
+#include "widgets/filter_field/filter_field.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QContextMenuEvent>
 #include <QDialog>
+#include <QDockWidget>
+#include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QSignalSpy>
+#include <QStackedWidget>
 #include <QTabWidget>
+#include <QTableView>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTreeView>
@@ -39,7 +47,7 @@ void ModernUiTest::sidebarConnectionDoesNotColorUnavailableSqlTargetFooter() {
     QVERIFY(editor && workspace && theme && footer && profiles);
     editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.surfaceRaised);
+             choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
 
     choscordb::SavedProfile profile;
     profile.id = "sidebar-only";
@@ -54,44 +62,46 @@ void ModernUiTest::sidebarConnectionDoesNotColorUnavailableSqlTargetFooter() {
     QTRY_VERIFY(window.browsingConnection().has_value());
     QVERIFY(editor->connectionTarget() == quint64{0xF00D});
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.surfaceRaised);
+             choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     for (const auto mode :
          {choscordb::design::ThemeMode::Light, choscordb::design::ThemeMode::Dark}) {
         theme->setMode(mode);
         const auto colors = theme->resolvedTheme().colors;
-        QCOMPARE(footer->palette().color(QPalette::Window), colors.surfaceRaised);
-        QVERIFY(choscordb::design::contrastRatio(colors.fg, colors.surfaceRaised) >= 4.5);
+        QCOMPARE(footer->palette().color(QPalette::Window),
+                 choscordb::design::secondaryBanner(colors).fill);
+        QVERIFY(choscordb::design::contrastRatio(colors.textDefault, colors.elevated) >= 4.5);
         editor->setConnectionTarget(*window.browsingConnection(), "Sidebar Only");
-        QCOMPARE(footer->palette().color(QPalette::Window), colors.surfaceRaised);
-        QVERIFY(choscordb::design::contrastRatio(colors.fg, colors.surfaceRaised) >= 4.5);
+        QCOMPARE(footer->palette().color(QPalette::Window),
+                 choscordb::design::secondaryBanner(colors).fill);
+        QVERIFY(choscordb::design::contrastRatio(colors.textDefault, colors.elevated) >= 4.5);
         editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
     }
     const auto browsingId = *window.browsingConnection();
     editor->setConnectionTarget(browsingId, "Sidebar Only");
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.surfaceRaised);
+             choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     QVERIFY(workspace->adapter()->disconnectConnection(browsingId));
     QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                 theme->resolvedTheme().colors.surfaceRaised);
+                 choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     QSignalSpy reconnected(workspace, &choscordb::QueryWorkspace::connectionReady);
     workspace->connectSqlite(":memory:");
     QTRY_COMPARE(reconnected.count(), 1);
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.surfaceRaised);
+             choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     editor->setConnectionTarget(reconnected.at(0).at(0).toULongLong(), "Reconnected");
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.surfaceRaised);
+             choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     editor->setConnectionTarget(quint64{0xF00D}, "Unavailable target");
     theme->setForcedContrast(true);
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.surfaceRaised);
+             choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     QCOMPARE(footer->accessibleName(), QString("Status"));
     QVERIFY(!footer->accessibleDescription().isEmpty());
-    QVERIFY(choscordb::design::contrastRatio(theme->resolvedTheme().colors.fg,
+    QVERIFY(choscordb::design::contrastRatio(theme->resolvedTheme().colors.textDefault,
                                              footer->palette().color(QPalette::Window)) >= 4.5);
     editor->setConnectionTarget(reconnected.at(0).at(0).toULongLong(), "Reconnected");
     QCOMPARE(footer->palette().color(QPalette::Window),
-             theme->resolvedTheme().colors.surfaceRaised);
+             choscordb::design::secondaryBanner(theme->resolvedTheme().colors).fill);
     QCOMPARE(footer->accessibleName(), QString("Status"));
 }
 
@@ -359,10 +369,11 @@ void ModernUiTest::removedPendingSidebarOpenCannotRestoreItsRoot() {
     auto* filter = window.findChild<QLineEdit*>("navigatorFilter");
     auto* section = window.findChild<QWidget*>("sidebarObjectsSection");
     QVERIFY(section);
-    auto* busy = section->findChild<QLabel*>("sidebarSectionBusy");
+    auto* busy = section->findChild<choscordb::design::Spinner*>("sidebarSectionBusy");
     auto* toast = window.findChild<choscordb::ToastRegion*>("toastRegion");
     QVERIFY(workspace && profiles && tree && filter && busy && toast);
     QVERIFY(busy->isHidden());
+    QVERIFY(!filter->isEnabled());
     choscordb::SavedProfile alpha;
     alpha.id = "visible-session";
     alpha.name = "Alpha Visible Session";
@@ -381,14 +392,15 @@ void ModernUiTest::removedPendingSidebarOpenCannotRestoreItsRoot() {
     click(0);
     QTRY_COMPARE(opened.count(), 1);
     QVERIFY(busy->isHidden());
+    QVERIFY(filter->isEnabled());
     click(1);
     QCOMPARE(tree->model()->rowCount(), 2);
     QCOMPARE(tree->model()->index(1, 0).data(choscordb::NavigatorModel::StatusRole).toInt(),
              int(choscordb::RowStatusKind::Loading));
     filter->setText("needle");
-    QVERIFY(!busy->isHidden());
+    QTRY_VERIFY(!busy->isHidden());
     QCOMPARE(busy->accessibleName(), QString("Searching objects…"));
-    QVERIFY(busy->text().isEmpty());
+    QVERIFY(busy->isTurning());
     filter->clear();
     QVERIFY(busy->isHidden());
     QVERIFY(!toast->text().contains("Search", Qt::CaseInsensitive));
@@ -438,6 +450,11 @@ void ModernUiTest::savedConnectionMenuDuplicatesTheChosenProfileWithoutConnectin
     QCOMPARE(panel, event.globalPos());
     auto* duplicate = menu->findChild<QAction*>("duplicateSavedConnection");
     QVERIFY(duplicate);
+    auto* remove = menu->findChild<QAction*>("deleteSavedConnection");
+    QVERIFY(remove);
+    const auto removeAt = menu->actions().indexOf(remove);
+    QCOMPARE(removeAt, menu->actions().size() - 1);
+    QVERIFY(menu->actions().at(removeAt - 1)->isSeparator());
     duplicate->trigger();
     menu->close();
     QTRY_COMPARE(profiles->count(), 3);
@@ -447,4 +464,132 @@ void ModernUiTest::savedConnectionMenuDuplicatesTheChosenProfileWithoutConnectin
     QVERIFY(found);
     QCOMPARE(connected.count(), 0);
     window.findChild<QDialog*>("profileDialog")->reject();
+}
+
+void ModernUiTest::sidebarFiltersWaitForTypingAndHaveAClearButton() {
+    choscordb::MainWindow window;
+    window.show();
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    auto* profiles = window.findChild<QListWidget*>("savedConnections");
+    choscordb::SavedProfile profile;
+    profile.id = "filter-session";
+    profile.name = "Filter Session";
+    profile.path = ":memory:";
+    workspace->adapter()->saveProfile(profile, 8140);
+    QTRY_COMPARE(profiles->count(), 1);
+    QSignalSpy opened(workspace, &choscordb::QueryWorkspace::connectionReady);
+    QTest::mouseClick(profiles->viewport(), Qt::LeftButton, Qt::NoModifier,
+                      profiles->visualItemRect(profiles->item(0)).center());
+    QTRY_COMPARE(opened.count(), 1);
+    for (const auto* name : {"navigatorFilter", "sidebarSavedSearch", "sidebarHistorySearch"}) {
+        auto* field = window.findChild<choscordb::FilterField*>(name);
+        QVERIFY2(field, name);
+        auto* clear = field->findChild<QPushButton*>("filterFieldClear");
+        QVERIFY2(clear, name);
+        QVERIFY(clear->isHidden());
+        QSignalSpy changed(field, &choscordb::FilterField::filterChanged);
+        field->setFocus();
+        QTest::keyClicks(field, "ord");
+        QCOMPARE(changed.count(), 0);
+        QVERIFY(!clear->isHidden());
+        QCoreApplication::processEvents();
+        const auto clearRect = clear->geometry();
+        QVERIFY2(
+            qAbs(clearRect.center().y() - field->rect().center().y()) <= 1,
+            qPrintable(
+                QString("%1 vs %2").arg(clearRect.center().y()).arg(field->rect().center().y())));
+        QVERIFY2(field->width() - clearRect.right() - 1 >=
+                     choscordb::design::spacing(choscordb::design::Spacing::Two),
+                 qPrintable(QString::number(field->width() - clearRect.right() - 1)));
+        QTRY_COMPARE(changed.count(), 1);
+        QCOMPARE(changed.last().at(0).toString(), QString("ord"));
+        clear->click();
+        QVERIFY(field->text().isEmpty());
+        QCOMPARE(changed.count(), 2);
+        QCOMPARE(changed.last().at(0).toString(), QString());
+        QVERIFY(clear->isHidden());
+    }
+}
+
+void ModernUiTest::layoutRestoresTheSidebarTabAndVisibility() {
+    QTemporaryDir directory;
+    const auto path = directory.filePath("layout.sqlite");
+    {
+        choscordb::MainWindow window(nullptr, path);
+        window.show();
+        auto* appearance = window.findChild<choscordb::AppearanceController*>();
+        QTRY_VERIFY(appearance->isReady());
+        window.findChild<QPushButton*>("sidebarHistory")->click();
+        window.findChild<QAction*>("toggleSidebar")->trigger();
+        QTRY_COMPARE(appearance->persisted().sidebarTab, quint8(2));
+        QTRY_VERIFY(!appearance->persisted().navigatorVisible);
+    }
+    choscordb::MainWindow restored(nullptr, path);
+    restored.show();
+    QTRY_VERIFY(restored.findChild<choscordb::AppearanceController*>()->isReady());
+    QCOMPARE(restored.findChild<QStackedWidget*>("sidebarPanels")->currentIndex(), 2);
+    QVERIFY(restored.findChild<QPushButton*>("sidebarHistory")->isChecked());
+    QVERIFY(!restored.findChild<QAction*>("toggleSidebar")->isChecked());
+    QVERIFY(!restored.findChild<QDockWidget*>("navigator")->isVisible());
+}
+
+void ModernUiTest::layoutRestoresResultColumnWidthsAfterARestart() {
+    QTemporaryDir directory;
+    const auto path = directory.filePath("layout.sqlite");
+    const auto connectEditor = [](choscordb::MainWindow& window) {
+        window.findChild<QAction*>("showSql")->trigger();
+        QCoreApplication::processEvents();
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        workspace->connectSqlite(":memory:");
+        if (!QTest::qWaitFor([workspace] { return workspace->liveConnections().size() == 1; }))
+            return static_cast<choscordb::SqlEditor*>(nullptr);
+        const auto live = workspace->liveConnections().constFirst();
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
+        editor->setConnectionTarget(live.id, live.label);
+        return editor;
+    };
+    const auto runQuery = [](choscordb::MainWindow& window, choscordb::SqlEditor* editor,
+                             const QString& sql, const QString& firstColumn) {
+        editor->setText(sql);
+        auto* run = window.findChild<QAction*>("runStatement");
+        if (!QTest::qWaitFor([run] { return run->isEnabled(); }))
+            return static_cast<QTableView*>(nullptr);
+        run->trigger();
+        QTableView* grid = nullptr;
+        const bool shown = QTest::qWaitFor([&window, &grid, &firstColumn] {
+            for (auto* candidate : window.findChildren<QTableView*>("queryResults"))
+                if (candidate->isVisible() && candidate->model()->rowCount() == 1 &&
+                    candidate->model()->headerData(0, Qt::Horizontal).toString() == firstColumn)
+                    grid = candidate;
+            return grid != nullptr;
+        });
+        return shown ? grid : nullptr;
+    };
+    const QString customers("SELECT 1 AS customer_name, 2 AS total");
+    {
+        choscordb::MainWindow window(nullptr, path);
+        window.show();
+        auto* appearance = window.findChild<choscordb::AppearanceController*>();
+        QTRY_VERIFY(appearance->isReady());
+        auto* editor = connectEditor(window);
+        QVERIFY(editor);
+        auto* grid = runQuery(window, editor, customers, "customer_name");
+        QVERIFY(grid);
+        grid->horizontalHeader()->resizeSection(0, 211);
+        grid->horizontalHeader()->resizeSection(1, 150);
+        grid->horizontalHeader()->resizeSection(0, 237);
+        QVERIFY(runQuery(window, editor, "SELECT 3 AS region", "region"));
+        const QList<QPair<QString, quint32>> changed{{"total", 150}, {"customer_name", 237}};
+        QTRY_COMPARE(appearance->persisted().resultColumnWidths, changed);
+    }
+    choscordb::MainWindow restored(nullptr, path);
+    restored.show();
+    QTRY_VERIFY(restored.findChild<choscordb::AppearanceController*>()->isReady());
+    auto* editor = connectEditor(restored);
+    QVERIFY(editor);
+    auto* grid = runQuery(restored, editor, customers, "customer_name");
+    QVERIFY(grid);
+    QTRY_COMPARE(grid->columnWidth(0), 237);
+    QCOMPARE(grid->columnWidth(1), 150);
 }

@@ -3,6 +3,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "design_system/fonts/fonts.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/table/table_style.h"
 #include "models/result_table_model.h"
@@ -80,8 +81,12 @@ class ResultCopyWorkspaceTest : public QObject {
         model.markDeleted({model.index(0, 0), model.index(1, 1)}, true);
         QVERIFY(model.hasPendingEdits());
         QVERIFY(model.deleted()[0] && model.deleted()[1]);
+        QVERIFY(model.index(0, 0).data(Qt::FontRole).value<QFont>().strikeOut());
+        QVERIFY(model.index(1, 1).data(Qt::FontRole).value<QFont>().strikeOut());
+        QVERIFY(model.index(1, 1).data(Qt::FontRole).value<QFont>().italic());
         model.markDeleted({model.index(0, 0), model.index(1, 0)}, false);
         QVERIFY(!model.deleted()[0] && !model.deleted()[1]);
+        QVERIFY(model.index(0, 0).data(Qt::FontRole).isNull());
         model.discardEdits();
         QCOMPARE(model.rowCount(), 2);
         QCOMPARE(model.index(0, 1).data().toString(), QString("first"));
@@ -479,6 +484,12 @@ class ResultCopyWorkspaceTest : public QObject {
                  int(design::CellChange::Changed));
         QCOMPARE(model.index(5, 0).data(design::CellChangeRole).toInt(),
                  int(design::CellChange::None));
+        const auto nullFont = model.index(5, 8).data(Qt::FontRole).value<QFont>();
+        const auto callout = design::resolveTypography(design::TextStyle::Callout);
+        QVERIFY(nullFont.italic());
+        QCOMPARE(nullFont.family(), callout.family());
+        QCOMPARE(nullFont.pixelSize(), callout.pixelSize());
+        QVERIFY(model.index(5, 0).data(Qt::FontRole).isNull());
         const QItemSelection readOnly(model.index(0, 0), model.index(999, 0));
         QVERIFY(!model.hasEditableCell(readOnly));
         QVERIFY(!model.setNull(readOnly));

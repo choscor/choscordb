@@ -23,6 +23,7 @@ class QTableView;
 class QWidget;
 namespace choscordb::design {
 class RightSheet;
+class StatusLine;
 }
 namespace choscordb {
 class SqlEditor;
@@ -67,6 +68,7 @@ class QueryWorkspace final : public QObject {
         QLabel* pageMetric = nullptr;
         QLabel* rowsMetric = nullptr;
         QLabel* visibleSizeMetric = nullptr;
+        QLabel* editReason = nullptr;
     };
     struct LiveConnection {
         quint64 id = 0;
@@ -104,7 +106,6 @@ class QueryWorkspace final : public QObject {
     void showProfiles(const QString& profileId = {});
     void manageSavedProfile(const QString& profileId, const QString& action);
     void disconnectConnection(quint64 connection);
-    void showQuerySettings();
     void documentChanged();
     bool selectedTargetAvailable() const {
         const auto selected = selectedConnection();
@@ -140,6 +141,7 @@ class QueryWorkspace final : public QObject {
     void activityChanged(bool busy);
     void gridEditPlanningChanged(bool planning);
     void executionStateChanged(QueryState state);
+    void pendingEditsChanged(bool pending);
     void transactionStateChanged(quint64 connection, bool active);
     void foreignKeyRequested(quint64 connection, const QString& object, const QString& label,
                              const QString& filter);
@@ -248,7 +250,7 @@ class QueryWorkspace final : public QObject {
     QPointer<design::RightSheet> rowJsonSheet_;
     QPointer<QPlainTextEdit> rowJsonText_;
     QPointer<QPushButton> rowJsonCopy_;
-    QPointer<QLabel> rowJsonStatus_;
+    QPointer<design::StatusLine> rowJsonStatus_;
     QPersistentModelIndex rowJsonIndex_;
     quint64 rowJsonGeneration_ = 0;
     bool rowJsonRendering_ = false;
@@ -256,7 +258,7 @@ class QueryWorkspace final : public QObject {
     QPointer<design::RightSheet> cellEditSheet_;
     QPointer<QPlainTextEdit> cellEditText_;
     QPointer<QPushButton> cellEditSave_;
-    QPointer<QLabel> cellEditStatus_;
+    QPointer<design::StatusLine> cellEditStatus_;
     QPersistentModelIndex cellEditIndex_;
     quint64 cellResultGeneration_ = 0, cellDraftGeneration_ = 0;
     quint64 cellOpenResultGeneration_ = 0, cellOpenTargetToken_ = 0;
@@ -306,6 +308,7 @@ class QueryWorkspace final : public QObject {
     ObjectDataTime objectTime_;
     QString executedSql_, editParameterStyle_;
     QString editQualifiedName_, editReason_;
+    QString readOnlyReason() const;
     std::vector<QString> editColumnNames_;
     std::vector<bool> editKey_, editGenerated_, editDuplicable_;
     quint64 editTargetToken_ = 0, editApplyToken_ = 0;
@@ -355,4 +358,5 @@ class QueryWorkspace final : public QObject {
     bool proposedFiltersFromDraft_ = false;
     std::optional<quint64> viewRefreshQuery_;
 };
+QLabel* createEditReasonLabel(const char* name, QWidget* parent);
 }

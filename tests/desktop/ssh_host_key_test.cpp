@@ -1,3 +1,4 @@
+#include "design_system/spinner/spinner.h"
 #include "design_system/toast_region/toast_region.h"
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
 #include "workspace_test.h"
@@ -45,7 +46,7 @@ void WorkspaceTest::sshHostKeyInspectionRequiresExplicitActionAndKeepsUiResponsi
                 "print(s.getsockname()[1],flush=True); c,_=s.accept(); "
                 "print('accepted',flush=True); time.sleep(30)"});
     QVERIFY(peer.waitForStarted());
-    QVERIFY(peer.waitForReadyRead());
+    QTRY_VERIFY(peer.canReadLine());
     bool portOk = false;
     const auto port = QString::fromUtf8(peer.readLine()).trimmed().toUShort(&portOk);
     QVERIFY(portOk && port);
@@ -129,8 +130,12 @@ void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() 
     QVERIFY(candidates && approve && retry && path);
     QCOMPARE(candidates->currentRow(), -1);
     QVERIFY(!approve->isEnabled());
+    auto* alias = review.findChild<QLineEdit*>("sshHostKeyAlias");
+    QVERIFY(alias->placeholderText().isEmpty());
+    QVERIFY(!alias->isVisibleTo(&review));
     candidates->setCurrentRow(0);
-    QVERIFY(!approve->isEnabled());
+    QVERIFY(alias->isVisibleTo(&review));
+    QVERIFY(approve->isEnabled());
     QCOMPARE(review.findChild<QLineEdit*>("sshHostKeyOriginalHost")->text(), QString("jump-alias"));
     QCOMPARE(review.findChild<QLineEdit*>("sshHostKeyHostname")->text(), QString("2001:db8::7"));
     QCOMPARE(review.findChild<QLineEdit*>("sshHostKeyPort")->text(), QString("2207"));
@@ -143,7 +148,14 @@ void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() 
                      "~/.ssh/known_hosts", "/tmp/known-%h", "/tmp/${HOME}-known-hosts",
                      "/tmp/invalid\\hosts", "/tmp/invalid\nhosts"}) {
         path->setText(invalid);
-        QVERIFY2(!approve->isEnabled(), qPrintable(invalid));
+        QVERIFY2(approve->isEnabled(), qPrintable(invalid));
+        approve->click();
+        QVERIFY2(approved.isEmpty(), qPrintable(invalid));
+        int shownErrors = 0;
+        for (auto* label : review.findChildren<QLabel*>())
+            shownErrors += label->property("designRole").toString() == "fieldError" &&
+                           label->isVisible() && !label->text().isEmpty();
+        QVERIFY2(shownErrors == 1, qPrintable(invalid));
     }
     const auto knownHosts = QDir::rootPath() + QStringLiteral("tmp/explicit known hosts");
     path->setText(knownHosts);
@@ -151,7 +163,7 @@ void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() 
     QVERIFY(approved.isEmpty());
     approve->click();
     QCOMPARE(approved.count(), 1);
-    auto* loading = review.findChild<QLabel*>("statusLoadingIcon");
+    auto* loading = review.findChild<choscordb::design::Spinner*>("statusLoadingIcon");
     QVERIFY(loading && loading->isVisible());
     QCOMPARE(approved.first().at(1).toString(), knownHosts);
     const auto selected = qvariant_cast<choscordb::SshHostKeyCandidate>(approved.first().at(0));
@@ -173,15 +185,19 @@ void WorkspaceTest::sshHostKeyReviewRequiresSelectionAndShowsExactFingerprint() 
     approve->click();
     QCOMPARE(approved.count(), 2);
     review.finishApproval("approved");
-    QVERIFY(status->text().contains("Key approved"));
+    QVERIFY(!status->text().contains("Key approved"));
     QVERIFY(status->text().contains("Retry"));
+    auto* toast =
+        host.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
+    QVERIFY(toast);
+    QTRY_VERIFY(toast->text().contains("Key approved"));
     QVERIFY(status->isVisible());
     QVERIFY(retried.isEmpty());
     QVERIFY(retry->isEnabled());
     retry->click();
     QCOMPARE(retried.count(), 1);
     review.invalidate();
-    QVERIFY(status->text().contains("Connection settings changed"));
+    QVERIFY(status->text().contains("The connection profile changed"));
     QVERIFY(status->isVisible());
     QVERIFY(!retry->isEnabled());
     QVERIFY(!approve->isEnabled());

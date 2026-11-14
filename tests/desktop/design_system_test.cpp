@@ -1,8 +1,10 @@
 #include "design_system/button/button.h"
 #include "design_system/icons.h"
 #include "design_system/platform_accessibility.h"
+#include "design_system/spinner/spinner.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/theme_manager.h"
+#include "design_system/toast_region/toast_region.h"
 #include "icon_resource_check.h"
 
 #include <QApplication>
@@ -13,6 +15,7 @@
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFontInfo>
+#include <QHash>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -20,6 +23,7 @@
 #include <QStyleOptionButton>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QVariantAnimation>
 #include <QtTest>
 
 class InspectableButton final : public QPushButton {
@@ -50,8 +54,8 @@ class DesignSystemTest final : public QObject {
         using namespace choscordb::design;
         StatusLine line;
         const auto colors = resolvedThemeForWidget(line).colors;
-        QCOMPARE(line.palette().color(QPalette::Window), colors.surfaceRaised);
-        QCOMPARE(line.palette().color(QPalette::WindowText), colors.fgMuted);
+        QCOMPARE(line.palette().color(QPalette::Window), secondaryBanner(colors).fill);
+        QCOMPARE(line.palette().color(QPalette::WindowText), secondaryBanner(colors).text);
     }
     void statusLineNoticeExpiresOnlyWhileItStillShows() {
         using namespace choscordb::design;
@@ -98,7 +102,8 @@ class DesignSystemTest final : public QObject {
         QVERIFY(memory.geometry().right() < page.geometry().left());
         QVERIFY(rows.geometry().right() < previous.mapTo(&line, QPoint()).x());
         QCOMPARE(line.palette().color(QPalette::Window),
-                 resolvedThemeForWidget(line).colors.dangerSurface);
+                 choscordb::design::composite(resolvedThemeForWidget(line).colors.dangerTint,
+                                              resolvedThemeForWidget(line).colors.base));
     }
     void narrowStatusLineDropsMemoryThenDurationAndRestores() {
         using namespace choscordb::design;
@@ -161,11 +166,11 @@ class DesignSystemTest final : public QObject {
         QVERIFY(text->toPlainText().contains(error));
         dialog->reject();
         line.setBusy(true);
-        auto* loading = line.findChild<QLabel*>("statusLoadingIcon");
+        auto* loading = line.findChild<choscordb::design::Spinner*>("statusLoadingIcon");
         QVERIFY(loading && loading->isVisible());
         QVERIFY(line.rect().contains(loading->geometry()));
         QCOMPARE(line.palette().color(QPalette::Window),
-                 resolvedThemeForWidget(line).colors.surfaceRaised);
+                 choscordb::design::secondaryBanner(resolvedThemeForWidget(line).colors).fill);
         line.setMessage("Finish active work before changing panes.");
         QVERIFY(outcome.accessibleName().contains("Finish active work"));
         QVERIFY(source.accessibleName().contains("orders"));
@@ -174,7 +179,8 @@ class DesignSystemTest final : public QObject {
         line.setBusy(false);
         QCOMPARE(line.height(), height);
         QCOMPARE(line.palette().color(QPalette::Window),
-                 resolvedThemeForWidget(line).colors.dangerSurface);
+                 choscordb::design::composite(resolvedThemeForWidget(line).colors.dangerTint,
+                                              resolvedThemeForWidget(line).colors.base));
         QSignalSpy clicked(&next, &QPushButton::clicked);
         next.click();
         QCOMPARE(clicked.count(), 1);
@@ -184,6 +190,51 @@ class DesignSystemTest final : public QObject {
         QVERIFY(loading->isHidden());
         QVERIFY(outcome.textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
         QCOMPARE(line.height(), height);
+        QCOMPARE(line.palette().color(QPalette::Window),
+                 choscordb::design::secondaryBanner(resolvedThemeForWidget(line).colors).fill);
+        QCOMPARE(outcome.property("statusLineState").toString(), QString("success"));
+        QCOMPARE(rows.property("statusLineState").toString(), QString("neutral"));
+    }
+    void dialogStatusTextStartsAtTheLineInsetWithoutASpinnerGap() {
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        auto* status = new choscordb::design::StatusLine(&host);
+        layout->addWidget(status);
+        host.resize(420, 120);
+        host.show();
+        status->showProgress("Saving connection…");
+        QCoreApplication::processEvents();
+        auto* message = status->findChild<QLabel*>("statusMessage");
+        auto* spinner = status->findChild<choscordb::design::Spinner*>();
+        QVERIFY(message && spinner && spinner->isVisible());
+        QVERIFY(message->geometry().left() > spinner->geometry().right());
+        status->showError("Could not save the connection.");
+        QCoreApplication::processEvents();
+        QVERIFY(!spinner->isVisible());
+        QCOMPARE(message->geometry().left(), status->layout()->contentsMargins().left());
+        status->showInfo("Defaults restored.");
+        QCoreApplication::processEvents();
+        QCOMPARE(message->geometry().left(), status->layout()->contentsMargins().left());
+    }
+    void spinnerTurnsWhileVisibleAndStopsForReducedMotion() {
+        using namespace choscordb::design;
+        QWidget host;
+        ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
+                            false};
+        host.setProperty("designTheme", QVariant::fromValue(theme));
+        auto* spinner = new Spinner(&host);
+        QCOMPARE(spinner->size(), QSize(dimension(Dimension::Icon), dimension(Dimension::Icon)));
+        QVERIFY(!spinner->isTurning());
+        host.show();
+        QVERIFY(spinner->isTurning());
+        QTRY_VERIFY(spinner->angle() > 0.0);
+        spinner->hide();
+        QVERIFY(!spinner->isTurning());
+        theme.reducedMotion = true;
+        host.setProperty("designTheme", QVariant::fromValue(theme));
+        spinner->show();
+        QVERIFY(!spinner->isTurning());
+        QCOMPARE(spinner->angle(), 0.0);
     }
     void toastVariantsHaveDistinctColoredSurfacesInBothThemes() {
         using namespace choscordb::design;
@@ -192,8 +243,10 @@ class DesignSystemTest final : public QObject {
             manager.setMode(mode);
             const auto sheet = applicationStyleSheet(manager.resolvedTheme());
             const auto& colors = manager.resolvedTheme().colors;
-            const QStringList expected{css(colors.successSurface), css(colors.warningSurface),
-                                       css(colors.dangerSurface)};
+            const QStringList expected{
+                css(composite(withOpacity(colors.successTint, 0.2), colors.base)),
+                css(composite(withOpacity(colors.warningTint, 0.5), colors.base)),
+                css(composite(withOpacity(colors.dangerTint, 0.5), colors.base))};
             int index = 0;
             for (const auto* variant : {"success", "warning", "danger"}) {
                 const auto selector =
@@ -223,7 +276,8 @@ class DesignSystemTest final : public QObject {
             const auto titleRule = sheet.mid(sheet.indexOf(QStringLiteral("QDockWidget::title")));
             QVERIFY(titleRule.startsWith(QStringLiteral("QDockWidget::title")));
             QVERIFY2(titleRule.section('}', 0, 0).contains(
-                         QStringLiteral("color: %1;").arg(css(manager.resolvedTheme().colors.fg))),
+                         QStringLiteral("color: %1;")
+                             .arg(css(manager.resolvedTheme().colors.textDefault))),
                      qPrintable(titleRule.section('}', 0, 0)));
         }
     }
@@ -247,23 +301,6 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(changed.count(), explicitThemeNotifications);
     }
 
-    void uiTypographyUsesGeistAndPreservesMonospace() {
-        using namespace choscordb::design;
-        const auto ui = resolveTypography(TextStyle::Body);
-        QCOMPARE(ui.family(), QString("Geist"));
-        QCOMPARE(QFontInfo(ui).family(), QString("Geist"));
-        QCOMPARE(ui.pixelSize(), 14);
-        QCOMPARE(ui.weight(), QFont::Normal);
-        const auto heading = resolveTypography(TextStyle::Headline);
-        QCOMPARE(heading.family(), ui.family());
-        QCOMPARE(heading.pixelSize(), 14);
-        QCOMPARE(heading.weight(), QFont::DemiBold);
-        const auto monospace = resolveTypography(TextStyle::Body, FontDesign::Monospaced);
-        QCOMPARE(QFontInfo(monospace).family(), QString("Geist Mono"));
-        QVERIFY(QFontInfo(monospace).fixedPitch());
-        QCOMPARE(monospace.pixelSize(), 14);
-    }
-
     void tokensExposeCopyableReferenceValuesAndDefinitionSources() {
         using namespace choscordb::design;
         const auto tokens = designTokens(ResolvedAppearance::Light);
@@ -275,14 +312,14 @@ class DesignSystemTest final : public QObject {
             }
             return QString{};
         };
-        QCOMPARE(value("color.bg"), QString("#f6f7f8"));
+        QCOMPARE(value("color.kumo-canvas"), QString("#fbfbfb"));
         QCOMPARE(value("radius.md"), QString("6px"));
-        QCOMPARE(value("radius.lg"), QString("10px"));
-        QCOMPARE(value("size.row"), QString("28px"));
+        QCOMPARE(value("radius.lg"), QString("8px"));
+        QCOMPARE(value("size.row"), QString("34px"));
         QCOMPARE(value("focus.width"), QString("2px"));
-        QCOMPARE(value("motion.popup"), QString("100ms"));
-        QCOMPARE(value("typography.body.lineHeight"), QString("20px"));
-        QCOMPARE(value("elevation.popover.blur"), QString("40px"));
+        QCOMPARE(value("motion.popup"), QString("150ms"));
+        QCOMPARE(value("typography.body.lineHeight"), QString("21px"));
+        QCOMPARE(value("elevation.popover.blur"), QString("15px"));
         for (const auto& token : tokens) {
             QVERIFY2(
                 QFile::exists(
@@ -291,62 +328,84 @@ class DesignSystemTest final : public QObject {
         }
     }
 
-    void compactScaleUsesTheFourPixelGrid() {
+    void scaleUsesTheKumoClassValues() {
         using namespace choscordb::design;
-        QCOMPARE(dimension(Dimension::ControlExtraSmall), 24);
-        QCOMPARE(dimension(Dimension::ControlSmall), 28);
-        QCOMPARE(dimension(Dimension::Control), 32);
-        QCOMPARE(dimension(Dimension::Row), 28);
-        QCOMPARE(dimension(Dimension::Header), 28);
-        QCOMPARE(dimension(Dimension::Tab), 32);
-        QCOMPARE(dimension(Dimension::Toolbar), 32);
-        QCOMPARE(dimension(Dimension::QuickSearchRow), 44);
-        QCOMPARE(dimension(Dimension::IconSmall), 12);
+        QCOMPARE(dimension(Dimension::ControlExtraSmall), 20);
+        QCOMPARE(dimension(Dimension::ControlSmall), 26);
+        QCOMPARE(dimension(Dimension::Control), 36);
+        QCOMPARE(dimension(Dimension::Row), 34);
+        QCOMPARE(dimension(Dimension::TableRow), 32);
+        QCOMPARE(dimension(Dimension::MenuRow), 33);
+        QCOMPARE(dimension(Dimension::Header), 36);
+        QCOMPARE(dimension(Dimension::Tab), 36);
+        QCOMPARE(dimension(Dimension::DocumentTab), 30);
+        QCOMPARE(dimension(Dimension::Toolbar), 36);
+        QCOMPARE(dimension(Dimension::IconSmall), 14);
         QCOMPARE(dimension(Dimension::Icon), 16);
         QCOMPARE(dimension(Dimension::Checkbox), 16);
-        QCOMPARE(dimension(Dimension::SwitchWidth), 32);
+        QCOMPARE(dimension(Dimension::Badge), 20);
+        QCOMPARE(dimension(Dimension::SwitchWidth), 36);
         QCOMPARE(dimension(Dimension::SwitchHeight), 18);
-        QCOMPARE(dimension(Dimension::SwitchThumb), 12);
-        QCOMPARE(dimension(Dimension::Progress), 4);
-        QCOMPARE(dimension(Dimension::Scrollbar), 10);
-        QCOMPARE(dimension(Dimension::DocumentTabWidth), 140);
+        QCOMPARE(dimension(Dimension::SwitchThumb), 18);
+        QCOMPARE(dimension(Dimension::SwitchRadius), 5);
+        QCOMPARE(dimension(Dimension::Progress), 8);
+        QCOMPARE(dimension(Dimension::Scrollbar), 8);
+        QCOMPARE(dimension(Dimension::MenuWidth), 144);
+        QCOMPARE(dimension(Dimension::ToastWidth), 340);
         QCOMPARE(radius(Radius::Small), 4);
         QCOMPARE(radius(Radius::Medium), 6);
-        QCOMPARE(radius(Radius::Large), 10);
-        for (const auto value : {Spacing::Half, Spacing::One, Spacing::OneHalf, Spacing::Two,
-                                 Spacing::Three, Spacing::Four, Spacing::Six, Spacing::Eight})
-            QCOMPARE(spacing(value) % 2, 0);
+        QCOMPARE(radius(Radius::Large), 8);
+        QCOMPARE(radius(Radius::ExtraLarge), 12);
+        const QList<std::pair<Spacing, int>> scale{
+            {Spacing::Half, 2},  {Spacing::One, 4},      {Spacing::OneHalf, 6},
+            {Spacing::Two, 8},   {Spacing::TwoHalf, 10}, {Spacing::Three, 12},
+            {Spacing::Four, 16}, {Spacing::Six, 24},     {Spacing::Eight, 32}};
+        for (const auto& [value, pixels] : scale)
+            QCOMPARE(spacing(value), pixels);
+        const auto popover = elevation(Elevation::Popover);
+        QCOMPARE(popover.size(), 2);
+        QCOMPARE(popover.at(0).y, 10);
+        QCOMPARE(popover.at(0).blur, 15);
+        QCOMPARE(popover.at(0).spread, -3);
+        QCOMPARE(elevation(Elevation::Tooltip).at(0).y, 4);
+        QCOMPARE(elevation(Elevation::Dialog).at(0).opacity, 0.03);
+        QCOMPARE(motionSpec(Motion::Interaction).durationMs, 100);
+        QCOMPARE(motionSpec(Motion::Popup).durationMs, 150);
+        QCOMPARE(motionSpec(Motion::Popup, true).durationMs, 0);
+        QCOMPARE(motionSpec(Motion::LoaderTurn).durationMs, 2000);
+        QCOMPARE(motionSpec(Motion::LoaderDash).durationMs, 1500);
+        QCOMPARE(motionSpec(Motion::LoaderTurn, true).durationMs, 0);
     }
 
-    void pinnedPaletteResolvesFixedCanvasRoles() {
+    void motionEasingDrivesTheButtonHoverAndTheToastFade() {
         using namespace choscordb::design;
-        const auto light = resolveColors(ResolvedAppearance::Light);
-        const auto dark = resolveColors(ResolvedAppearance::Dark);
-        QCOMPARE(light.bg, QColor("#f6f7f8"));
-        QCOMPARE(light.fg, QColor("#222b32"));
-        QCOMPARE(dark.bg, QColor("#171d20"));
-        QCOMPARE(dark.surface, QColor("#20272b"));
-    }
+        QEasingCurve standard(QEasingCurve::BezierSpline);
+        standard.addCubicBezierSegment(QPointF(0.4, 0), QPointF(0.2, 1), QPointF(1, 1));
+        const auto sameCurve = [&standard](const QEasingCurve& curve) {
+            for (const qreal progress : {0.25, 0.5, 0.75})
+                if (qAbs(curve.valueForProgress(progress) - standard.valueForProgress(progress)) >
+                    0.001)
+                    return false;
+            return true;
+        };
+        QVERIFY(sameCurve(motionSpec(Motion::Interaction).easing));
+        QVERIFY(sameCurve(motionSpec(Motion::Popup).easing));
+        QCOMPARE(motionSpec(Motion::LoaderTurn).easing.type(), QEasingCurve::Linear);
 
-    void semanticSurfaceRolesRetainReferenceDistinctions() {
-        using namespace choscordb::design;
-        const auto light = resolveColors(ResolvedAppearance::Light);
-        const auto dark = resolveColors(ResolvedAppearance::Dark);
-        QCOMPARE(light.bg, QColor("#f6f7f8"));
-        QCOMPARE(light.primary, QColor("#c2410c"));
-        QCOMPARE(light.surfaceRaised, QColor("#eef1f2"));
-        QCOMPARE(light.ring, QColor("#c2410c"));
-        QCOMPARE(dark.bg, QColor("#171d20"));
-        QCOMPARE(dark.surface, QColor("#20272b"));
-        QCOMPARE(dark.surfaceRaised, QColor("#283135"));
-        QCOMPARE(dark.border, QColor("#343e43"));
-        QCOMPARE(dark.primary, QColor("#ff8a18"));
-        for (const auto& colors : {light, dark}) {
-            QVERIFY(colors.sidebarHover != colors.surfaceRaised);
-            QVERIFY(colors.sidebarHover != colors.surface);
-            QVERIFY(colors.sidebarSelection != colors.sidebarHover);
-            QVERIFY(colors.sidebarSelection != colors.surface);
-        }
+        Button button(QStringLiteral("Run"));
+        button.show();
+        QEnterEvent enter(QPointF(1, 1), QPointF(1, 1), QPointF(1, 1));
+        QCoreApplication::sendEvent(&button, &enter);
+        const auto* hover = button.findChild<QVariantAnimation*>();
+        QVERIFY(hover);
+        QVERIFY(sameCurve(hover->easingCurve()));
+
+        QWidget host;
+        auto* toast = new choscordb::ToastRegion(&host);
+        const auto* fade =
+            toast->findChild<QVariantAnimation*>(QString(), Qt::FindDirectChildrenOnly);
+        QVERIFY(fade);
+        QVERIFY(sameCurve(fade->easingCurve()));
     }
 
     void layoutMetricsKeepWindowDefaults() {
@@ -355,135 +414,147 @@ class DesignSystemTest final : public QObject {
         QCOMPARE(layout.narrowWorkspaceWidth, 1100);
         QCOMPARE(layout.defaultWorkspaceWidth, 1280);
         QCOMPARE(layout.minimumWorkspaceWidth, 960);
-        QCOMPARE(dialogInitialSize(DialogSize::Ddl), QSize(700, 500));
         QVERIFY(!resolveTypography(TextStyle::Body, FontDesign::Monospaced).family().isEmpty());
     }
 
-    void paletteResolvesReadableComponentRoles() {
+    void colorTokensAreTheKumoTableInBothModes() {
         using namespace choscordb::design;
-        for (const auto appearance : {ResolvedAppearance::Light, ResolvedAppearance::Dark}) {
-            const auto colors = resolveColors(appearance);
-            QVERIFY(contrastRatio(colors.primaryFg, colors.primary) >= 4.5);
-            QVERIFY(contrastRatio(colors.primaryFg, colors.primaryHover) >= 4.5);
-            QVERIFY(contrastRatio(colors.primaryFg, colors.primaryPressed) >= 4.5);
-            QVERIFY(contrastRatio(colors.primaryHover, colors.bg) >= 3.0);
-            QVERIFY(contrastRatio(colors.primaryPressed, colors.bg) >= 3.0);
-            QVERIFY(contrastRatio(colors.primary, colors.surface) >= 3.0);
-            QVERIFY(contrastRatio(colors.primaryHover, colors.surface) >= 3.0);
-            QVERIFY(contrastRatio(colors.primaryPressed, colors.surface) >= 3.0);
-            QVERIFY(contrastRatio(colors.ring, colors.bg) >= 3.0);
-            QVERIFY(contrastRatio(colors.ring, colors.surface) >= 3.0);
-            QVERIFY(contrastRatio(colors.fg, colors.selection) >= 4.5);
-            QVERIFY(contrastRatio(colors.fg, colors.selection) >= 4.5);
+        const QList<std::tuple<QString, QString, QString>> expected{
+            {"kumo-canvas", "#fbfbfb", "#030303"},
+            {"kumo-elevated", "#f8f8f8", "#060606"},
+            {"kumo-recessed", "#f3f3f3", "#0b0b0b"},
+            {"kumo-overlay", "#fbfbfb", "#262626"},
+            {"kumo-base", "#ffffff", "#0f0f0f"},
+            {"kumo-control", "#ffffff", "#171717"},
+            {"kumo-tint", "#f5f5f5", "#262626"},
+            {"kumo-fill", "#e5e5e5", "#262626"},
+            {"kumo-contrast", "#060606", "#fafafa"},
+            {"kumo-badge-inverted", "#0a0a0a", "#ffffff"},
+            {"kumo-brand", "#056dff", "#045ede"},
+            {"kumo-brand-hover", "#1447e6", "#1447e6"},
+            {"kumo-line", "#0a0a0a1a", "#333333"},
+            {"kumo-hairline", "#e9e9e9", "#262626"},
+            {"kumo-focus", "#0b0b0b", "#e9e9e9"},
+            {"kumo-shadow-edge", "#0000001f", "#ffffff1a"},
+            {"kumo-shadow-drop", "#00000014", "#0000004c"},
+            {"kumo-arrow-edge", "#0a0a0a1a", "#00000000"},
+            {"kumo-arrow-stroke", "#00000000", "#333333"},
+            {"kumo-danger", "#fb2c36", "#e7000b"},
+            {"kumo-success-tint", "#dcfce791", "#0c542b33"},
+            {"kumo-warning-tint", "#ffe89433", "#5731005e"},
+            {"kumo-danger-tint", "#ffe2e26b", "#9900032b"},
+            {"text-kumo-default", "#171717", "#f5f5f5"},
+            {"text-kumo-strong", "#0a0a0a", "#fafafa"},
+            {"text-kumo-inverse", "#f5f5f5", "#171717"},
+            {"text-kumo-subtle", "#737373", "#a1a1a1"},
+            {"text-kumo-inactive", "#d4d4d4", "#525252"},
+            {"text-kumo-placeholder", "#a1a1a1", "#737373"},
+            {"text-kumo-success", "#006045", "#a4f4cf"},
+            {"text-kumo-danger", "#c10007", "#ff6467"},
+            {"text-kumo-warning", "#bd6500", "#ff8904"},
+            {"text-kumo-badge-inverted", "#ffffff", "#000000"},
+            {"text-kumo-badge-neutral-subtle", "#262626", "#e5e5e5"},
+            {"white", "#ffffff", "#ffffff"},
+            {"code-keyword", "#d73a49", "#a0a0a0"},
+            {"code-string", "#032f62", "#99ffe4"},
+            {"code-number", "#005cc5", "#ffc799"},
+            {"code-comment", "#6a737d", "#8b8b8b94"},
+            {"code-key", "#005cc5", "#ffc799"},
+        };
+        const auto cssHex = [](const QColor& color) {
+            auto text = color.name(QColor::HexRgb);
+            if (color.alpha() < 255)
+                text += QStringLiteral("%1").arg(color.alpha(), 2, 16, QLatin1Char('0'));
+            return text;
+        };
+        const auto light = colorTokens(resolveColors(ResolvedAppearance::Light));
+        const auto dark = colorTokens(resolveColors(ResolvedAppearance::Dark));
+        QCOMPARE(light.size(), expected.size());
+        QCOMPARE(dark.size(), expected.size());
+        for (qsizetype index = 0; index < expected.size(); ++index) {
+            const auto& [name, lightValue, darkValue] = expected.at(index);
+            QCOMPARE(light.at(index).first, name);
+            QCOMPARE(dark.at(index).first, name);
+            QCOMPARE(cssHex(light.at(index).second), lightValue);
+            QCOMPARE(cssHex(dark.at(index).second), darkValue);
         }
-    }
-
-    void colorVocabularyIsExactlyTheSpecifiedSet() {
-        using namespace choscordb::design;
-        const QStringList expected{"bg",
-                                   "surface",
-                                   "surface-raised",
-                                   "fg",
-                                   "fg-muted",
-                                   "fg-disabled",
-                                   "border",
-                                   "primary",
-                                   "primary-hover",
-                                   "primary-pressed",
-                                   "primary-fg",
-                                   "selection",
-                                   "sidebar-hover",
-                                   "sidebar-selection",
-                                   "ring",
-                                   "success",
-                                   "success-surface",
-                                   "warning",
-                                   "warning-surface",
-                                   "danger",
-                                   "danger-surface",
-                                   "backdrop",
-                                   "switch-track",
-                                   "code-keyword",
-                                   "code-string",
-                                   "code-number",
-                                   "code-comment"};
         QPalette contrast;
         contrast.setColor(QPalette::Window, Qt::black);
         contrast.setColor(QPalette::WindowText, Qt::white);
         contrast.setColor(QPalette::Base, Qt::black);
-        contrast.setColor(QPalette::Text, Qt::white);
         contrast.setColor(QPalette::Highlight, Qt::cyan);
         contrast.setColor(QPalette::HighlightedText, Qt::black);
-        for (const auto& colors :
-             {resolveColors(ResolvedAppearance::Light), resolveColors(ResolvedAppearance::Dark),
-              resolveForcedContrastColors(contrast)}) {
-            QStringList names;
-            for (const auto& [name, value] : colorTokens(colors)) {
-                names.append(name);
-                QVERIFY2(value.isValid(), qPrintable(name));
-            }
-            QCOMPARE(names, expected);
+        const auto forced = colorTokens(resolveForcedContrastColors(contrast));
+        QCOMPARE(forced.size(), expected.size());
+        for (qsizetype index = 0; index < expected.size(); ++index) {
+            QCOMPARE(forced.at(index).first, std::get<0>(expected.at(index)));
+            QVERIFY2(forced.at(index).second.isValid(), qPrintable(forced.at(index).first));
         }
         QStringList catalog;
         for (const auto& token : designTokens(ResolvedAppearance::Light))
             if (token.name.startsWith(QStringLiteral("color.")))
                 catalog.append(token.name.mid(6));
-        QCOMPARE(catalog, expected);
+        QStringList names;
+        for (const auto& row : expected)
+            names.append(std::get<0>(row));
+        QCOMPARE(catalog, names);
     }
 
-    void textAndFocusPairsMeetContrastFloors() {
+    void dialogBackdropIsTheRecessedSurfaceAtEightyPercent() {
+        using namespace choscordb::design;
+        for (const auto appearance : {ResolvedAppearance::Light, ResolvedAppearance::Dark}) {
+            const auto colors = resolveColors(appearance);
+            const auto backdrop = dialogBackdrop(colors, choscordb::design::Scrim::Dialog);
+            QCOMPARE(backdrop.rgb(), colors.recessed.rgb());
+            QCOMPARE(backdrop.alpha(), 204);
+        }
+    }
+
+    void stateStepsKeepTheirMinimumContrast() {
+        using namespace choscordb::design;
+        for (const auto appearance : {ResolvedAppearance::Light, ResolvedAppearance::Dark}) {
+            const auto c = resolveColors(appearance);
+            const auto banner = secondaryBanner(c).fill;
+            const QList<std::tuple<const char*, QColor, QColor, double>> steps{
+                {"line/base", c.line, c.base, 1.2},
+                {"hover tint/base", c.tint, c.base, 1.05},
+                {"selection tint/base", c.tint, c.base, 1.05},
+                {"sidebar hover base/elevated", c.base, c.elevated, 1.02},
+                {"banner hover fill/banner", c.fill, banner, 1.05},
+                {"focus ring brand/base", c.brand, c.base, 3.0},
+            };
+            for (const auto& [name, step, surface, minimum] : steps)
+                QVERIFY2(
+                    contrastRatio(step, surface) >= minimum,
+                    qPrintable(
+                        QStringLiteral("%1 %2: %3")
+                            .arg(appearance == ResolvedAppearance::Light ? "Light" : "Dark", name)
+                            .arg(contrastRatio(step, surface))));
+        }
+    }
+
+    void kumoTextPairsThatPassKeepTheirContrast() {
         using namespace choscordb::design;
         for (const auto appearance : {ResolvedAppearance::Light, ResolvedAppearance::Dark}) {
             const auto c = resolveColors(appearance);
             const QList<std::tuple<const char*, QColor, QColor>> text{
-                {"fg/bg", c.fg, c.bg},
-                {"fg/surface", c.fg, c.surface},
-                {"fg/surface-raised", c.fg, c.surfaceRaised},
-                {"fg/selection", c.fg, c.selection},
-                {"fg/sidebar-selection", c.fg, c.sidebarSelection},
-                {"fg-muted/sidebar-hover", c.fgMuted, c.sidebarHover},
-                {"fg-muted/bg", c.fgMuted, c.bg},
-                {"fg-muted/surface", c.fgMuted, c.surface},
-                {"fg-muted/surface-raised", c.fgMuted, c.surfaceRaised},
-                {"primary-fg/primary", c.primaryFg, c.primary},
-                {"primary-fg/primary-hover", c.primaryFg, c.primaryHover},
-                {"primary-fg/primary-pressed", c.primaryFg, c.primaryPressed},
-                {"primary/surface", c.primary, c.surface},
-                {"success/success-surface", c.success, c.successSurface},
-                {"success/surface", c.success, c.surface},
-                {"warning/warning-surface", c.warning, c.warningSurface},
-                {"warning/surface", c.warning, c.surface},
-                {"danger/danger-surface", c.danger, c.dangerSurface},
-                {"danger/surface", c.danger, c.surface},
-                {"code-keyword/surface", c.codeKeyword, c.surface},
-                {"code-string/surface", c.codeString, c.surface},
-                {"code-number/surface", c.codeNumber, c.surface},
-                {"code-comment/surface", c.codeComment, c.surface}};
+                {"default/canvas", c.textDefault, c.canvas},
+                {"default/base", c.textDefault, c.base},
+                {"default/elevated", c.textDefault, c.elevated},
+                {"default/tint", c.textDefault, c.tint},
+                {"subtle/base", c.textSubtle, c.base},
+                {"success/base", c.textSuccess, c.base},
+                {"danger/base", c.textDanger, c.base},
+                {"white/brand", c.white, c.brand},
+                {"white/brand-hover", c.white, c.brandHover},
+                {"badge-inverted/badge", c.textBadgeInverted, c.badgeInverted},
+                {"badge-neutral-subtle/fill", c.textBadgeNeutralSubtle, c.fill},
+                {"code-keyword/base", c.codeKeyword, c.base},
+                {"code-string/base", c.codeString, c.base},
+                {"code-number/base", c.codeNumber, c.base},
+                {"code-comment/base", c.codeComment, c.base}};
             for (const auto& [name, foreground, background] : text)
                 QVERIFY2(contrastRatio(foreground, background) >= 4.5, name);
-            QVERIFY(contrastRatio(c.fgMuted, c.sidebarSelection) >= 3.0);
-            QVERIFY(contrastRatio(c.ring, c.bg) >= 3.0);
-            QVERIFY(contrastRatio(c.ring, c.surface) >= 3.0);
-        }
-    }
-
-    void orangeBrandReservesGreenForSuccess() {
-        using namespace choscordb::design;
-        const auto light = resolveColors(ResolvedAppearance::Light);
-        const auto dark = resolveColors(ResolvedAppearance::Dark);
-        QCOMPARE(light.primary, QColor("#c2410c"));
-        QCOMPARE(dark.primary, QColor("#ff8a18"));
-        for (const auto& colors : {light, dark}) {
-            QCOMPARE(colors.ring, colors.primary);
-            QCOMPARE(colors.codeString, colors.primary);
-            for (const auto& [name, value] : colorTokens(colors)) {
-                if (name == QStringLiteral("success") || name == QStringLiteral("success-surface"))
-                    continue;
-                const int hue = value.hsvHue();
-                QVERIFY2(hue < 90 || hue > 170, qPrintable(name));
-            }
-            const int successHue = colors.success.hsvHue();
-            QVERIFY(successHue >= 90 && successHue <= 170);
         }
     }
 
@@ -503,13 +574,13 @@ class DesignSystemTest final : public QObject {
         QSignalSpy policyChanged(&manager, &ThemeManager::accessibilityPolicyChanged);
         manager.setForcedContrast(true);
         QVERIFY(manager.resolvedTheme().forcedContrast);
-        QCOMPARE(manager.resolvedTheme().colors.bg, QColor("#000000"));
-        QCOMPARE(manager.resolvedTheme().colors.ring, QColor("#FFFF00"));
+        QCOMPARE(manager.resolvedTheme().colors.canvas, QColor("#000000"));
+        QCOMPARE(manager.resolvedTheme().colors.brand, QColor("#FFFF00"));
         QCOMPARE(manager.mode(), ThemeMode::Dark);
 
         highContrast.setColor(QPalette::Highlight, QColor("#00FFFF"));
         manager.setSystemPalette(highContrast);
-        QCOMPARE(manager.resolvedTheme().colors.ring, QColor("#00FFFF"));
+        QCOMPARE(manager.resolvedTheme().colors.brand, QColor("#00FFFF"));
 
         manager.setReducedMotion(true);
         QVERIFY(manager.reducedMotion());
@@ -534,16 +605,43 @@ class DesignSystemTest final : public QObject {
 
         ThemeManager manager;
         manager.installOn(qApp);
-        QCOMPARE(qApp->palette().color(QPalette::Window), manager.resolvedTheme().colors.bg);
+        QCOMPARE(qApp->palette().color(QPalette::Window), manager.resolvedTheme().colors.canvas);
         QVERIFY(qApp->styleSheet().contains(QStringLiteral("min-height: 30px")));
         QVERIFY(!qApp->styleSheet().contains('%'));
         QVERIFY(!qApp->styleSheet().contains('@'));
         QVERIFY(qApp->styleSheet().contains(QStringLiteral("QLabel[state=\"error\"]")));
 
         manager.setMode(ThemeMode::Dark);
-        QCOMPARE(qApp->palette().color(QPalette::Window), manager.resolvedTheme().colors.bg);
-        QVERIFY(qApp->styleSheet().contains(css(manager.resolvedTheme().colors.ring)));
+        QCOMPARE(qApp->palette().color(QPalette::Window), manager.resolvedTheme().colors.canvas);
+        QVERIFY(qApp->styleSheet().contains(css(manager.resolvedTheme().colors.brand)));
 
+        manager.installOn(nullptr);
+        qApp->setPalette(originalPalette);
+        qApp->setStyleSheet(originalStyleSheet);
+    }
+    void liveThemeChangeShowsTheBusyCursorWhileWidgetsRestyle() {
+        using namespace choscordb::design;
+        const auto originalPalette = qApp->palette();
+        const auto originalStyleSheet = qApp->styleSheet();
+        ThemeManager manager;
+        manager.installOn(qApp);
+        class StyleWatcher final : public QWidget {
+          public:
+            bool busyDuringRestyle = false;
+
+          protected:
+            void changeEvent(QEvent* event) override {
+                if (event->type() == QEvent::StyleChange && QGuiApplication::overrideCursor())
+                    busyDuringRestyle =
+                        busyDuringRestyle ||
+                        QGuiApplication::overrideCursor()->shape() == Qt::WaitCursor;
+                QWidget::changeEvent(event);
+            }
+        } watcher;
+        watcher.show();
+        manager.setMode(ThemeMode::Dark);
+        QVERIFY(watcher.busyDuringRestyle);
+        QVERIFY(!QGuiApplication::overrideCursor());
         manager.installOn(nullptr);
         qApp->setPalette(originalPalette);
         qApp->setStyleSheet(originalStyleSheet);

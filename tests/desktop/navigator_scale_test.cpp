@@ -84,14 +84,14 @@ class NavigatorScaleTest : public QObject {
     void coalescedCallRunsLeadingAndOneTrailingCall() {
         QObject owner;
         int calls = 0;
-        const auto call = coalescedCall(&owner, 50, [&calls] { ++calls; });
+        const auto call = coalescedCall(&owner, [&calls] { ++calls; });
         call();
         QCOMPARE(calls, 1);
         for (int i = 0; i < 100; ++i)
             call();
         QCOMPARE(calls, 1);
         QTRY_COMPARE(calls, 2);
-        QTest::qWait(120);
+        QTest::qWait(2 * EngineAdapter::signalCoalesceMs());
         QCOMPARE(calls, 2);
     }
 };

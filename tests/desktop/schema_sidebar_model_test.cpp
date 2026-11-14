@@ -14,7 +14,7 @@ class SchemaSidebarModelTest final : public QObject {
     void bridgeMetadataKeepsEachColumnsExactDatabaseTypeWithoutChangingIdentity() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -78,9 +78,9 @@ class SchemaSidebarModelTest final : public QObject {
         QCOMPARE(created.data(NavigatorModel::ObjectIdRole).toString(), QString("created-id"));
         QCOMPARE(created.data(NavigatorModel::QualifiedNameRole).toString(), QString("created-id"));
         QCOMPARE(created.data(Qt::ToolTipRole).toString(),
-                 QString("created_at — timestamp(6) with time zone"));
+                 QString("created_at · timestamp(6) with time zone"));
         QCOMPARE(created.data(Qt::AccessibleDescriptionRole).toString(),
-                 QString("created_at — timestamp(6) with time zone"));
+                 QString("created_at · timestamp(6) with time zone"));
         QCOMPARE(unknown.data(Qt::ToolTipRole).toString(), QString("unknown"));
         QCOMPARE(unknown.data(Qt::AccessibleDescriptionRole).toString(), QString("unknown"));
     }
@@ -88,7 +88,7 @@ class SchemaSidebarModelTest final : public QObject {
     void tableAndViewExposeOnlyColumnsInSidebarWhileMetadataStaysAvailable() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -164,7 +164,7 @@ class SchemaSidebarModelTest final : public QObject {
     void sidebarFilterFindsColumnsInCollapsedTablesWithinSearchBudget() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -205,7 +205,7 @@ class SchemaSidebarModelTest final : public QObject {
     void tablePagesRefreshAndFailureNeverRevealHiddenRowsOrStaleTypes() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -269,3 +269,4 @@ class SchemaSidebarModelTest final : public QObject {
 };
 QTEST_MAIN(SchemaSidebarModelTest)
 #include "schema_sidebar_model_test.moc"
+#include "widgets/filter_field/filter_field.h"

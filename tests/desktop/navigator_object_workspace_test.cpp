@@ -6,15 +6,18 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/menu/menu.h"
+#include "design_system/spinner/spinner.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
 #include "models/result_table_model.h"
 #include "navigator_sql_workspace_test.h"
 #include "screen_state_checks.h"
+#include "widgets/filter_field/filter_field.h"
 #include "widgets/history_dock/history_dock.h"
 #include "widgets/object_erd_widget.h"
 #include "widgets/profile_dialog/profile_dialog.h"
@@ -314,7 +317,7 @@ void NavigatorSqlWorkspaceTest::savedProfileIdCannotCollideWithSessionContext() 
 void NavigatorSqlWorkspaceTest::visibleConnectionsPreserveMetadataAndOrder() {
     choscordb::EngineAdapter adapter;
     QTreeView tree;
-    QLineEdit filter;
+    choscordb::FilterField filter;
     choscordb::NavigatorController navigator(&adapter, &tree, &filter);
     QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &adapter,
                         &choscordb::EngineAdapter::loadMetadata);
@@ -369,7 +372,7 @@ void NavigatorSqlWorkspaceTest::visibleConnectionsPreserveMetadataAndOrder() {
 void NavigatorSqlWorkspaceTest::searchLoadsCollapsedGroupsOnlyForSelectedConnection() {
     choscordb::EngineAdapter adapter;
     QTreeView tree;
-    QLineEdit filter;
+    choscordb::FilterField filter;
     choscordb::NavigatorController navigator(&adapter, &tree, &filter);
     QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &adapter,
                         &choscordb::EngineAdapter::loadMetadata);
@@ -428,7 +431,7 @@ void NavigatorSqlWorkspaceTest::searchLoadsCollapsedGroupsOnlyForSelectedConnect
 void NavigatorSqlWorkspaceTest::searchFailureKeepsRefineMessage() {
     choscordb::EngineAdapter adapter;
     QTreeView tree;
-    QLineEdit filter;
+    choscordb::FilterField filter;
     choscordb::NavigatorController navigator(&adapter, &tree, &filter);
     QObject::disconnect(navigator.model(), &choscordb::NavigatorModel::childrenRequested, &adapter,
                         &choscordb::EngineAdapter::loadMetadata);
@@ -522,10 +525,16 @@ void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenR
     tree->expand(proxy->mapFromSource(root));
     tree->expand(proxy->mapFromSource(schema));
     tree->expand(proxy->mapFromSource(group));
+    auto* workspaceTabs = window.findChild<QTabWidget*>("editorTabs");
+    tree->setFocus();
+    tree->setCurrentIndex(proxy->mapFromSource(table));
+    QTest::qWait(0);
+    QCOMPARE(workspaceTabs->count(), 1);
+    QTest::keyClick(tree, Qt::Key_Return);
+    QTRY_COMPARE(workspaceTabs->count(), 2);
     QTest::mouseClick(tree->viewport(), Qt::LeftButton, Qt::NoModifier,
                       tree->visualRect(proxy->mapFromSource(table)).center());
     auto* screens = window.findChild<QStackedWidget*>("centralScreens");
-    auto* workspaceTabs = window.findChild<QTabWidget*>("editorTabs");
     QCOMPARE(screens->currentWidget()->objectName(), QString("sqlScreen"));
     QCOMPARE(workspaceTabs->count(), 2);
     QTRY_VERIFY(qobject_cast<choscordb::ObjectExplorer*>(workspaceTabs->currentWidget()));
@@ -542,6 +551,11 @@ void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenR
     QVERIFY(metadata);
     QTRY_COMPARE(metadata->model()->rowCount(), 1);
     QCOMPARE(metadata->model()->index(0, 0).data().toString(), QString("value"));
+    QVERIFY(!window.findChild<QPushButton*>("objectDataExport")->isVisible());
+    for (auto* grid : {sql, data, metadata}) {
+        QVERIFY2(grid->showGrid() == false, qPrintable(grid->objectName()));
+        QVERIFY2(grid->alternatingRowColors(), qPrintable(grid->objectName()));
+    }
     QSignalSpy extraReads(workspace->adapter(), &choscordb::EngineAdapter::objectInspectionReady);
     emit workspace->connectionReady(connection);
     QCOMPARE(metadata->model()->rowCount(), 1);
@@ -558,8 +572,7 @@ void NavigatorSqlWorkspaceTest::selectingObjectLoadsMetadataAndSeparateDataThenR
     QVERIFY(!window.findChild<QLabel*>("objectStatus")->isVisible());
     QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(0).center());
     QTRY_VERIFY(window.findChild<QPushButton*>("objectRefresh")->isVisible());
-    QVERIFY(dataExport->isVisible());
-    QVERIFY(!dataExport->isEnabled());
+    QVERIFY(!dataExport->isVisible());
     QTest::mouseClick(panes, Qt::LeftButton, Qt::NoModifier, panes->tabRect(5).center());
     QTRY_VERIFY(dataExport->isVisible());
     QTRY_VERIFY(dataExport->isEnabled());
@@ -622,7 +635,8 @@ void NavigatorSqlWorkspaceTest::objectDataKeepsCancelPaneVisibleUntilAcknowledge
     QSignalSpy changed(explorer, &choscordb::ObjectExplorer::objectChanged);
     explorer->openObject(connection, R"(["main","another"])", "another");
     QCOMPARE(changed.count(), 0);
-    QVERIFY(cancel->isHidden());
+    QVERIFY(!cancel->isHidden());
+    QVERIFY(cancel->isEnabled());
     auto* objectGrid = explorer->findChild<QTableView*>("objectDataResults");
     QVERIFY(objectGrid);
     QTimer::singleShot(0, objectGrid, [] {
@@ -630,7 +644,7 @@ void NavigatorSqlWorkspaceTest::objectDataKeepsCancelPaneVisibleUntilAcknowledge
         QVERIFY(menu);
         QAction* cancelAction = nullptr;
         for (auto* action : menu->actions())
-            if (action->text() == QString("Cancel"))
+            if (action->text() == QString("Cancel query"))
                 cancelAction = action;
         QVERIFY(cancelAction);
         QVERIFY(cancelAction->isEnabled());
@@ -750,7 +764,7 @@ void NavigatorSqlWorkspaceTest::activeExecutionKeepsDocumentAndCancelReachable()
     auto* progress = window.findChild<choscordb::design::StatusLine*>("sqlResultFooter");
     QVERIFY(progress && progress->isVisible());
     QVERIFY(progress->property("busy").toBool());
-    QVERIFY(progress->findChild<QLabel*>("statusLoadingIcon")->isVisible());
+    QVERIFY(progress->findChild<choscordb::design::Spinner*>("statusLoadingIcon")->isVisible());
     QVERIFY(!window.findChild<choscordb::ToastRegion*>("progressToast"));
     QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier,
                       tabs->tabBar()->tabRect(1).center());
@@ -825,7 +839,7 @@ void NavigatorSqlWorkspaceTest::disconnectMenuKeepsOtherSessionsAndDrafts() {
             qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
         QVERIFY(box);
         for (auto* button : box->buttons())
-            if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+            if (destructiveConfirmation(button)) {
                 button->click();
                 return;
             }
@@ -850,7 +864,7 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
     QSignalSpy connected(workspace, &choscordb::QueryWorkspace::connectionReady);
     for (auto* action : window.findChildren<QAction*>())
-        if (action->text() == "New SQLite session…")
+        if (action->text() == "New connection…")
             action->trigger();
     auto* profiles = window.findChild<choscordb::ProfileDialog*>();
     QVERIFY(profiles);
@@ -865,7 +879,7 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
     QTRY_COMPARE(profiles->findChild<QListWidget*>("profileList")->count(), 1);
     QTRY_VERIFY(save->isEnabled());
     auto* savedNotice = window.findChild<choscordb::ToastRegion*>("toastRegion");
-    QVERIFY(savedNotice && savedNotice->text().contains("Profile saved."));
+    QVERIFY(savedNotice && savedNotice->text().contains("Connection saved."));
     savedNotice->findChild<QAbstractButton*>("toastDismiss")->click();
     QTRY_VERIFY(savedNotice->isHidden());
     profiles->selectProfile(profile.id);

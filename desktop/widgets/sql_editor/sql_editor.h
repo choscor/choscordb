@@ -1,7 +1,10 @@
 #pragma once
 #include "widgets/document_io/document_io.h"
+#include <QList>
 #include <Qsci/qsciscintilla.h>
 #include <optional>
+#include <utility>
+class QAction;
 
 namespace choscordb {
 class SqlEditor final : public QsciScintilla {
@@ -25,6 +28,7 @@ class SqlEditor final : public QsciScintilla {
     QString targetLabel() const { return targetLabel_; }
     void setProfileId(const QString& id);
     void setEditorFont(const QFont& font);
+    void setContextActions(QList<QAction*> actions) { contextActions_ = std::move(actions); }
     bool restoreDocument(const QByteArray& sql, const QString& path, quint64 cursor, quint64 anchor,
                          bool modified);
   signals:
@@ -48,5 +52,6 @@ class SqlEditor final : public QsciScintilla {
     DocumentIo io_;
     quint64 revision_ = 0;
     bool ioBusy_ = false;
+    QList<QAction*> contextActions_;
 };
 }

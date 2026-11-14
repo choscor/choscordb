@@ -2,6 +2,8 @@
 #include "app/main_window.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
+#include "confirmation_checks.h"
+#include "design_system/toast_region/toast_region.h"
 #include "diagnostics_legacy_lock.h"
 #include "dialog_sections_checks.h"
 #include "modern_ui_test.h"
@@ -19,6 +21,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTabWidget>
@@ -35,7 +38,7 @@ void ModernUiTest::helpOpensDiagnosticsExportSummary() {
     QVERIFY(help);
     auto* exportAction = help->findChild<QAction*>("exportDiagnostics");
     QVERIFY(exportAction);
-    QCOMPARE(exportAction->text(), QString("Export Diagnostics…"));
+    QCOMPARE(exportAction->text(), QString("Export diagnostics…"));
     exportAction->trigger();
     auto* dialog = window.findChild<QDialog*>("diagnosticsExportDialog");
     QVERIFY(dialog);
@@ -44,7 +47,7 @@ void ModernUiTest::helpOpensDiagnosticsExportSummary() {
     QVERIFY(dialog->findChild<QPushButton*>("diagnosticsSave"));
     QVERIFY(dialog->findChild<QPushButton*>("diagnosticsShowFolder"));
     QVERIFY(dialog->findChild<QPushButton*>("diagnosticsClear"));
-    QCOMPARE(headerHeadline(*dialog), QString("Export Diagnostics"));
+    QCOMPARE(headerHeadline(*dialog), QString("Export diagnostics"));
     QCOMPARE(sectionedSpacing(*dialog), compactSectionedSpacing());
     QCOMPARE(dialog->findChild<choscordb::design::DialogSections*>()->geometry(), dialog->rect());
     QCOMPARE(footerOverrides(*dialog), QString());
@@ -79,7 +82,7 @@ void ModernUiTest::diagnosticsClearRequiresConfirmation() {
     QVERIFY(confirmation);
     QVERIFY(confirmation->isVisible());
     QVERIFY(confirmation->text().contains("diagnostic", Qt::CaseInsensitive));
-    confirmation->button(QMessageBox::Yes)->click();
+    confirmationAction(confirmation)->click();
     QTRY_VERIFY(!diagnostics.preview().hasHistory);
     QVERIFY(QFile::exists(userData.fileName()));
     diagnostics.record({.event = choscordb::DiagnosticEvent::Error});
@@ -103,14 +106,30 @@ void ModernUiTest::diagnosticsExportLetsUserChooseZipDestination() {
     auto* save = dialog->findChild<QPushButton*>("diagnosticsSave");
     QVERIFY(destination && browse && save);
     QVERIFY(!save->isEnabled());
-    destination->setText(storage.filePath("report.zip"));
     QTRY_VERIFY(save->isEnabled());
     save->click();
+    const auto shownErrors = [dialog] {
+        int count = 0;
+        for (auto* label : dialog->findChildren<QLabel*>())
+            count += label->property("designRole").toString() == "fieldError" &&
+                     label->isVisible() && !label->text().isEmpty();
+        return count;
+    };
+    QCOMPARE(shownErrors(), 1);
+    QVERIFY(dialog->isVisible());
+    destination->setText(storage.filePath("report.zip"));
+    QCOMPARE(shownErrors(), 0);
+    QVERIFY(save->isEnabled());
+    save->click();
+    const QPointer<QDialog> guard(dialog);
     QTRY_VERIFY(QFile::exists(storage.filePath("report.zip")));
-    auto* status = dialog->findChild<QLabel*>("diagnosticsStatus");
-    QVERIFY(status);
-    QTRY_VERIFY(status->text().contains("attach it manually"));
-    dialog->close();
+    QTRY_VERIFY(!guard);
+    auto* toast =
+        window.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
+    QVERIFY(toast && toast->isVisible());
+    QCOMPARE(toast->property("variant").toString(), QString("success"));
+    QVERIFY(toast->text().contains("Diagnostics bundle saved"));
+    QVERIFY(toast->text().contains(storage.filePath("report.zip")));
     diagnostics.stop();
 }
 
@@ -187,8 +206,10 @@ void ModernUiTest::diagnosticsExcludeSqlAndDriverErrorFromLocalReport() {
     const auto path = storage.filePath("diagnostic.zip");
     dialog->findChild<QLineEdit*>("diagnosticsDestination")->setText(path);
     QTRY_VERIFY(dialog->findChild<QPushButton*>("diagnosticsSave")->isEnabled());
+    const QPointer<QDialog> guard(dialog);
     dialog->findChild<QPushButton*>("diagnosticsSave")->click();
-    QTRY_VERIFY(QFile::exists(path));
+    QTRY_VERIFY(!guard);
+    QVERIFY(QFile::exists(path));
     QFile archive(path);
     QVERIFY(archive.open(QIODevice::ReadOnly));
     QByteArray bytes = archive.readAll();
@@ -211,7 +232,6 @@ void ModernUiTest::diagnosticsExcludeSqlAndDriverErrorFromLocalReport() {
     QVERIFY(bytes.contains("query_succeeded"));
     QVERIFY(bytes.contains("query_failed"));
     QVERIFY(failedQueryHasTimingBucket);
-    dialog->close();
     diagnostics.stop();
 }
 
@@ -281,8 +301,9 @@ void ModernUiTest::diagnosticsSaveFailureLeavesNoZip() {
     auto* save = dialog->findChild<QPushButton*>("diagnosticsSave");
     QTRY_VERIFY(save && save->isEnabled());
     save->click();
-    auto* status = dialog->findChild<QLabel*>("diagnosticsStatus");
-    QTRY_VERIFY(status && status->text().contains("failed"));
+    auto* status =
+        dialog->findChild<QWidget*>("diagnosticsStatus")->findChild<QLabel*>("statusMessage");
+    QTRY_VERIFY(status && status->text().startsWith("Could not export diagnostics:"));
     QVERIFY(!QFile::exists(path));
     dialog->close();
     diagnostics.stop();
@@ -346,8 +367,9 @@ void ModernUiTest::diagnosticsPreviewAndClearKeepDialogResponsiveDuringStorageWa
     clear->click();
     auto* confirmation = window.findChild<QMessageBox*>("diagnosticsClearConfirmation");
     QVERIFY(confirmation);
-    confirmation->button(QMessageBox::Yes)->click();
-    auto* status = dialog->findChild<QLabel*>("diagnosticsStatus");
+    confirmationAction(confirmation)->click();
+    auto* status =
+        dialog->findChild<QWidget*>("diagnosticsStatus")->findChild<QLabel*>("statusMessage");
     QVERIFY(status->text().contains("Clearing"));
     QVERIFY(dialog->findChild<QPushButton*>("diagnosticsCancel")->isEnabled());
     lock.unlock();
@@ -424,12 +446,12 @@ void ModernUiTest::diagnosticsFailureDuringPreviewDisablesOpenDialog() {
     QVERIFY(summary && summary->text().contains("Reading"));
     window.disableDiagnostics();
     lock.unlock();
-    QTRY_VERIFY(summary->text().contains("unavailable"));
+    QTRY_VERIFY(summary->text().contains("not available"));
     QVERIFY(!dialog->findChild<QPushButton*>("diagnosticsShowFolder")->isEnabled());
     QVERIFY(!dialog->findChild<QPushButton*>("diagnosticsClear")->isEnabled());
     QVERIFY(!dialog->findChild<QPushButton*>("diagnosticsSave")->isEnabled());
     QTest::qWait(100);
-    QVERIFY(summary->text().contains("unavailable"));
+    QVERIFY(summary->text().contains("not available"));
     dialog->close();
     diagnostics.stop();
 }
@@ -459,12 +481,12 @@ void ModernUiTest::diagnosticsFailureDuringReplaceConfirmationDoesNotStartExport
     answer.setInterval(10);
     connect(&answer, &QTimer::timeout, &window, [&] {
         auto* confirmation = window.findChild<QMessageBox*>();
-        if (!confirmation || !confirmation->isVisible() || !confirmation->button(QMessageBox::Yes))
+        if (!confirmation || !confirmation->isVisible() || !confirmationAction(confirmation))
             return;
         answer.stop();
         window.disableDiagnostics();
         answered = true;
-        confirmation->button(QMessageBox::Yes)->click();
+        confirmationAction(confirmation)->click();
     });
     answer.start();
     QTimer::singleShot(2000, &window, [&] {

@@ -9,6 +9,7 @@
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
 #include "app/result_column_header.h"
+#include "app/result_pane_tabs.h"
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
@@ -16,13 +17,16 @@
 #include "design_system/icons.h"
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
+#include "design_system/separator/separator.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/table/table_style.h"
+#include "design_system/tabs/segmented_control.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "design_system/tree/navigation_tree_view.h"
 #include "widgets/editor_completion/editor_completion.h"
+#include "widgets/filter_field/filter_field.h"
 #include "widgets/search_panel/search_panel.h"
 #include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -72,10 +76,11 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* newQuery = fileMenu->addAction(tr("New query"));
     newQuery->setObjectName("newQuery");
     newQuery->setShortcut(QKeySequence::New);
-    auto* newConnection = fileMenu->addAction(tr("New SQLite session…"));
+    auto* newConnection = fileMenu->addAction(tr("New connection…"));
     auto* open = fileMenu->addAction(tr("Open SQL file…"));
     open->setShortcut(QKeySequence::Open);
     auto* save = fileMenu->addAction(tr("Save SQL file…"));
+    save->setObjectName("saveSql");
     auto* saveAs = fileMenu->addAction(tr("Save SQL file as…"));
     saveAs->setObjectName("saveSqlAs");
     save->setShortcut(QKeySequence::Save);
@@ -89,10 +94,13 @@ MainWindow::Ui MainWindow::buildUi() {
     fileMenu->addSeparator();
     auto* quit =
         fileMenu->addAction(tr("Quit"), QKeySequence::Quit, qApp, &QApplication::closeAllWindows);
+    quit->setObjectName("quit");
+    quit->setMenuRole(QAction::QuitRole);
     preferences_->addAction("quit", quit, false);
     preferences_->addAction("new_query", newQuery);
     preferences_->addAction("open_sql_file", open);
     preferences_->addAction("save_sql_file", save);
+    preferences_->addAction("close_tab", closeTab);
     auto* editMenu = menuBar()->addMenu(tr("&Edit"));
     QList<QAction*> editingActions;
     auto editorAction = [this, editMenu, &editingActions](const QString& id, const QString& title,
@@ -120,12 +128,17 @@ MainWindow::Ui MainWindow::buildUi() {
 
     auto* viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->setObjectName("viewMenu");
+#ifdef Q_OS_MACOS
     auto* windowMenu = menuBar()->addMenu(tr("&Window"));
     windowMenu->setObjectName("windowMenu");
+#else
+    auto* windowMenu = new QMenu(this);
+#endif
     auto* minimizeWindow = windowMenu->addAction(tr("Minimize"));
     minimizeWindow->setObjectName("minimizeWindow");
     minimizeWindow->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_M));
     connect(minimizeWindow, &QAction::triggered, this, &QWidget::showMinimized);
+    preferences_->addAction("minimize_window", minimizeWindow);
     auto* zoomWindow = windowMenu->addAction(tr("Zoom"));
     zoomWindow->setObjectName("zoomWindow");
     connect(zoomWindow, &QAction::triggered, this, [this] {
@@ -135,7 +148,7 @@ MainWindow::Ui MainWindow::buildUi() {
             showMaximized();
     });
     windowMenu->addSeparator();
-    auto* bringAllWindowsToFront = windowMenu->addAction(tr("Bring All to Front"));
+    auto* bringAllWindowsToFront = windowMenu->addAction(tr("Bring all to front"));
     bringAllWindowsToFront->setObjectName("bringAllWindowsToFront");
     connect(bringAllWindowsToFront, &QAction::triggered, this, [this] {
         auto* active = QApplication::activeWindow();
@@ -145,15 +158,18 @@ MainWindow::Ui MainWindow::buildUi() {
         }
         (active ? active : this)->activateWindow();
     });
+#ifndef Q_OS_MACOS
+    addActions(windowMenu->actions());
+#endif
     auto* helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->setObjectName("helpMenu");
-    auto* documentation = helpMenu->addAction(tr("ChoscorDB Help"));
+    auto* documentation = helpMenu->addAction(tr("ChoscorDB help"));
     documentation->setObjectName("openDocumentation");
     documentation->setMenuRole(QAction::NoRole);
     connect(documentation, &QAction::triggered, this,
             [] { QDesktopServices::openUrl(QUrl("https://github.com/choscor/choscordb#readme")); });
     helpMenu->addSeparator();
-    auto* diagnostics = helpMenu->addAction(tr("Export Diagnostics…"));
+    auto* diagnostics = helpMenu->addAction(tr("Export diagnostics…"));
     diagnostics->setObjectName("exportDiagnostics");
     connect(diagnostics, &QAction::triggered, this, &MainWindow::showDiagnosticsExport);
     auto* about = helpMenu->addAction(tr("About ChoscorDB"));
@@ -183,7 +199,7 @@ MainWindow::Ui MainWindow::buildUi() {
         connect(action, &QAction::triggered, this,
                 [this, i] { showScreen(static_cast<Screen>(i)); });
     }
-    auto* quickSwitch = viewMenu->addAction(tr("Quick switch…"));
+    auto* quickSwitch = viewMenu->addAction(tr("Quick search…"));
     quickSwitch->setObjectName("quickSwitch");
     quickSwitch->setShortcut(QKeySequence("Ctrl+P"));
     preferences_->addAction("quick_search", quickSwitch);
@@ -206,7 +222,6 @@ MainWindow::Ui MainWindow::buildUi() {
     navigator->setObjectName("navigator");
     navigator->setFeatures(QDockWidget::NoDockWidgetFeatures);
     navigator->setAllowedAreas(Qt::LeftDockWidgetArea);
-    navigator->toggleViewAction()->setText(tr("Connections"));
     navigator->setTitleBarWidget(new QWidget(navigator));
     auto* navBody = new QWidget(navigator);
     navBody->setObjectName("navigatorBody");
@@ -217,46 +232,38 @@ MainWindow::Ui MainWindow::buildUi() {
     connectionSection->titleLabel()->setObjectName("navigatorTitle");
     auto* addConnection = new design::Button(tr("+"), navBody);
     addConnection->setObjectName("navigatorAddConnection");
-    addConnection->setAccessibleName(tr("New connection"));
-    addConnection->setToolTip(tr("New connection"));
+    addConnection->setAccessibleName(tr("New connection…"));
+    addConnection->setToolTip(tr("New connection…"));
     auto* refreshNavigator = new design::Button(tr("↻"), navBody);
     refreshNavigator->setObjectName("navigatorRefresh");
-    refreshNavigator->setAccessibleName(tr("Refresh selected database object"));
-    refreshNavigator->setToolTip(tr("Refresh selected database object"));
+    refreshNavigator->setAccessibleName(tr("Refresh"));
+    refreshNavigator->setToolTip(tr("Refresh"));
     refreshNavigator->setEnabled(false);
     for (auto* button : {addConnection, refreshNavigator}) {
         button->setText({});
         button->setVariant(design::ButtonVariant::Ghost);
         button->setButtonSize(design::ButtonSize::IconSmall);
-        button->setButtonContext(design::ButtonContext::Sidebar);
     }
     navLayout->setContentsMargins(0, design::spacing(design::Spacing::One), 0,
                                   design::spacing(design::Spacing::Two));
     navLayout->setSpacing(design::spacing(design::Spacing::One));
-    auto* sidebarTabs = new QHBoxLayout;
-    sidebarTabs->setSpacing(0);
+    auto* sidebarTabs = new design::SegmentedControl(navBody);
+    sidebarTabs->setObjectName("sidebarTabs");
     const int sidebarInset = design::spacing(design::Spacing::OneHalf);
-    sidebarTabs->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
     auto* sidebarPanels = new QStackedWidget(navBody);
     sidebarPanels->setObjectName("sidebarPanels");
+    QList<QAbstractButton*> sidebarTabButtons;
     for (const auto& tab : {QPair{QStringLiteral("sidebarConnections"), tr("Connections")},
                             QPair{QStringLiteral("sidebarSaved"), tr("Saved queries")},
-                            QPair{QStringLiteral("sidebarHistory"), tr("Recent history")}}) {
-        auto* button = new design::Button({}, navBody);
+                            QPair{QStringLiteral("sidebarHistory"), tr("Query history")}}) {
+        auto* button = new design::Button({}, sidebarTabs);
         button->setObjectName(tab.first);
         button->setAccessibleName(tab.second);
         button->setToolTip(tab.second);
-        button->setCheckable(true);
-        button->setButtonContext(design::ButtonContext::Sidebar);
-        button->setVariant(design::ButtonVariant::Ghost);
-        button->setButtonSize(design::ButtonSize::IconSmall);
-        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         button->setDesignIcon(tab.first == "sidebarConnections" ? design::Icon::Database
                               : tab.first == "sidebarSaved"     ? design::Icon::File
                                                                 : design::Icon::Code);
-        button->setMinimumWidth(0);
-        button->setMaximumWidth(QWIDGETSIZE_MAX);
-        const int index = sidebarTabs->count();
+        const int index = int(sidebarTabButtons.size());
         connect(button, &QPushButton::clicked, sidebarPanels, [sidebarPanels, navBody, index] {
             sidebarPanels->setCurrentIndex(index);
             for (auto* other : navBody->findChildren<QPushButton*>()) {
@@ -267,9 +274,14 @@ MainWindow::Ui MainWindow::buildUi() {
                             index));
             }
         });
-        sidebarTabs->addWidget(button, 1);
+        sidebarTabs->addSegment(button);
+        sidebarTabButtons.append(button);
     }
-    navLayout->addLayout(sidebarTabs);
+    new ArrowKeyTabs(sidebarTabButtons, navBody);
+    auto* sidebarTabsRow = new QHBoxLayout;
+    sidebarTabsRow->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
+    sidebarTabsRow->addWidget(sidebarTabs);
+    navLayout->addLayout(sidebarTabsRow);
     auto* connectionsPanel = new QWidget(sidebarPanels);
     connectionsPanel->setObjectName("connectionsPanel");
     auto* connectionsScroll = new QScrollArea(sidebarPanels);
@@ -296,7 +308,8 @@ MainWindow::Ui MainWindow::buildUi() {
     new SidebarConnectionListScroll(savedConnections, connectionsScroll);
     new SidebarWheelForwarder(connectionsScroll, savedConnections->viewport());
     auto* connectionsEmpty = design::createPanelStateText(
-        tr("No saved connections yet.\nUse + to add a database connection."), connectionSection);
+        EngineAdapter::panelPresentation(PanelKind::Connections, PanelState::Empty).message,
+        connectionSection);
     connectionsEmpty->setObjectName("sidebarConnectionsEmpty");
     connectionSection->contentLayout()->addWidget(connectionsEmpty);
     const auto updateConnectionsEmpty = [savedConnections, connectionsEmpty] {
@@ -317,7 +330,7 @@ MainWindow::Ui MainWindow::buildUi() {
     objectSection->setObjectName("sidebarObjectsSection");
     connectionsLayout->addWidget(objectSection);
     connectionsLayout->addStretch(1);
-    auto* filter = new QLineEdit;
+    auto* filter = new FilterField;
     filter->setObjectName("navigatorFilter");
     filter->setPlaceholderText(tr("Filter objects…"));
     filter->setAccessibleName(tr("Filter database objects"));
@@ -352,17 +365,17 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* savedSection = new SidebarSection(tr("Saved queries"), savedPanel);
     savedSection->setObjectName("sidebarSavedSection");
     savedLayout->addWidget(savedSection);
-    auto* savedSearch = new QLineEdit(savedSection);
+    auto* savedSearch = new FilterField(savedSection);
     savedSearch->setObjectName("sidebarSavedSearch");
     savedSearch->setPlaceholderText(tr("Filter saved queries…"));
-    savedSearch->setAccessibleName(tr("Filter saved SQL files"));
+    savedSearch->setAccessibleName(tr("Filter saved queries"));
     savedSection->contentLayout()->addWidget(savedSearch);
     auto* savedStatus = design::createPanelStateText({}, savedSection);
     savedStatus->setObjectName("sidebarSavedStatus");
     savedSection->contentLayout()->addWidget(savedStatus);
     auto* savedFiles = new QTreeWidget(savedSection);
     savedFiles->setObjectName("sidebarSavedFiles");
-    savedFiles->setAccessibleName(tr("Saved SQL files"));
+    savedFiles->setAccessibleName(tr("Saved queries"));
     savedFiles->setHeaderHidden(true);
     savedFiles->setItemDelegate(new NavigatorIconDelegate(savedFiles));
     savedFiles->setProperty("designSurface", "sidebar");
@@ -372,7 +385,7 @@ MainWindow::Ui MainWindow::buildUi() {
     historyPanel->setObjectName("historyPanel");
     auto* historyLayout = new QVBoxLayout(historyPanel);
     historyLayout->setContentsMargins(sidebarInset, 0, sidebarInset, 0);
-    auto* historySection = new SidebarSection(tr("Recent history"), historyPanel);
+    auto* historySection = new SidebarSection(tr("Query history"), historyPanel);
     historySection->setObjectName("sidebarHistorySection");
     historyLayout->addWidget(historySection);
     const auto alignSidebarHeadings = [connectionSection, savedSection, historySection,
@@ -381,17 +394,17 @@ MainWindow::Ui MainWindow::buildUi() {
             section->titleLabel()->setMinimumHeight(addConnection->sizeHint().height());
     };
     alignSidebarHeadings();
-    auto* historySearch = new QLineEdit(historySection);
+    auto* historySearch = new FilterField(historySection);
     historySearch->setObjectName("sidebarHistorySearch");
-    historySearch->setPlaceholderText(tr("Filter recent history…"));
-    historySearch->setAccessibleName(tr("Filter recent query history"));
+    historySearch->setPlaceholderText(tr("Filter query history…"));
+    historySearch->setAccessibleName(tr("Filter query history"));
     historySection->contentLayout()->addWidget(historySearch);
     auto* historyStatus = design::createPanelStateText({}, historySection);
     historyStatus->setObjectName("sidebarHistoryStatus");
     historySection->contentLayout()->addWidget(historyStatus);
     auto* historyItems = new QListWidget(historySection);
     historyItems->setObjectName("sidebarHistoryItems");
-    historyItems->setAccessibleName(tr("Recent query history"));
+    historyItems->setAccessibleName(tr("Query history"));
     historyItems->setItemDelegate(new design::RecentHistoryRowDelegate(historyItems));
     historyItems->setMouseTracking(true);
     historyItems->setSpacing(design::spacing(design::Spacing::Half));
@@ -400,12 +413,19 @@ MainWindow::Ui MainWindow::buildUi() {
     sidebarPanels->addWidget(historyPanel);
     navLayout->addWidget(sidebarPanels, 1);
     navBody->findChild<QPushButton*>("sidebarConnections")->setChecked(true);
-    new ContextualActionVisibility(navBody, {refreshNavigator});
     navigator->setWidget(navBody);
     addDockWidget(Qt::LeftDockWidgetArea, navigator);
     resizeDocks({navigator}, {static_cast<int>(AppearanceLayout{}.navigatorWidth)}, Qt::Horizontal);
     auto* focusConnections = viewMenu->addAction(tr("Connections"));
+    focusConnections->setObjectName("focusConnections");
     connect(focusConnections, &QAction::triggered, tree, [tree] { tree->setFocus(); });
+    auto* toggleSidebar = viewMenu->addAction(tr("Show sidebar"));
+    toggleSidebar->setObjectName("toggleSidebar");
+    toggleSidebar->setCheckable(true);
+    toggleSidebar->setChecked(true);
+    toggleSidebar->setShortcut(QKeySequence("Ctrl+B"));
+    connect(toggleSidebar, &QAction::toggled, navigator, &QWidget::setVisible);
+    preferences_->addAction("toggle_sidebar", toggleSidebar);
     auto* resetLayout = viewMenu->addAction(tr("Reset layout"));
     resetLayout->setObjectName("resetLayout");
     auto* central = new QWidget;
@@ -418,48 +438,34 @@ MainWindow::Ui MainWindow::buildUi() {
     toolbar->setObjectName("queryToolbar");
     toolbar->setProperty("designToolbarVariant", "workspace");
     toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    auto* saveButton = new design::Button({}, toolbar);
-    saveButton->setDesignIcon(design::Icon::File);
-    saveButton->setToolTip(tr("Save"));
-    saveButton->setObjectName("saveSqlButton");
-    saveButton->setButtonSize(design::ButtonSize::IconSmall);
-    saveButton->setButtonContext(design::ButtonContext::EditorAction);
-    saveButton->setVariant(design::ButtonVariant::Outline);
-    saveButton->setAccessibleName(tr("Save SQL file"));
-    saveButton->hide();
-    connect(saveButton, &QPushButton::clicked, save, &QAction::trigger);
-    connect(save, &QAction::changed, saveButton,
-            [save, saveButton] { saveButton->setEnabled(save->isEnabled()); });
+    auto* run = queryMenu->addAction(tr("Run"));
+    run->setObjectName("runStatement");
+    run->setShortcut(QKeySequence("Ctrl+Return"));
+    run->setEnabled(false);
     auto* runAll = queryMenu->addAction(tr("Run all"));
     runAll->setObjectName("runAll");
     runAll->setShortcut(QKeySequence("Ctrl+Shift+Return"));
     runAll->setEnabled(false);
-    auto* run = queryMenu->addAction(tr("Run current"));
-    run->setObjectName("runStatement");
-    run->setShortcut(QKeySequence("Ctrl+Return"));
-    run->setEnabled(false);
     auto* runGroup = new design::ButtonGroup(Qt::Horizontal, toolbar);
     auto* runButton = new design::Button(tr("Run"), runGroup);
     runButton->setDesignIcon(design::Icon::Run);
     runButton->setVariant(design::ButtonVariant::Default);
     runButton->setObjectName("runStatementButton");
-    runButton->setAccessibleName(tr("Run selection or current statement"));
+    runButton->setAccessibleName(run->text());
     runButton->setButtonSize(design::ButtonSize::Small);
-    runButton->setButtonContext(design::ButtonContext::EditorAction);
     runButton->setEnabled(false);
     auto* runMode = new design::Button({}, runGroup);
-    runMode->setDesignIcon(design::Icon::ChevronDown);
+    runMode->setDesignIcon(design::Icon::CaretDown);
     runMode->setVariant(design::ButtonVariant::Default);
     runMode->setObjectName("runModeButton");
     runMode->setAccessibleName(tr("Run options"));
     runMode->setToolTip(tr("Run options"));
     runMode->setButtonSize(design::ButtonSize::IconSmall);
-    runMode->setButtonContext(design::ButtonContext::EditorAction);
     runMode->setEnabled(false);
     auto* runMenu = new QMenu(runMode);
     runMenu->setObjectName("runModeMenu");
-    runMenu->addAction(runAll);
     runMenu->addAction(run);
+    runMenu->addAction(runAll);
     runMode->setMenu(runMenu);
     runGroup->addButton(runButton);
     runGroup->addButton(runMode);
@@ -471,21 +477,23 @@ MainWindow::Ui MainWindow::buildUi() {
         runButton->setToolTip(run->text() + " · " +
                               run->shortcut().toString(QKeySequence::NativeText));
     });
-    auto* cancel = queryMenu->addAction(tr("Cancel"));
+    auto* cancel = queryMenu->addAction(tr("Cancel query"));
+    cancel->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Period));
     cancel->setEnabled(false);
     auto* cancelButton = new design::Button({}, toolbar);
     cancelButton->setDesignIcon(design::Icon::Cancel);
-    cancelButton->setToolTip(tr("Cancel"));
+    cancelButton->setToolTip(cancel->text());
     cancelButton->setObjectName("cancelQueryButton");
-    cancelButton->setAccessibleName(tr("Cancel"));
+    cancelButton->setAccessibleName(cancel->text());
     cancelButton->setButtonSize(design::ButtonSize::IconSmall);
-    cancelButton->setButtonContext(design::ButtonContext::EditorAction);
     cancelButton->setVariant(design::ButtonVariant::Outline);
     cancelButton->setEnabled(false);
-    cancelButton->hide();
+    auto* cancelSlot = toolbar->addWidget(cancelButton);
+    cancelSlot->setVisible(false);
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
-    connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton] {
+    connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton, cancelSlot] {
         cancelButton->setEnabled(cancel->isEnabled());
+        cancelSlot->setVisible(cancel->isEnabled());
         cancelButton->setAccessibleName(cancel->text());
         cancelButton->setToolTip(cancel->text());
     });
@@ -497,14 +505,13 @@ MainWindow::Ui MainWindow::buildUi() {
         button->setDesignIcon(icon);
         button->setVariant(design::ButtonVariant::Outline);
         button->setButtonSize(design::ButtonSize::IconSmall);
-        button->setButtonContext(design::ButtonContext::EditorAction);
         button->setEnabled(action->isEnabled());
         toolbar->addWidget(button);
         connect(button, &QPushButton::clicked, action, &QAction::trigger);
         connect(action, &QAction::changed, button,
                 [button, action] { button->setEnabled(action->isEnabled()); });
     };
-    auto* querySettings = queryMenu->addAction(tr("Query settings…"));
+    auto* querySettings = queryMenu->addAction(tr("Query preferences…"));
     querySettings->setObjectName("querySettings");
     addToolbarAction(querySettings, "toolbarQuerySettings", design::Icon::Settings);
     preferences_->addAction("run_statement", run);
@@ -514,7 +521,7 @@ MainWindow::Ui MainWindow::buildUi() {
         const auto resolved = theme_->resolvedTheme();
         toolbar->setIconSize(QSize(design::dimension(design::Dimension::Icon),
                                    design::dimension(design::Dimension::Icon)));
-        setWindowIcon(design::themedIcon(design::Icon::AppMark, resolved.colors.primary,
+        setWindowIcon(design::themedIcon(design::Icon::AppMark, resolved.colors.brand,
                                          design::dimension(design::Dimension::Icon)));
         refreshNavigator->setDesignIcon(design::Icon::Refresh);
         addConnection->setDesignIcon(design::Icon::Add);
@@ -522,6 +529,8 @@ MainWindow::Ui MainWindow::buildUi() {
     connect(theme_, &design::ThemeManager::themeChanged, this, refreshIcons);
     refreshIcons();
     auto* splitter = new QSplitter(Qt::Vertical);
+    splitter->setObjectName("workspaceSplitter");
+    splitter->setChildrenCollapsible(false);
     auto* workspaceTabs = new WorkspaceTabs;
     editors_ = workspaceTabs;
     editors_->setObjectName("editorTabs");
@@ -530,9 +539,9 @@ MainWindow::Ui MainWindow::buildUi() {
             const auto* explorer = qobject_cast<ObjectExplorer*>(editors_->widget(index));
             const auto kind = explorer ? explorer->property("objectType").toString() : QString{};
             const auto role = explorer ? objectKindIcon(kind) : design::Icon::Code;
-            editors_->setTabIcon(
-                index,
-                design::themedIcon(role, theme_->resolvedTheme().colors.fgMuted, objectIconSize()));
+            editors_->setTabIcon(index,
+                                 design::themedIcon(role, theme_->resolvedTheme().colors.textSubtle,
+                                                    design::dimension(design::Dimension::Icon)));
         }
     });
     connect(editors_, &QTabWidget::currentChanged, this, [this, workspaceTabs] {
@@ -569,9 +578,10 @@ MainWindow::Ui MainWindow::buildUi() {
     connect(workspaceTabs->addButton(), &QPushButton::clicked, newQuery, &QAction::trigger);
     editors_->tabBar()->setUsesScrollButtons(true);
     editors_->tabBar()->setExpanding(false);
-    editors_->tabBar()->setElideMode(Qt::ElideRight);
+    editors_->tabBar()->setElideMode(Qt::ElideMiddle);
     editors_->tabBar()->setProperty("designTabVariant", "document");
     new HoveredTabCloseVisibility(editors_->tabBar());
+    new DocumentTabGestures(editors_);
     editors_->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(editors_->tabBar(), &QWidget::customContextMenuRequested, this,
             [this](const QPoint& position) {
@@ -609,9 +619,9 @@ MainWindow::Ui MainWindow::buildUi() {
                         right.append(document);
                 }
                 addCloseAction(tr("Close"), {editors_->widget(clicked)});
-                addCloseAction(tr("Close Others"), others);
-                addCloseAction(tr("Close All"), all);
-                addCloseAction(tr("Close to the Right"), right);
+                addCloseAction(tr("Close others"), others);
+                addCloseAction(tr("Close all"), all);
+                addCloseAction(tr("Close tabs to the right"), right);
                 if (auto* editor = qobject_cast<SqlEditor*>(editors_->widget(clicked));
                     editor && workspace_) {
                     menu->addSeparator();
@@ -635,6 +645,7 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* listTabs = viewMenu->addAction(tr("Editor tabs…"));
     listTabs->setObjectName("listEditorTabs");
     listTabs->setShortcut(QKeySequence("Ctrl+Shift+L"));
+    preferences_->addAction("editor_tabs", listTabs);
     connect(listTabs, &QAction::triggered, this, [this] {
         auto* menu = new QMenu(this);
         menu->setObjectName("editorTabOverflow");
@@ -693,7 +704,7 @@ MainWindow::Ui MainWindow::buildUi() {
     grid->horizontalHeader()->setStretchLastSection(false);
     grid->horizontalHeader()->setResizeContentsPrecision(50);
     grid->verticalHeader()->setResizeContentsPrecision(50);
-    grid->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
+    grid->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::TableRow));
     grid->horizontalHeader()->setFixedHeight(design::dimension(design::Dimension::Header));
     resultLayout->addWidget(grid, 1);
     auto* resultFooter = new design::StatusLine;
@@ -722,8 +733,8 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* exportResult = new design::Button({});
     exportResult->setButtonSize(design::ButtonSize::IconSmall);
     exportResult->setVariant(design::ButtonVariant::Outline);
-    exportResult->setAccessibleName(tr("Export"));
-    exportResult->setToolTip(tr("Export"));
+    exportResult->setAccessibleName(tr("Export…"));
+    exportResult->setToolTip(tr("Export…"));
     exportResult->setObjectName("exportResult");
     exportResult->setEnabled(false);
     exportResult->setDesignIcon(design::Icon::Export);
@@ -731,8 +742,9 @@ MainWindow::Ui MainWindow::buildUi() {
                              rowsMetric, previousPage, nextPage});
     resultFooter->setContent({{}, tr("Disconnected"), {}, {}, {}, {}},
                              design::StatusLine::State::Neutral);
-    const auto addGridAction = [toolbar](const QString& label, const char* name, design::Icon icon,
-                                         bool inToolbar = true) {
+    toolbar->addWidget(design::createToolbarSeparator(toolbar));
+    const auto addGridAction = [toolbar](const QString& label, const char* name,
+                                         design::Icon icon) {
         auto* button = new design::Button({}, toolbar);
         button->setAccessibleName(label);
         button->setToolTip(label);
@@ -741,31 +753,41 @@ MainWindow::Ui MainWindow::buildUi() {
         button->setButtonSize(design::ButtonSize::IconSmall);
         button->setVariant(design::ButtonVariant::Outline);
         button->setEnabled(false);
-        if (inToolbar)
-            toolbar->addWidget(button);
-        else
-            button->hide();
+        toolbar->addWidget(button);
         return button;
     };
-    auto* addResultRow =
-        addGridAction(tr("Add row"), "queryResultAddRow", design::Icon::Add, false);
+    auto* addResultRow = addGridAction(tr("Add row"), "queryResultAddRow", design::Icon::Add);
     auto* deleteResultRows =
-        addGridAction(tr("Delete rows"), "queryResultDeleteRows", design::Icon::Close, false);
+        addGridAction(tr("Delete rows"), "queryResultDeleteRows", design::Icon::Trash);
     auto* restoreResultRows =
-        addGridAction(tr("Restore rows"), "queryResultRestoreRows", design::Icon::Refresh, false);
+        addGridAction(tr("Restore rows"), "queryResultRestoreRows", design::Icon::Refresh);
     auto* nullResultCell =
-        addGridAction(tr("Set NULL"), "queryResultSetNull", design::Icon::Square, false);
+        addGridAction(tr("Set NULL"), "queryResultSetNull", design::Icon::Prohibit);
     auto* discardResultEdits =
-        addGridAction(tr("Discard"), "queryResultDiscardEdits", design::Icon::Cancel, false);
+        addGridAction(tr("Discard"), "queryResultDiscardEdits", design::Icon::Cancel);
     auto* applyResultEdits =
-        addGridAction(tr("Apply"), "queryResultApplyEdits", design::Icon::Check, false);
+        addGridAction(tr("Apply…"), "queryResultApplyEdits", design::Icon::Check);
     toolbar->addWidget(exportResult);
     auto* messages = new QPlainTextEdit;
     messages->setObjectName("queryMessages");
     messages->setReadOnly(true);
+    messages->setProperty("designRole", "log");
+    messages->setFont(
+        design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
     messages->setAccessibleName(tr("Query messages"));
     results->addWidget(resultBody);
     results->addWidget(messages);
+    auto* paneHeader = new QWidget;
+    paneHeader->setObjectName("sqlResultPaneHeader");
+    auto* paneHeaderLayout = new QHBoxLayout(paneHeader);
+    paneHeaderLayout->setContentsMargins(
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One),
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One));
+    paneHeaderLayout->addWidget(createResultPaneTabs(results, "sqlResultPaneTabs"));
+    paneHeaderLayout->addStretch(1);
+    auto* resultEditReason = createEditReasonLabel("queryResultEditReason", paneHeader);
+    paneHeaderLayout->addWidget(resultEditReason);
+    resultAreaLayout->addWidget(paneHeader);
     resultAreaLayout->addWidget(results, 1);
     resultAreaLayout->addWidget(resultFooter);
     splitter->addWidget(resultArea);
@@ -775,7 +797,7 @@ MainWindow::Ui MainWindow::buildUi() {
     layout->addWidget(splitter);
     search_ = new SearchPanel(
         [this] { return qobject_cast<SqlEditor*>(editors_->currentWidget()); }, this);
-    editorPaneLayout->insertWidget(0, search_);
+    editorPaneLayout->addWidget(search_);
     editMenu->addSeparator();
     QList<QAction*> searchActions;
     auto searchAction = [this, editMenu, &searchActions](const QString& id, const QString& text,
@@ -804,6 +826,19 @@ MainWindow::Ui MainWindow::buildUi() {
 #endif
     preferences_->addAction("complete", completeAction, false);
     searchActions.append(completeAction);
+    editorContextActions_ = {run,
+                             runAll,
+                             nullptr,
+                             editingActions.at(0),
+                             editingActions.at(1),
+                             nullptr,
+                             editingActions.at(2),
+                             editingActions.at(3),
+                             editingActions.at(4),
+                             nullptr,
+                             searchActions.at(0),
+                             searchActions.at(1),
+                             completeAction};
     connect(completeAction, &QAction::triggered, this, [this] {
         if (editors_->isEnabled() && editors_->currentWidget() && showScreen(Screen::Sql))
             completion_->requestCompletion();
@@ -816,7 +851,7 @@ MainWindow::Ui MainWindow::buildUi() {
     preferences_->addAction("preferences", preferencesAction, false);
     connect(preferencesAction, &QAction::triggered, this, [this] {
         if (allowDocumentChange())
-            preferences_->open();
+            preferences_->open(PreferencesPage::Appearance);
     });
     connect(editors_, &QTabWidget::currentChanged, search_, &SearchPanel::editorChanged);
     screens_ = new QStackedWidget(this);
@@ -833,15 +868,15 @@ MainWindow::Ui MainWindow::buildUi() {
     startIcon->setAlignment(Qt::AlignCenter);
     const auto colorStartIcon = [this, startIcon] {
         const int size = design::dimension(design::Dimension::Icon);
-        startIcon->setPixmap(
-            design::themedIcon(design::Icon::Database, theme_->resolvedTheme().colors.fgMuted, size)
-                .pixmap(size, size));
+        startIcon->setPixmap(design::themedIcon(design::Icon::Database,
+                                                theme_->resolvedTheme().colors.textSubtle, size)
+                                 .pixmap(size, size));
     };
     colorStartIcon();
     connect(theme_, &design::ThemeManager::themeChanged, startIcon, colorStartIcon);
     startLayout->addWidget(startIcon);
     auto* startHint = design::createPanelStateText(
-        tr("Welcome to ChoscorDB\nSelect a connection in the sidebar or create a new one."), start);
+        EngineAdapter::panelPresentation(PanelKind::Welcome, PanelState::Empty).message, start);
     startHint->setObjectName("startHint");
     startLayout->addWidget(startHint);
     startLayout->addStretch();
@@ -858,7 +893,8 @@ MainWindow::Ui MainWindow::buildUi() {
     object->setObjectName("objectScreen");
     auto* objectLayout = new QVBoxLayout(object);
     auto* objectHint = design::createPanelStateText(
-        tr("Select a table or view in the sidebar to inspect it."), object);
+        EngineAdapter::panelPresentation(PanelKind::ObjectSelection, PanelState::Empty).message,
+        object);
     objectLayout->addWidget(objectHint);
     screens_->addWidget(object);
     auto* centralHost = new QWidget(this);
@@ -930,6 +966,7 @@ MainWindow::Ui MainWindow::buildUi() {
         .nullResultCell = nullResultCell,
         .discardResultEdits = discardResultEdits,
         .applyResultEdits = applyResultEdits,
+        .resultEditReason = resultEditReason,
         .messages = messages,
         .searchActions = searchActions,
         .toast = toast,

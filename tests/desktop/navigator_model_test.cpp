@@ -87,7 +87,7 @@ class NavigatorModelTest : public QObject {
     void quickObjectSearchLoadsCollapsedSchemaWithoutChangingSidebar() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -129,7 +129,7 @@ class NavigatorModelTest : public QObject {
     void quickObjectSearchRespectsPostgresSystemSchemaVisibility() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
         auto* model = controller.model();
@@ -182,7 +182,7 @@ class NavigatorModelTest : public QObject {
     void quickObjectSearchInvalidatesOldQueriesAndConnectionResults() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -217,7 +217,7 @@ class NavigatorModelTest : public QObject {
     void quickObjectSearchUsesForgivingOrderedNameMatching() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -238,7 +238,7 @@ class NavigatorModelTest : public QObject {
     void quickObjectSearchRetainsValidRowsWhenOneSchemaFails() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -273,7 +273,7 @@ class NavigatorModelTest : public QObject {
     void expandingAFailedRowRetriesAndCollapsingKeepsItsStatus() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -298,7 +298,7 @@ class NavigatorModelTest : public QObject {
     void aFailedLoadThatTheUserStartedIsReportedAndABackgroundScanIsNot() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -336,7 +336,7 @@ class NavigatorModelTest : public QObject {
     void quickObjectSearchProvidesColumnAndKeyActivationTargets() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -382,7 +382,7 @@ class NavigatorModelTest : public QObject {
     void quickObjectSearchSkipsStructuralRowsButTraversesThem() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -409,7 +409,7 @@ class NavigatorModelTest : public QObject {
     void quickObjectSearchCanChooseAnyVisibleConnectionIncludingZero() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -449,7 +449,7 @@ class NavigatorModelTest : public QObject {
     void mutationMenuTargetsClickedObjectAndExplainsUnsupportedRename() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return QStringLiteral("sqlite"); });
         auto* model = controller.model();
@@ -526,7 +526,7 @@ class NavigatorModelTest : public QObject {
         for (const auto& driver : {QStringLiteral("postgres"), QStringLiteral("mysql")}) {
             EngineAdapter engine;
             QTreeView tree;
-            QLineEdit filter;
+            choscordb::FilterField filter;
             NavigatorController controller(&engine, &tree, &filter);
             controller.setDriverResolver([driver](quint64) { return driver; });
             auto* model = controller.model();
@@ -552,7 +552,7 @@ class NavigatorModelTest : public QObject {
         for (const auto& driver : {QStringLiteral("mariadb"), QStringLiteral("mysql")}) {
             EngineAdapter engine;
             QTreeView tree;
-            QLineEdit filter;
+            choscordb::FilterField filter;
             NavigatorController controller(&engine, &tree, &filter);
             controller.setDriverResolver([driver](quint64) { return driver; });
             auto* model = controller.model();
@@ -981,3 +981,4 @@ class NavigatorModelTest : public QObject {
 };
 QTEST_MAIN(NavigatorModelTest)
 #include "navigator_model_test.moc"
+#include "widgets/filter_field/filter_field.h"

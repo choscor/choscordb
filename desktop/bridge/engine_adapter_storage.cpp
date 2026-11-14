@@ -13,6 +13,11 @@ AppearanceLayoutDto appearanceDto(const AppearanceLayout& value) {
     dto.history_height = value.historyHeight;
     dto.navigator_visible = value.navigatorVisible;
     dto.history_visible = value.historyVisible;
+    dto.sidebar_tab = value.sidebarTab;
+    for (const auto& [name, width] : value.resultColumnWidths) {
+        dto.result_column_names.push_back(toRust(name));
+        dto.result_column_widths.push_back(width);
+    }
     dto.x = value.x;
     dto.y = value.y;
     dto.width = value.width;

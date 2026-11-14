@@ -10,6 +10,7 @@
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/quick_search/quick_search_dialog.h"
+#include "design_system/spinner/spinner.h"
 #include "design_system/table/table_style.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/text/text.h"
@@ -108,7 +109,7 @@ void PreviewTest::quickSearchSpecimenUsesRealOverlayInBothThemes() {
             QVERIFY(!icon->pixmap().isNull());
             QCOMPARE(title->text(), dialog->results().at(row).title);
             QCOMPARE(detail->text(), dialog->results().at(row).context);
-            QVERIFY(title->geometry().top() < detail->geometry().top());
+            QVERIFY(title->geometry().right() < detail->geometry().left());
             QVERIFY(icon->geometry().right() < title->geometry().left());
         }
         const auto colors = choscordb::design::resolvedThemeForWidget(*host).colors;
@@ -116,12 +117,12 @@ void PreviewTest::quickSearchSpecimenUsesRealOverlayInBothThemes() {
             list->itemWidget(list->item(0))->findChild<QLabel*>("quickSearchResultDetail");
         auto* unselectedDetail =
             list->itemWidget(list->item(1))->findChild<QLabel*>("quickSearchResultDetail");
-        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.fg);
-        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.fgMuted);
+        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.textSubtle);
+        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.textSubtle);
         list->setCurrentRow(1);
         QVERIFY(list->accessibleDescription().contains(dialog->results().at(1).title));
-        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.fgMuted);
-        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.fg);
+        QCOMPARE(selectedDetail->palette().color(QPalette::WindowText), colors.textSubtle);
+        QCOMPARE(unselectedDetail->palette().color(QPalette::WindowText), colors.textSubtle);
         QVERIFY(!input->accessibleName().isEmpty());
         QVERIFY(!list->accessibleName().isEmpty());
         QVERIFY(!status->accessibleName().isEmpty());
@@ -149,18 +150,18 @@ void PreviewTest::quickSearchRowsUseSuppliedIconAndRetintWhenThemeChanges() {
     QVERIFY(icon);
     const auto iconSize = dimension(Dimension::IconSmall);
     const auto light = resolvedThemeForWidget(*lightHost);
-    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, light.colors.fgMuted, iconSize)
+    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, light.colors.textSubtle, iconSize)
                                            .pixmap(iconSize, iconSize)
                                            .toImage());
     const auto dark = resolvedThemeForWidget(*darkHost);
     dialog->setProperty("designTheme", QVariant::fromValue(dark));
     dialog->setPalette(applicationPalette(dark));
     QCoreApplication::processEvents();
-    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, dark.colors.fgMuted, iconSize)
+    QCOMPARE(icon->pixmap().toImage(), themedIcon(Icon::Table, dark.colors.textSubtle, iconSize)
                                            .pixmap(iconSize, iconSize)
                                            .toImage());
     auto* detail = list->itemWidget(list->item(0))->findChild<QLabel*>("quickSearchResultDetail");
-    QCOMPARE(detail->palette().color(QPalette::WindowText), dark.colors.fg);
+    QCOMPARE(detail->palette().color(QPalette::WindowText), dark.colors.textSubtle);
     dialog->reject();
 }
 
@@ -187,15 +188,19 @@ void PreviewTest::quickSearchInteractionPreservesFocusAndSelection() {
     QVERIFY(status);
     auto* placeholder = dialog.findChild<QLabel*>("quickSearchPlaceholder");
     QVERIFY(placeholder);
-    dialog.setSearchState(choscordb::design::PanelStateKind::Hidden, "Searching…");
+    auto* busy = dialog.findChild<choscordb::design::Spinner*>("quickSearchBusy");
+    QVERIFY(busy);
+    dialog.setSearchState(choscordb::design::PanelStateKind::Hidden, "Searching…", true);
     QVERIFY(status->accessibleDescription().contains("Searching"));
+    QVERIFY(busy->isVisible());
     QVERIFY(!placeholder->isVisible());
-    dialog.setSearchState(choscordb::design::PanelStateKind::Failed, "History unavailable");
+    dialog.setSearchState(choscordb::design::PanelStateKind::Failed, "History unavailable", false);
+    QVERIFY(busy->isHidden());
     QVERIFY(placeholder->isVisible());
     QCOMPARE(placeholder->text(), QString("History unavailable"));
     QCOMPARE(placeholder->property("state").toString(), QString("error"));
     QVERIFY(!status->text().contains("History unavailable"));
-    dialog.setSearchState(choscordb::design::PanelStateKind::Hidden, {});
+    dialog.setSearchState(choscordb::design::PanelStateKind::Hidden, {}, false);
     QVERIFY(status->text().isEmpty());
     QVERIFY(!placeholder->isVisible());
     QCOMPARE(dialog.selectedResultId(), QString("screen:query"));
@@ -251,5 +256,31 @@ void PreviewTest::quickSearchKeepsSelectionAcrossResultUpdates() {
                        {"Screen", "Query", "Workspace", "screen:query"}});
     QCOMPARE(dialog.selectedResultId(), QString("history:1"));
     QCOMPARE(list->currentRow(), 0);
+    dialog.reject();
+}
+
+void PreviewTest::quickSearchShowsTheKeysThatItAccepts() {
+    QWidget owner;
+    owner.resize(900, 700);
+    choscordb::design::QuickSearchDialog dialog(&owner);
+    owner.show();
+    dialog.openSearch();
+    auto* hints = dialog.findChild<QWidget*>("quickSearchKeyHints");
+    QVERIFY(hints);
+    QTRY_VERIFY(hints->isVisible());
+    QStringList keys;
+    QStringList actions;
+    const auto labels = hints->findChildren<QLabel*>();
+    for (int index = 0; index < labels.size(); ++index)
+        if (labels.at(index)->property("designRole").toString() == "kbd") {
+            keys << labels.at(index)->text();
+            actions << labels.at(index + 1)->text();
+        }
+    const auto native = [](QKeyCombination key) {
+        return QKeySequence(key).toString(QKeySequence::NativeText);
+    };
+    QCOMPARE(keys, QStringList({native(Qt::Key_Up) + native(Qt::Key_Down), native(Qt::Key_Return),
+                                native(Qt::Key_Escape)}));
+    QCOMPARE(actions, QStringList({"Select", "Open", "Close"}));
     dialog.reject();
 }

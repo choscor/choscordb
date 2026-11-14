@@ -14,7 +14,6 @@
 #include <QComboBox>
 #include <QFileDialog>
 #include <QFormLayout>
-#include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHideEvent>
@@ -22,7 +21,6 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
-#include <QProgressBar>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
@@ -31,38 +29,6 @@
 #include <QTimer>
 #include <QVBoxLayout>
 namespace choscordb {
-namespace {
-class ProfileProgressDialog final : public DialogShell {
-  public:
-    explicit ProfileProgressDialog(QWidget* parent) : DialogShell(parent) {
-        setObjectName("profileProgressDialog");
-        setWindowTitle(tr("Profiles"));
-        auto* sections = createSections();
-        auto* heading = new design::Text(tr("Profiles"), sections);
-        heading->setTextStyle(design::TextStyle::Headline);
-        sections->headerLayout()->addWidget(heading);
-        auto* body = sections->bodyLayout();
-        body->setSpacing(design::spacing(design::Spacing::Two));
-        message_ = createDescription({}, sections);
-        message_->setObjectName("profileProgressMessage");
-        body->addWidget(message_);
-        auto* progress = new QProgressBar(sections);
-        progress->setObjectName("profileProgressBar");
-        progress->setRange(0, 0);
-        progress->setTextVisible(false);
-        body->addWidget(progress);
-        setAppModal();
-    }
-
-    QLabel* message() const { return message_; }
-
-  public slots:
-    void reject() override {}
-
-  private:
-    QLabel* message_ = nullptr;
-};
-}
 
 ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     : DialogShell(parent), adapter_(adapter) {
@@ -73,17 +39,16 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     const auto margin = design::spacing(design::Spacing::Four);
     resize(design::dialogInitialSize(design::DialogSize::Profiles)
                .boundedTo(available - QSize(margin * 2, margin * 2)));
-    auto* sections = createSections();
+    sections_ = createSections();
+    auto* sections = sections_;
     sections->setObjectName("profileSections");
-    auto* headerLayout = sections->headerLayout();
-    auto* header = sections;
-    auto* heading = new design::Text(tr("New connection"), header);
-    heading->setObjectName("profileHeading");
-    heading->setTextStyle(design::TextStyle::Headline);
-    headerLayout->addWidget(heading);
+    heading_ = new design::Text(tr("New connection"), sections);
+    heading_->setObjectName("profileHeading");
+    heading_->setTextStyle(design::TextStyle::Headline);
+    sections->headerLayout()->addWidget(heading_);
     auto* dismiss = sections->addDismissButton(tr("Close connection dialog"));
     dismiss->setObjectName("profileDismiss");
-    connect(dismiss, &QPushButton::clicked, this, &QDialog::close);
+    connect(dismiss, &QPushButton::clicked, this, &QDialog::reject);
     list_ = new QListWidget(this);
     list_->setObjectName("profileList");
     list_->hide();
@@ -91,22 +56,18 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     formScroll->setObjectName("profileFormScroll");
     formScroll->setFrameShape(QFrame::NoFrame);
     formScroll->setWidgetResizable(true);
-    formScroll->viewport()->setBackgroundRole(QPalette::Base);
-    formScroll->viewport()->setProperty("designSurface", "panel");
+    formScroll->viewport()->setAutoFillBackground(false);
     form_ = new QWidget(formScroll);
-    form_->setBackgroundRole(QPalette::Base);
-    form_->setProperty("designSurface", "panel");
-    form_->setAttribute(Qt::WA_StyledBackground);
     formScroll->setWidget(form_);
-    auto bodyMargins = sections->bodyLayout()->contentsMargins();
-    bodyMargins.setRight(0);
-    sections->bodyLayout()->setContentsMargins(bodyMargins);
+    form_->setAutoFillBackground(false);
+    const auto bodyMargins = sections->bodyLayout()->contentsMargins();
+    sections->bodyLayout()->setContentsMargins(bodyMargins.left(), 0, 0, 0);
     sections->bodyLayout()->addWidget(formScroll);
-    auto* formLayout = new QFormLayout(form_);
-    formLayout->setContentsMargins(0, 0, design::spacing(design::Spacing::Three),
-                                   design::spacing(design::Spacing::Two));
-    formLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    formLayout->addRow(
+    formLayout_ = new QFormLayout(form_);
+    design::DialogSections::configureForm(formLayout_);
+    formLayout_->setContentsMargins(0, bodyMargins.top(), design::spacing(design::Spacing::Six),
+                                    bodyMargins.bottom());
+    formLayout_->addRow(
         createDescription(tr("Connect to a server or open a local database file."), form_));
     driver_ = new QComboBox(form_);
     driver_->setObjectName("profileDriver");
@@ -115,16 +76,21 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     driver_->addItem(tr("MySQL"), "mysql");
     driver_->addItem(tr("MariaDB"), "mariadb");
     driver_->hide();
-    auto* drivers = new QHBoxLayout;
+    auto* driverRow = new QWidget(form_);
+    driverRow->setObjectName("profileDriverChoices");
+    auto* drivers = new QHBoxLayout(driverRow);
+    drivers->setContentsMargins(0, 0, 0, 0);
+    drivers->setSpacing(design::spacing(design::Spacing::Two));
     driverChoices_ = new QButtonGroup(this);
     const auto choice = [&](const QString& title, const char* object, int index) {
-        auto* button = new design::Button(title, form_);
+        auto* button = new design::Button({}, driverRow);
         button->setObjectName(object);
+        button->setToolTip(title);
+        button->setAccessibleName(title);
         button->setVariant(design::ButtonVariant::Outline);
         button->setButtonContext(design::ButtonContext::Choice);
         button->setDesignIcon(design::driverIcon(driver_->itemData(index).toString()));
         button->setCheckable(true);
-        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         driverChoices_->addButton(button, index);
         drivers->addWidget(button);
         connect(button, &QPushButton::clicked, this,
@@ -134,7 +100,8 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     choice(tr("MySQL"), "profileDriverMysql", 2);
     choice(tr("MariaDB"), "profileDriverMariadb", 3);
     choice(tr("SQLite"), "profileDriverSqlite", 0);
-    formLayout->addRow(drivers);
+    drivers->addStretch(1);
+    sections->addFormRow(formLayout_, tr("Type"), driverRow);
     auto line = [this](const char* object) {
         auto* edit = new QLineEdit(form_);
         edit->setObjectName(object);
@@ -144,38 +111,40 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         });
         return edit;
     };
+    const auto port = [this](const char* object) {
+        auto* spin = new QSpinBox(form_);
+        spin->setObjectName(object);
+        spin->setRange(1, 65535);
+        spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        return spin;
+    };
     name_ = line("profileName");
-    name_->setPlaceholderText(tr("Connection name"));
     nameValidation_ = new design::FieldValidation(name_, form_);
-    formLayout->addRow(tr("Connection &name"), nameValidation_);
+    sections->addFormRow(formLayout_, tr("Name"), nameValidation_);
     connect(name_, &QLineEdit::textChanged, this, [this] { nameValidation_->setError({}); });
-    sqliteFields_ = new QWidget(form_);
-    auto* sqlite = new QFormLayout(sqliteFields_);
-    sqlite->setContentsMargins(0, 0, 0, 0);
-    sqlite->setRowWrapPolicy(QFormLayout::WrapAllRows);
     path_ = line("profilePath");
-    path_->setAccessibleName(tr("Database path"));
-    path_->setPlaceholderText(tr("Database path, file: URI or :memory:"));
-    auto* pathRow = new QHBoxLayout;
-    pathRow->addWidget(validated(path_));
-    auto* browse = new design::Button(tr("Browse…"), form_);
+    path_->setAccessibleName(tr("Database file"));
+    path_->setPlaceholderText(tr("/path/to/database.sqlite"));
+    auto* pathRow = new QWidget(form_);
+    auto* pathLayout = new QHBoxLayout(pathRow);
+    pathLayout->setContentsMargins(0, 0, 0, 0);
+    pathLayout->setSpacing(design::spacing(design::Spacing::Two));
+    pathLayout->addWidget(validated(path_));
+    auto* browse = new design::Button(tr("Browse…"), pathRow);
+    browse->setObjectName("profileBrowse");
     browse->setVariant(design::ButtonVariant::Outline);
-    pathRow->addWidget(browse);
-    auto* pathLabel = new QLabel(tr("Database &file"), sqliteFields_);
-    pathLabel->setBuddy(path_);
-    sqlite->addRow(pathLabel, pathRow);
+    pathLayout->addWidget(browse, 0, Qt::AlignTop);
+    sections->addFormRow(formLayout_, tr("Database file"), pathRow);
+    pathRow->setFocusProxy(path_);
     readOnly_ = new QCheckBox(tr("Open read-only"), form_);
     readOnly_->setProperty("designRole", "switch");
     readOnly_->setObjectName("profileReadOnly");
-    sqlite->addRow(readOnly_);
-    sqlite->addRow(createDescription(tr("Browse safely without modifying the file."), form_));
-    formLayout->addRow(sqliteFields_);
-    postgresFields_ = new QWidget(form_);
-    auto* pg = new QFormLayout(postgresFields_);
-    pg->setContentsMargins(0, 0, 0, 0);
-    pg->setRowWrapPolicy(QFormLayout::WrapAllRows);
+    formLayout_->addRow(QString(), readOnly_);
+    auto* readOnlyHelp = createDescription(tr("Browse without changes to the file."), form_);
+    formLayout_->addRow(QString(), readOnlyHelp);
+    sqliteRows_ = {pathRow, readOnly_, readOnlyHelp};
     host_ = line("profileHost");
-    host_->setPlaceholderText(tr("localhost, IP address or absolute Unix socket path"));
+    host_->setPlaceholderText(tr("localhost"));
     host_->setToolTip(
         tr("TCP hostname/IP address, or Unix socket path (PostgreSQL directory; MySQL file). "
            "Unix sockets use a local connection without TLS or SSH. Enter TCP ports separately. "
@@ -183,108 +152,76 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
            "localhost refers to that server."));
     database_ = line("profileDatabase");
     user_ = line("profileUser");
-    port_ = new QSpinBox(form_);
-    port_->setObjectName("profilePort");
-    port_->setRange(1, 65535);
+    port_ = port("profilePort");
     password_ = line("profilePassword");
     password_->setEchoMode(QLineEdit::Password);
     password_->setMaxLength(EngineAdapter::profileSecretMaxBytes());
-    password_->setPlaceholderText(tr("Optional — leave blank for passwordless authentication"));
-    auto* serverFields = new QGridLayout;
-    const auto serverField = [&](const QString& title, QWidget* widget, int row, int column,
-                                 int span = 1) {
-        auto* field = new QVBoxLayout;
-        auto* label = new QLabel(title, postgresFields_);
-        label->setBuddy(widget);
-        field->addWidget(label);
-        field->addWidget(
-            widget == host_ || widget == user_ || widget == password_ ? validated(widget) : widget);
-        serverFields->addLayout(field, row, column, 1, span);
-    };
-    serverFields->setColumnStretch(0, 5);
-    serverFields->setColumnStretch(1, 1);
-    serverFields->setColumnStretch(2, 5);
-    serverField(tr("&Host"), host_, 0, 0);
-    serverField(tr("P&ort"), port_, 0, 1);
-    serverField(tr("Data&base"), database_, 0, 2);
-    serverField(tr("&Username"), user_, 1, 0);
-    serverField(tr("&Password"), password_, 1, 1, 2);
-    pg->addRow(serverFields);
-    QWidget::setTabOrder(host_, port_);
-    QWidget::setTabOrder(port_, database_);
-    QWidget::setTabOrder(database_, user_);
-    QWidget::setTabOrder(user_, password_);
+    auto* hostField = validated(host_);
+    auto* userField = validated(user_);
+    auto* passwordField = validated(password_);
+    sections->addFormRow(formLayout_, tr("Host"), hostField);
+    sections->addFormRow(formLayout_, tr("Port"), port_);
+    sections->addFormRow(formLayout_, tr("Database"), database_, design::FieldNeed::Optional);
+    databaseHelp_ = createDescription({}, form_);
+    databaseHelp_->setObjectName("profileDatabaseHelp");
+    formLayout_->addRow(QString(), databaseHelp_);
+    sections->addFormRow(formLayout_, tr("Username"), userField);
+    sections->addFormRow(formLayout_, tr("Password"), passwordField, design::FieldNeed::Optional);
     saveCredentials_ = new QCheckBox(tr("Save credentials in OS credential store"), form_);
     saveCredentials_->setObjectName("profileSaveCredentials");
-    pg->addRow(saveCredentials_);
+    formLayout_->addRow(QString(), saveCredentials_);
     tlsSecret_ = line("profileTlsSecret");
     tlsSecret_->setEchoMode(QLineEdit::Password);
     tlsSecret_->setToolTip(
-        tr("Password for a client identity saved by an earlier profile version."));
+        tr("Password for a client identity from an earlier version of this connection"));
     tlsSecretField_ = validated(tlsSecret_);
-    pg->addRow(tr("Client identity password"), tlsSecretField_);
+    sections->addFormRow(formLayout_, tr("Client identity password"), tlsSecretField_);
     connect(saveCredentials_, &QCheckBox::toggled, this, [this] {
         if (!filling_) {
             dirty_ = true;
             ++revision_;
         }
     });
-    sshEnabled_ = new QCheckBox(tr("Connect through SSH tunnel"), postgresFields_);
+    sshEnabled_ = new QCheckBox(tr("Connect through SSH tunnel"), form_);
     sshEnabled_->setObjectName("profileSshEnabled");
     sshEnabled_->setProperty("designRole", "switch");
-    pg->addRow(validated(sshEnabled_));
+    auto* sshEnabledField = validated(sshEnabled_);
+    formLayout_->addRow(QString(), sshEnabledField);
+    serverRows_ = {hostField, port_,         database_,        databaseHelp_,
+                   userField, passwordField, saveCredentials_, sshEnabledField};
     connect(host_, &QLineEdit::textChanged, this,
             [this] { validationFor(sshEnabled_)->setError({}); });
-    auto* sshFields = new QWidget(postgresFields_);
-    sshFields_ = sshFields;
-    auto* sshLayout = new QFormLayout(sshFields);
-    sshLayout->setContentsMargins(0, 0, 0, 0);
-    sshLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
     sshHost_ = line("profileSshHost");
-    sshHost_->setPlaceholderText(tr("SSH server hostname or IP address"));
-    sshHost_->setToolTip(tr("SSH server reached from this computer. Enter its port separately."));
+    sshHost_->setPlaceholderText(tr("bastion.example.com"));
     sshUser_ = line("profileSshUser");
-    sshAuthentication_ = new QComboBox(sshFields);
+    sshAuthentication_ = new QComboBox(form_);
     sshAuthentication_->setObjectName("profileSshAuthentication");
     sshAuthentication_->addItem(tr("SSH agent"), "agent");
     sshAuthentication_->addItem(tr("Public key"), "public_key");
     sshAuthentication_->addItem(tr("Password"), "password");
     sshIdentityFile_ = line("profileSshIdentityFile");
-    sshIdentityFile_->setPlaceholderText(tr("Optional — use SSH agent or default keys"));
+    sshIdentityFile_->setPlaceholderText(tr("~/.ssh/id_ed25519"));
     sshSecret_ = line("profileSshSecret");
     sshSecret_->setEchoMode(QLineEdit::Password);
     sshSecret_->setMaxLength(EngineAdapter::profileSecretMaxBytes());
-    sshPort_ = new QSpinBox(sshFields);
-    sshPort_->setObjectName("profileSshPort");
-    sshPort_->setRange(1, 65535);
-    auto* sshGrid = new QGridLayout;
-    for (int column = 0; column < 6; ++column)
-        sshGrid->setColumnStretch(column, column == 2 ? 1 : column == 3 ? 3 : 2);
-    const auto sshField = [this, sshGrid](const QString& title, QWidget* widget, int row,
-                                          int column, int span = 1) {
-        auto* label = new QLabel(title, sshFields_);
-        label->setBuddy(widget);
-        sshGrid->addWidget(label, row * 2, column, 1, span);
-        sshGrid->addWidget(widget == sshHost_ || widget == sshUser_ || widget == sshIdentityFile_ ||
-                                   widget == sshSecret_
-                               ? validated(widget)
-                               : widget,
-                           row * 2 + 1, column, 1, span);
-        return label;
-    };
-    sshField(tr("SSH host"), sshHost_, 0, 0, 2);
-    sshField(tr("SSH port"), sshPort_, 0, 2);
-    sshField(tr("SSH username"), sshUser_, 0, 3, 3);
-    sshField(tr("Authentication"), sshAuthentication_, 1, 0, 3);
-    sshIdentityFileLabel_ = sshField(tr("SSH private key file"), sshIdentityFile_, 2, 2, 2);
-    sshSecretLabel_ = sshField(tr("SSH passphrase"), sshSecret_, 1, 3, 3);
-    sshLayout->addRow(sshGrid);
-    QWidget::setTabOrder(sshHost_, sshPort_);
-    QWidget::setTabOrder(sshPort_, sshUser_);
-    QWidget::setTabOrder(sshUser_, sshAuthentication_);
-    pg->addRow(sshFields);
-    connect(sshEnabled_, &QCheckBox::toggled, sshFields, &QWidget::setVisible);
+    sshPort_ = port("profileSshPort");
+    auto* sshHostField = validated(sshHost_);
+    auto* sshUserField = validated(sshUser_);
+    sections->addFormRow(formLayout_, tr("SSH host"), sshHostField);
+    auto* sshHostHelp = createDescription(
+        tr("The SSH server that this computer can reach. Enter its port in SSH port."), form_);
+    sshHostHelp->setObjectName("profileSshHostHelp");
+    formLayout_->addRow(QString(), sshHostHelp);
+    sections->addFormRow(formLayout_, tr("SSH port"), sshPort_);
+    sections->addFormRow(formLayout_, tr("SSH username"), sshUserField);
+    sections->addFormRow(formLayout_, tr("Authentication"), sshAuthentication_);
+    sshRows_ = {sshHostField, sshHostHelp, sshPort_, sshUserField, sshAuthentication_};
+    createPrivateKeyControls();
+    sections->addFormRow(formLayout_, tr("SSH password"), validated(sshSecret_));
+    createTrustControls();
+    sshRows_.append(inspectSshKeys_);
     connect(sshEnabled_, &QCheckBox::toggled, this, [this] {
+        updateRowVisibility();
         if (!filling_) {
             dirty_ = true;
             ++revision_;
@@ -297,16 +234,12 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         }
     });
     const auto updateSshAuthentication = [this] {
-        const auto authentication = sshAuthentication_->currentData().toString();
-        const bool agent = authentication == "agent";
-        const bool publicKey = authentication == "public_key";
-        sshSecretLabel_->setVisible(!agent);
-        validationFor(sshSecret_)->setVisible(!agent);
-        sshSecretLabel_->setText(publicKey ? tr("SSH passphrase") : tr("SSH password"));
+        const bool publicKey = sshAuthentication_->currentData().toString() == "public_key";
+        sections_->relabelFormRow(formLayout_, validationFor(sshSecret_),
+                                  publicKey ? tr("Key passphrase") : tr("SSH password"),
+                                  publicKey ? design::FieldNeed::Optional
+                                            : design::FieldNeed::Required);
         updatePrivateKeyControls();
-        sshIdentityFile_->setPlaceholderText(tr("Private key file"));
-        sshSecret_->setPlaceholderText(publicKey ? tr("Optional for an unencrypted key")
-                                                 : tr("SSH password"));
     };
     connect(sshAuthentication_, &QComboBox::currentIndexChanged, this,
             [this, updateSshAuthentication] {
@@ -322,53 +255,38 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
                     ++revision_;
                 }
             });
-    createConnectionControls(sshLayout, sshGrid);
     updateSshAuthentication();
-    sshFields->hide();
-    formLayout->addRow(postgresFields_);
-    statusLine_ = new design::StatusLine(this);
+    statusLine_ = sections->addStatusLine();
     statusLine_->setObjectName("profileStatusLine");
-    status_ = statusLine_->findChild<QLabel*>("statusMessage");
-    status_->setObjectName("profileStatus");
-    status_->setWordWrap(true);
-    status_->setTextFormat(Qt::PlainText);
-    status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-    statusLine_->hide();
-    sections->bodyLayout()->addWidget(statusLine_);
+    auto* status = statusLine_->findChild<QLabel*>("statusMessage");
+    status->setObjectName("profileStatus");
+    status->setTextFormat(Qt::PlainText);
     feedbackToast_ = windowToast(this);
-    auto* progress = new ProfileProgressDialog(this);
-    progressDialog_ = progress;
-    progressMessage_ = progress->message();
-    auto* buttons = sections->footerLayout();
-    auto* footer = sections;
-    auto button = [this](const QString& title, const char* object) {
+    auto hidden = [this](const QString& title, const char* object) {
         auto* result = new design::Button(title, this);
         result->setObjectName(object);
-        result->setVariant(design::ButtonVariant::Outline);
+        result->hide();
         actions_.append(result);
         return result;
     };
-    auto* create = button(tr("New"), "profileNew");
-    auto* save = button(tr("Save profile"), "profileSave");
-    auto* duplicate = button(tr("Duplicate"), "profileDuplicate");
-    auto* remove = button(tr("Delete"), "profileDelete");
-    auto* test = button(tr("Test connection"), "profileTest");
-    auto* open = button(tr("Connect"), "profileConnect");
-    auto* saveConnect = button(tr("Save && connect"), "profileSaveConnect");
-    for (auto* action : {create, duplicate, remove, open})
-        action->hide();
-    save->setVariant(design::ButtonVariant::Outline);
+    auto* create = hidden(tr("New"), "profileNew");
+    auto* duplicate = hidden(tr("Duplicate"), "profileDuplicate");
+    auto* remove = hidden(tr("Delete"), "profileDelete");
     remove->setVariant(design::ButtonVariant::Destructive);
-    saveConnect->setVariant(design::ButtonVariant::Default);
-    buttons->addWidget(test);
-    buttons->addStretch();
-    auto* close = new design::Button(tr("Cancel"), footer);
+    auto* open = hidden(tr("Connect"), "profileConnect");
+    auto action = [this](design::DialogActionRole role, const QString& title, const char* object) {
+        auto* result = sections_->addAction(role, title);
+        result->setObjectName(object);
+        actions_.append(result);
+        return result;
+    };
+    auto* test = action(design::DialogActionRole::Utility, tr("Test connection"), "profileTest");
+    auto* save = action(design::DialogActionRole::Utility, tr("Save connection"), "profileSave");
+    auto* close = sections->addAction(design::DialogActionRole::Dismiss, tr("Cancel"));
     close->setObjectName("profileCancel");
-    close->setVariant(design::ButtonVariant::Outline);
-    buttons->addWidget(close);
-    buttons->addWidget(save);
-    buttons->addWidget(saveConnect);
-    connect(close, &QPushButton::clicked, this, &QDialog::close);
+    auto* saveConnect =
+        action(design::DialogActionRole::Primary, tr("Save && connect"), "profileSaveConnect");
+    connect(close, &QPushButton::clicked, this, &QDialog::reject);
     connect(browse, &QPushButton::clicked, this, [this] {
         const auto revision = revision_;
         const auto token = token_;
@@ -425,12 +343,10 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
         const auto id = current_.id;
         const auto token = token_;
         const auto revision = revision_;
-        ConfirmationDialog confirmation(QMessageBox::Question, tr("Delete profile"),
-                                        tr("Delete saved profile “%1”?").arg(current_.name),
-                                        QMessageBox::Yes | QMessageBox::Cancel, this);
-        confirmation.setTextFormat(Qt::PlainText);
-        confirmation.setDefaultButton(QMessageBox::Cancel);
-        if (confirmation.exec() != QMessageBox::Yes)
+        if (!ConfirmationDialog::confirm(this, tr("Delete connection"),
+                                         tr("Delete the saved connection “%1”?").arg(current_.name),
+                                         tr("Delete"),
+                                         ConfirmationDialog::Consequence::Destructive))
             return;
         if (busy_ || !adapter_ || current_.id != id || token_ != token || revision_ != revision)
             return;
@@ -616,16 +532,29 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     setDraft({});
     refresh();
 }
-void ProfileDialog::showEvent(QShowEvent* event) {
-    DialogShell::showEvent(event);
-    if (busy_ && progressDialog_)
-        progressDialog_->open();
+bool ProfileDialog::hasDraft() const {
+    return dirty_ && !busy_;
 }
 
-void ProfileDialog::hideEvent(QHideEvent* event) {
-    if (progressDialog_)
-        progressDialog_->hide();
-    DialogShell::hideEvent(event);
+void ProfileDialog::updateRowVisibility() {
+    const auto form = EngineAdapter::profileDriverForm(driver_->currentData().toString());
+    const bool ssh = form.server && sshEnabled_->isChecked();
+    const auto authentication = sshAuthentication_->currentData().toString();
+    const bool key = authentication == "public_key";
+    const bool inlineKey = key && sshIdentitySource_->currentData() == "inline";
+    for (auto* row : sqliteRows_)
+        formLayout_->setRowVisible(row, !form.server);
+    for (auto* row : serverRows_)
+        formLayout_->setRowVisible(row, form.server);
+    formLayout_->setRowVisible(tlsSecretField_, form.server && current_.tls != "disable" &&
+                                                    !current_.tlsClientIdentity.isEmpty());
+    for (auto* row : sshRows_)
+        formLayout_->setRowVisible(row, ssh);
+    formLayout_->setRowVisible(sshIdentitySource_, ssh && key);
+    formLayout_->setRowVisible(validationFor(sshIdentityFile_), ssh && key && !inlineKey);
+    formLayout_->setRowVisible(sshPrivateKey_, ssh && inlineKey);
+    formLayout_->setRowVisible(sshPrivateKeyHelp_, ssh && inlineKey);
+    formLayout_->setRowVisible(validationFor(sshSecret_), ssh && authentication != "agent");
 }
 
 QWidget* ProfileDialog::validated(QWidget* field) {
@@ -663,14 +592,6 @@ void ProfileDialog::present(ProfileOperation operation, const QString& detail) {
     present(EngineAdapter::profileOperationPresentation(operation, detail));
 }
 void ProfileDialog::present(const Presentation& shown) {
-    if (shown.busy) {
-        progressMessage_->setText(shown.message);
-        progressMessage_->setAccessibleName(shown.message);
-        if (isVisible() && progressDialog_)
-            progressDialog_->open();
-    } else if (progressDialog_) {
-        progressDialog_->hide();
-    }
     busy_ = shown.busy;
     list_->setEnabled(!busy_);
     form_->setEnabled(!busy_);
@@ -680,17 +601,19 @@ void ProfileDialog::present(const Presentation& shown) {
     if (shown.toast && isVisible()) {
         feedbackToast_ = windowToast(this);
         if (feedbackToast_) {
+            statusLine_->clearReport();
             showPresentationToast(this, shown);
-            statusLine_->setMessage({});
-            statusLine_->setBusy(false);
-            statusLine_->hide();
             return;
         }
+    }
+    if (shown.message.isEmpty()) {
+        statusLine_->clearReport();
+        return;
     }
     statusLine_->setMessage(shown.message);
     statusLine_->setBusy(shown.busy);
     statusLine_->setState(statusLineState(shown.tone));
-    statusLine_->setVisible(!shown.message.isEmpty());
+    statusLine_->show();
 }
 void ProfileDialog::refresh() {
     if (!adapter_)
@@ -759,10 +682,8 @@ bool ProfileDialog::discardChanges() {
         return true;
     const auto token = token_;
     const auto revision = revision_;
-    const auto response = ConfirmationDialog::question(
-        this, tr("Unsaved profile"), tr("Discard changes to this profile?"),
-        QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
-    return response == QMessageBox::Discard && !busy_ && adapter_ && token_ == token &&
-           revision_ == revision;
+    if (!confirmDiscardDraft())
+        return false;
+    return !busy_ && adapter_ && token_ == token && revision_ == revision;
 }
 }

@@ -1,7 +1,9 @@
 #include "app/query_workspace.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/right_sheet/right_sheet.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include <QAccessible>
 #include <QAction>
@@ -195,32 +197,20 @@ void QueryWorkspace::openCellEditor(const QPersistentModelIndex& index) {
     if (!cellEditSheet_) {
         cellEditSheet_ = new design::RightSheet(widgets_.dialogParent);
         cellEditSheet_->setObjectName("cellEditSheet");
-        cellEditSheet_->setTitle(tr("Edit cell…"));
-        auto* body = new QWidget(cellEditSheet_);
-        auto* layout = new QVBoxLayout(body);
-        layout->setContentsMargins(
-            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Three),
-            design::spacing(design::Spacing::Four), design::spacing(design::Spacing::Three));
-        layout->setSpacing(design::spacing(design::Spacing::Two));
-        cellEditStatus_ = new design::Text({}, body);
-        cellEditStatus_->setObjectName("cellEditStatus");
-        cellEditStatus_->setAccessibleName(tr("Cell edit status"));
-        cellEditStatus_->setWordWrap(true);
-        cellEditText_ = new CellDraftTextEdit(body);
+        cellEditSheet_->setTitle(tr("Edit cell"));
+        cellEditText_ = new CellDraftTextEdit(cellEditSheet_);
         cellEditText_->setObjectName("cellEditText");
         cellEditText_->setAccessibleName(tr("Cell value"));
-        layout->addWidget(cellEditStatus_);
-        layout->addWidget(cellEditText_, 1);
-        cellEditSheet_->setBody(body);
-        auto* cancel = new design::Button(tr("Cancel"), cellEditSheet_);
+        cellEditSheet_->setBody(cellEditText_);
+        cellEditStatus_ = cellEditSheet_->sections()->addStatusLine();
+        cellEditStatus_->setObjectName("cellEditStatusLine");
+        cellEditStatus_->findChild<QLabel*>("statusMessage")->setObjectName("cellEditStatus");
+        auto* cancel =
+            cellEditSheet_->sections()->addAction(design::DialogActionRole::Dismiss, tr("Cancel"));
         cancel->setObjectName("cellEditCancel");
-        cancel->setVariant(design::ButtonVariant::Outline);
-        cancel->setAutoDefault(false);
-        cellEditSave_ = new design::Button(tr("Save"), cellEditSheet_);
+        cellEditSave_ = cellEditSheet_->sections()->addAction(design::DialogActionRole::Primary,
+                                                              tr("Set value"));
         cellEditSave_->setObjectName("cellEditSave");
-        cellEditSave_->setAutoDefault(false);
-        cellEditSheet_->footerLayout()->addWidget(cancel);
-        cellEditSheet_->footerLayout()->addWidget(cellEditSave_);
         connect(cancel, &QPushButton::clicked, cellEditSheet_, &QDialog::reject);
         connect(cellEditSave_, &QPushButton::clicked, this, &QueryWorkspace::saveCellEditor);
         connect(cellEditSheet_, &QDialog::finished, this, [this] { clearCellEditor(); });
@@ -246,7 +236,7 @@ void QueryWorkspace::openCellEditor(const QPersistentModelIndex& index) {
     cellEditText_->setAccessibleDescription({});
     cellEditSave_->setEnabled(!cellEditParsing_);
     cellDraftEdited_ = false;
-    cellEditStatus_->setText(
+    cellEditStatus_->showInfo(
         omitted ? tr("Database default (omitted)")
         : null
             ? tr("SQL NULL")
@@ -256,7 +246,7 @@ void QueryWorkspace::openCellEditor(const QPersistentModelIndex& index) {
     cellEditText_->setFocus(Qt::OtherFocusReason);
 }
 void QueryWorkspace::cellEditError(const QString& error) {
-    cellEditStatus_->setText(error);
+    cellEditStatus_->showError(error);
     cellEditText_->setAccessibleDescription(error);
     QAccessibleEvent announcement(cellEditStatus_, QAccessible::Alert);
     QAccessible::updateAccessibility(&announcement);

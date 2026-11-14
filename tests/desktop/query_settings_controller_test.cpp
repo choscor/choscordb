@@ -1,7 +1,4 @@
 #include "app/query_settings.h"
-#include "widgets/query_settings_dialog/query_settings_dialog.h"
-#include <QPushButton>
-#include <QSpinBox>
 #include <QTemporaryDir>
 #include <QtTest>
 class QuerySettingsControllerTest : public QObject {
@@ -45,32 +42,23 @@ class QuerySettingsControllerTest : public QObject {
         emit adapter.queryPreferencesReady(5, unrelated);
         QCOMPARE(controller.preferences().pageSize, quint32(234));
     }
-    void closedDialogSaveAppliesOnceAndOldResponsesAreIgnored() {
+    void trackedSaveAppliesOnceAndUntrackedResponsesAreIgnored() {
         QWidget window;
         choscordb::EngineAdapter adapter;
         choscordb::QuerySettingsController controller(&adapter, &window);
         QTRY_VERIFY(controller.isReady());
-        controller.open();
-        auto* dialog = window.findChild<choscordb::QuerySettingsDialog*>("querySettingsDialog");
-        QVERIFY(dialog);
-        auto* apply = dialog->findChild<QPushButton*>("querySettingsApply");
-        QTRY_VERIFY(apply->isEnabled());
         QSignalSpy changed(&controller, &choscordb::QuerySettingsController::preferencesChanged);
-        QSignalSpy submitted(dialog,
-                             &choscordb::QuerySettingsDialog::queryPreferencesSaveSubmitted);
-        dialog->findChild<QSpinBox*>("queryPageSize")->setValue(345);
-        apply->click();
-        QCOMPARE(submitted.count(), 1);
-        const auto token = submitted.first().at(0).toULongLong();
-        QPointer<choscordb::QuerySettingsDialog> alive(dialog);
-        dialog->close();
-        QTRY_VERIFY(!alive);
-        QTRY_COMPARE(controller.preferences().pageSize, quint32(345));
+        controller.trackSave(41);
+        choscordb::QueryPreferences saved = controller.preferences();
+        saved.pageSize = 345;
+        emit adapter.queryPreferencesReady(41, saved);
+        QCOMPARE(controller.preferences().pageSize, quint32(345));
         QCOMPARE(changed.count(), 1);
         choscordb::QueryPreferences stale;
         stale.pageSize = 999;
-        emit adapter.queryPreferencesReady(token, stale);
-        emit adapter.recoveryFailed(token, "late");
+        emit adapter.queryPreferencesReady(41, stale);
+        emit adapter.queryPreferencesReady(42, stale);
+        emit adapter.recoveryFailed(41, "late");
         QCOMPARE(controller.preferences().pageSize, quint32(345));
         QCOMPARE(changed.count(), 1);
     }

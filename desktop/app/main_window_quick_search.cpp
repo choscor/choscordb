@@ -121,7 +121,7 @@ void MainWindow::showQuickSearch() {
                     quickHistoryClearing_ = workspace_->adapter()->historyClearInProgress();
                     refreshQuickSearchIfOpen();
                     quickHistoryError_ =
-                        tr("History clear failed: %1. %2")
+                        tr("Could not clear the history: %1. %2")
                             .arg(error, EngineAdapter::recoveryHint(RecoveryHint::Retry));
                     renderQuickSearch();
                     return;
@@ -131,7 +131,7 @@ void MainWindow::showQuickSearch() {
                 quickHistoryToken_ = 0;
                 quickHistoryPending_ = false;
                 quickHistoryError_ =
-                    tr("History search failed: %1. %2")
+                    tr("Could not search the history: %1. %2")
                         .arg(error, EngineAdapter::recoveryHint(RecoveryHint::RefineOrRetry));
                 renderQuickSearch();
             });
@@ -177,7 +177,7 @@ void MainWindow::showQuickSearch() {
                 &MainWindow::refreshQuickSearchIfOpen);
         connect(navigatorController_, &NavigatorController::browsingVisibilityChanged, this,
                 &MainWindow::refreshQuickSearchIfOpen);
-        const auto refreshRecentObjects = coalescedCall(quickSearch_, 250, [this] {
+        const auto refreshRecentObjects = coalescedCall(quickSearch_, [this] {
             if (quickSearch_ && quickSearch_->isVisible() &&
                 quickSearch_->query().trimmed().isEmpty() && quickPendingRecentObject_.isEmpty())
                 updateQuickSearch(quickSearch_->query());
@@ -262,12 +262,12 @@ void MainWindow::updateQuickSearch(const QString& query) {
         quickNameRows_.append({tr("Tab"), title, context, id, icon});
     }
     const auto connection = quickSearchConnection();
-    constexpr int quickObjectDebounceMs = 80;
     if (navigatorController_) {
         if (empty)
             navigatorController_->cancelQuickObjectSearch();
         else
-            navigatorController_->startQuickObjectSearch(needle, connection, quickObjectDebounceMs);
+            navigatorController_->startQuickObjectSearch(needle, connection,
+                                                         EngineAdapter::filterDelayMs());
     }
     if (empty && connection) {
         int ordinal = 0;
@@ -308,20 +308,22 @@ void MainWindow::updateQuickSearch(const QString& query) {
     quickHistoryPending_ =
         !quickHistoryClearing_ && workspace_ && history_ && history_->isEnabled();
     if (quickHistoryPending_) {
-        QTimer::singleShot(empty ? 0 : 80, this, [this, generation, needle] {
-            if (!quickSearch_ || !quickSearch_->isVisible() || generation != quickSearchGeneration_)
-                return;
-            quickHistoryToken_ = nextRequestToken();
-            if (!workspace_->adapter()->searchHistory(
-                    needle, QuickSearchNeedle::limits().historyRows, quickHistoryToken_)) {
-                quickHistoryToken_ = 0;
-                quickHistoryPending_ = false;
-                quickHistoryError_ =
-                    tr("History search is unavailable. %1")
-                        .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryQuery));
-                renderQuickSearch();
-            }
-        });
+        QTimer::singleShot(
+            empty ? 0 : EngineAdapter::filterDelayMs(), this, [this, generation, needle] {
+                if (!quickSearch_ || !quickSearch_->isVisible() ||
+                    generation != quickSearchGeneration_)
+                    return;
+                quickHistoryToken_ = nextRequestToken();
+                if (!workspace_->adapter()->searchHistory(
+                        needle, QuickSearchNeedle::limits().historyRows, quickHistoryToken_)) {
+                    quickHistoryToken_ = 0;
+                    quickHistoryPending_ = false;
+                    quickHistoryError_ =
+                        tr("History search is unavailable. %1")
+                            .arg(EngineAdapter::recoveryHint(RecoveryHint::RetryQuery));
+                    renderQuickSearch();
+                }
+            });
     } else if (history_ && !quickHistoryClearing_) {
         quickHistoryError_ = tr("History is unavailable while the workspace is recovering.");
     }
@@ -370,7 +372,7 @@ void MainWindow::renderQuickSearch() {
                             .filtered = !needle.isEmpty()},
                            quickHistoryError_)
                            .presentation;
-    quickSearch_->setSearchState(panelStateKind(shown.body), shown.message);
+    quickSearch_->setSearchState(panelStateKind(shown.body), shown.message, shown.busy);
     if (std::exchange(quickSearchToast_, quickHistoryError_) != quickHistoryError_)
         showPresentationToast(this, shown);
     quickSearch_->setStatus(quickSearchStatus(

@@ -9,6 +9,7 @@
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/right_sheet/right_sheet.h"
+#include "design_system/tabs/segmented_control.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/text/text.h"
 #include "design_system/toast_region/toast_region.h"
@@ -103,14 +104,15 @@ void PreviewTest::workspaceToolbarSpecimenUsesSurfaceInBothThemes() {
         const auto sample =
             toolbar->mapTo(surface, QPoint(toolbar->width() - 20, toolbar->height() / 2));
         QCOMPARE(surface->grab().toImage().pixelColor(sample),
-                 choscordb::design::resolvedThemeForWidget(*toolbar).colors.surface);
+                 choscordb::design::resolvedThemeForWidget(*toolbar).colors.base);
     }
 }
 
 void PreviewTest::displayedIconsRasterizeAtTargetScale_data() {
     QTest::addColumn<int>("size");
     QTest::addColumn<qreal>("scale");
-    for (const int size : {12, 16}) {
+    for (const int size : {choscordb::design::dimension(choscordb::design::Dimension::IconSmall),
+                           choscordb::design::dimension(choscordb::design::Dimension::Icon)}) {
         for (const qreal scale : {qreal(1), qreal(1.5), qreal(2)})
             QTest::newRow(qPrintable(QString("%1px-%2x").arg(size).arg(scale))) << size << scale;
     }
@@ -139,13 +141,18 @@ void PreviewTest::displayedIconsRasterizeAtTargetScale() {
     expected.setDevicePixelRatio(scale);
     expected.fill(Qt::transparent);
     QPainter vectorPainter(&expected);
-    QSvgRenderer reference(
-        QByteArrayLiteral("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" "
-                          "fill=\"none\" stroke=\"#222b32\" stroke-width=\"2\" "
-                          "stroke-linecap=\"round\" stroke-linejoin=\"round\">"
-                          "<ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/>"
-                          "<path d=\"M3 5V19A9 3 0 0 0 21 19V5\"/>"
-                          "<path d=\"M3 12A9 3 0 0 0 21 12\"/></svg>"));
+    QSvgRenderer reference(QByteArrayLiteral(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\" fill=\"#171717\"><pa"
+        "th d=\"M128,24C74.17,24,32,48.6,32,80v96c0,31.4,42.17,56,96,56s96-24.6,96-56V80C2"
+        "24,48.6,181.83,24,128,24Zm80,104c0,9.62-7.88,19.43-21.61,26.92C170.93,163.35,150"
+        ".19,168,128,168s-42.93-4.65-58.39-13.08C55.88,147.43,48,137.62,48,128V111.36c17."
+        "06,15,46.23,24.64,80,24.64s62.94-9.68,80-24.64ZM69.61,53.08C85.07,44.65,105.81,4"
+        "0,128,40s42.93,4.65,58.39,13.08C200.12,60.57,208,70.38,208,80s-7.88,19.43-21.61,"
+        "26.92C170.93,115.35,150.19,120,128,120s-42.93-4.65-58.39-13.08C55.88,99.43,48,89"
+        ".62,48,80S55.88,60.57,69.61,53.08ZM186.39,202.92C170.93,211.35,150.19,216,128,21"
+        "6s-42.93-4.65-58.39-13.08C55.88,195.43,48,185.62,48,176V159.36c17.06,15,46.23,24"
+        ".64,80,24.64s62.94-9.68,80-24.64V176C208,185.62,200.12,195.43,186.39,202.92Z\"/><"
+        "/svg>"));
     reference.render(&vectorPainter, QRectF(0, 0, size, size));
     vectorPainter.end();
     QCOMPARE(actual, expected);
@@ -158,9 +165,10 @@ void PreviewTest::iconsShowNamedProductionAssetsAtSupportedSizes() {
         auto* host = window.findChild<QWidget*>(theme);
         QVERIFY(host);
         for (const auto* name :
-             {"database", "grid-2x2", "square", "copy", "postgresql", "sqlite", "mysql"}) {
+             {"database", "grid-four", "square", "copy", "postgresql", "sqlite", "mysql"}) {
             QVERIFY(host->findChildren<QLabel*>(QString("icon-%1-24").arg(name)).isEmpty());
-            for (int size : {12, 16}) {
+            for (int size : {choscordb::design::dimension(choscordb::design::Dimension::IconSmall),
+                             choscordb::design::dimension(choscordb::design::Dimension::Icon)}) {
                 const auto icons =
                     host->findChildren<QLabel*>(QString("icon-%1-%2").arg(name).arg(size));
                 QCOMPARE(icons.size(), 1);
@@ -207,7 +215,7 @@ void PreviewTest::fieldSpecimenRetainsEditingAndValidationStates() {
     QCOMPARE(editable->font().weight(), int(QFont::Normal));
     QTest::keyClicks(editable, "analyst");
     QCOMPARE(editable->text(), QString("analyst"));
-    QCOMPARE(editable->font().weight(), int(QFont::Medium));
+    QCOMPARE(editable->font().weight(), int(QFont::Normal));
     auto* password = light->findChild<QLineEdit*>("field-password");
     QVERIFY(password);
     QCOMPARE(password->echoMode(), QLineEdit::Password);
@@ -263,7 +271,8 @@ void PreviewTest::sidebarTabSpecimenUsesProductionContextInBothThemes() {
         auto* navigator = host->findChild<QWidget*>("navigatorBody");
         QVERIFY(navigator);
         QVERIFY(navigator->findChild<QListWidget*>("savedConnections"));
-        QCOMPARE(tab->buttonContext(), ButtonContext::Sidebar);
+        QCOMPARE(tab->buttonContext(), ButtonContext::Segment);
+        QVERIFY(host->findChild<SegmentedControl*>("previewSidebarTabs"));
         QVERIFY(tab->isChecked());
     }
 }
@@ -387,7 +396,7 @@ void PreviewTest::exportsAreDeterministicAndFailuresVisible() {
     QVERIFY(!window.exportCapture(directory.filePath("missing/capture.png")));
     auto* status = window.findChild<QLabel*>("previewExportStatus");
     QVERIFY(status);
-    QVERIFY(status->text().contains("failed", Qt::CaseInsensitive));
+    QVERIFY(status->text().startsWith("Could not save the capture"));
     QVERIFY(!window.selectSection("Unknown"));
 }
 
@@ -461,11 +470,9 @@ void PreviewTest::componentFamiliesAreRendered() {
     for (const auto* name : {"previewLight", "previewDark"}) {
         auto* host = window.findChild<QWidget*>(name);
         QVERIFY(host->findChild<QDockWidget*>("previewResizableSidebar"));
+        auto* separator = host->findChild<QFrame*>("toolbarSeparator");
+        QVERIFY(separator && separator->frameShape() == QFrame::VLine);
     }
-    bool hasVerticalSeparator = false;
-    for (auto* frame : light->findChildren<QFrame*>())
-        hasVerticalSeparator |= frame->frameShape() == QFrame::VLine;
-    QVERIFY(hasVerticalSeparator);
     QVERIFY(window.selectSpecimen("tabs"));
     for (const auto* name : {"previewLight", "previewDark"}) {
         auto* host = window.findChild<QWidget*>(name);
@@ -521,11 +528,10 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         QCoreApplication::sendEvent(list->viewport(), &leave);
         const auto image = list->viewport()->grab().toImage();
         QCOMPARE(image.pixelColor(firstSelectedRow.right() - 30, firstSelectedRow.center().y()),
-                 colors.sidebarSelection);
-        QCOMPARE(image.pixelColor(selectedRow.right() - 30, selectedRow.center().y()),
-                 colors.sidebarSelection);
+                 colors.tint);
+        QCOMPARE(image.pixelColor(selectedRow.right() - 30, selectedRow.center().y()), colors.tint);
         QCOMPARE(image.pixelColor(regularRow.right() - 30, regularRow.center().y()),
-                 colors.surfaceRaised);
+                 colors.elevated);
         QVERIFY(list->visualItemRect(list->item(1)).bottom() < list->viewport()->height());
         QCOMPARE(list->item(0)->text(), QString("test sqlite"));
         QCOMPARE(list->item(1)
@@ -554,7 +560,7 @@ void PreviewTest::dockSpecimenRendersThemedTitleAndButtons() {
         QVERIFY(title);
         const auto theme = choscordb::design::resolvedThemeForWidget(*host);
         const auto image = dock->grab().toImage();
-        QCOMPARE(image.pixelColor(image.width() / 2, image.height() / 2), theme.colors.surface);
+        QCOMPARE(image.pixelColor(image.width() / 2, image.height() / 2), theme.colors.base);
         for (const auto* buttonName : {"dockFloatButton", "dockCloseButton"}) {
             auto* button = dock->findChild<QToolButton*>(buttonName);
             QVERIFY(button);
@@ -564,7 +570,7 @@ void PreviewTest::dockSpecimenRendersThemedTitleAndButtons() {
             for (int x = 0; x < buttonImage.width(); ++x) {
                 bool painted = false;
                 for (int y = 0; y < buttonImage.height(); ++y)
-                    painted |= buttonImage.pixelColor(x, y) != theme.colors.surface;
+                    painted |= buttonImage.pixelColor(x, y) != theme.colors.base;
                 paintedColumns += painted;
             }
             QVERIFY2(paintedColumns >= 7, qPrintable(buttonName));
@@ -591,7 +597,8 @@ void PreviewTest::navigationTreeTogglesAndRenamesFromMenu() {
     }
     const auto group = tree->model()->index(0, 0);
     const auto nested = tree->model()->index(0, 0, group);
-    QVERIFY(tree->visualRect(group).height() <= 32);
+    QVERIFY(tree->visualRect(group).height() <=
+            choscordb::design::dimension(choscordb::design::Dimension::Row));
     QVERIFY(tree->visualRect(nested).left() - tree->visualRect(group).left() <= 20);
     const QPoint label = tree->visualRect(group).center() + QPoint(20, 0);
     QTest::mouseClick(tree->viewport(), Qt::LeftButton, {}, label);
@@ -687,16 +694,14 @@ void PreviewTest::rightSheetSpecimenUsesModalBoundaryInBothThemes() {
         QTRY_VERIFY(sheet->isAncestorOf(QApplication::focusWidget()));
         auto* close = sheet->findChild<QPushButton*>("rightSheetClose");
         QVERIFY(close);
-        QCOMPARE(close->accessibleName(), QString("Close sheet"));
+        QCOMPARE(close->accessibleName(), QString("Close Example details"));
         QCOMPARE(sheet->accessibleName(), QString("Example details"));
         QVERIFY(sheet->findChild<QWidget*>("rightSheetBody"));
-        auto* footer = sheet->findChild<QWidget*>("rightSheetFooter");
+        auto* footer = sheet->findChild<QWidget*>("dialogSectionsFooter");
         QVERIFY(footer);
-        QCOMPARE(footer->accessibleName(), QString("Sheet actions"));
         QCOMPARE(footer->geometry().bottom(), sheet->rect().bottom());
         const auto footerColor = footer->grab(QRect(1, 1, 1, 1)).toImage().pixelColor(0, 0);
-        QCOMPARE(footerColor,
-                 choscordb::design::resolvedThemeForWidget(*sheet).colors.surfaceRaised);
+        QCOMPARE(footerColor, choscordb::design::resolvedThemeForWidget(*sheet).colors.elevated);
         QSignalSpy backgroundClicks(open, &QPushButton::clicked);
         QTest::mouseClick(open, Qt::LeftButton);
         QCOMPARE(backgroundClicks.count(), 0);
@@ -732,8 +737,8 @@ void PreviewTest::rightSheetSpecimenUsesModalBoundaryInBothThemes() {
     choscordb::design::RightSheet narrowSheet(&narrowOwner);
     narrowSheet.setTitle("Details");
     narrowSheet.setBody(new QPlainTextEdit(&narrowSheet));
-    auto* narrowAction = new choscordb::design::Button("Done", &narrowSheet);
-    narrowSheet.footerLayout()->addWidget(narrowAction);
+    auto* narrowAction =
+        narrowSheet.sections()->addAction(choscordb::design::DialogActionRole::Primary, "Done");
     narrowSheet.open();
     QTRY_COMPARE(narrowSheet.geometry(), QRect(0, 0, 300, 420));
     QVERIFY(narrowSheet.rect().contains(
@@ -765,7 +770,7 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         QVERIFY(corner->addButton()->isVisible());
         QCOMPARE(corner->addButton()->variant(), choscordb::design::ButtonVariant::Ghost);
         QCOMPARE(corner->grab().toImage().pixelColor(1, corner->height() / 2),
-                 choscordb::design::resolvedThemeForWidget(*corner).colors.surfaceRaised);
+                 choscordb::design::resolvedThemeForWidget(*corner).colors.base);
         QCOMPARE(tabs->tabText(0), QString("Untitled query 1"));
         QCOMPARE(tabs->tabText(1), QString("orders"));
         QCOMPARE(tabs->tabText(2), QString("customers"));
@@ -776,15 +781,14 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         QCOMPARE(qobject_cast<QLabel*>(tabs->widget(0))->text(),
                  QString("Neutral document chrome"));
         QVERIFY(!tabs->tabIcon(0).isNull());
-        QCOMPARE(
-            tabs->tabBar()->font().pixelSize(),
-            choscordb::design::typographySpec(choscordb::design::TextStyle::Callout).pixelSize);
+        QCOMPARE(tabs->tabBar()->font().pixelSize(),
+                 choscordb::design::typographySpec(choscordb::design::TextStyle::Body).pixelSize);
         QCOMPARE(tabs->tabBar()->tabRect(0).width(), tabs->tabBar()->tabRect(1).width());
-        QVERIFY(tabs->tabBar()->tabRect(0).width() >= 154);
-        QVERIFY(tabs->tabBar()->tabRect(0).width() <= 166);
+        QVERIFY(tabs->tabBar()->tabRect(0).width() >= 182);
+        QVERIFY(tabs->tabBar()->tabRect(0).width() <= 194);
         QCOMPARE(tabs->tabBar()->style()->pixelMetric(QStyle::PM_TabBarIconSize, nullptr,
                                                       tabs->tabBar()),
-                 12);
+                 choscordb::design::dimension(choscordb::design::Dimension::IconSmall));
         const auto selected = tabs->tabBar()->tabRect(0);
         const auto tabPixels = tabs->tabBar()->grab().toImage();
         const auto background = tabPixels.pixelColor(selected.left() + 38, selected.top() + 3);
@@ -797,10 +801,10 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         tabs->setTabText(0, {});
         tabs->setTabIcon(0, {});
         const auto withoutIcon = tabs->tabBar()->grab().toImage();
-        tabs->setTabIcon(0,
-                         choscordb::design::themedIcon(
-                             choscordb::design::Icon::Table,
-                             choscordb::design::resolvedThemeForWidget(*tabs).colors.fgMuted, 16));
+        tabs->setTabIcon(0, choscordb::design::themedIcon(
+                                choscordb::design::Icon::Table,
+                                choscordb::design::resolvedThemeForWidget(*tabs).colors.textSubtle,
+                                16));
         const auto withTableIcon = tabs->tabBar()->grab().toImage();
         int iconPixels = 0;
         for (int y = selected.center().y() - 8; y <= selected.center().y() + 8; ++y)
@@ -815,16 +819,15 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         const auto paneRect = paneTabs->tabRect(paneTabs->currentIndex());
         const auto paneImage = paneTabs->grab().toImage();
         const auto colors = choscordb::design::resolvedThemeForWidget(*paneTabs).colors;
-        QCOMPARE(paneImage.pixelColor(paneRect.left() + 4, paneRect.center().y()), colors.surface);
-        QCOMPARE(paneImage.pixelColor(paneRect.left() + 1, paneRect.top() + 1),
-                 colors.surfaceRaised);
+        QCOMPARE(paneImage.pixelColor(paneRect.left() + 4, paneRect.center().y()), colors.base);
+        QCOMPARE(paneImage.pixelColor(paneRect.left() + 1, paneRect.top() + 1), colors.recessed);
         while (tabs->count() > 1)
             tabs->removeTab(tabs->count() - 1);
         QCoreApplication::processEvents();
         const auto addPoint = corner->addButton()->mapTo(tabs, QPoint(1, 2));
         QVERIFY(addPoint.x() - tabs->tabBar()->tabRect(0).right() <= 6);
         QCOMPARE(tabs->grab().toImage().pixelColor(addPoint),
-                 choscordb::design::resolvedThemeForWidget(*tabs).colors.surfaceRaised);
+                 choscordb::design::resolvedThemeForWidget(*tabs).colors.base);
         const QPoint hoverLocal(5, corner->addButton()->height() / 2);
         const auto hoverPoint = corner->addButton()->mapTo(tabs, hoverLocal);
         const auto normalImage = tabs->grab().toImage();

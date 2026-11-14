@@ -418,12 +418,11 @@ void ModernUiTest::quickSearchShowsHistoryClearStartedBeforeFirstOpen() {
     emit secondAdapter->recoveryFailed(8847, QStringLiteral("simulated failure"));
     auto* placeholder = secondOverlay->findChild<QLabel*>("quickSearchPlaceholder");
     QVERIFY(placeholder && placeholder->isVisible());
-    QVERIFY2(placeholder->text().contains("History clear failed: simulated failure"),
+    QVERIFY2(placeholder->text().contains("Could not clear the history: simulated failure"),
              qPrintable(placeholder->text()));
     QCOMPARE(placeholder->property("state").toString(), QString("error"));
     auto* toast = choscordb::windowToast(&secondWindow);
-    QVERIFY(toast && !toast->isHidden());
-    QVERIFY2(toast->text().contains("History clear failed"), qPrintable(toast->text()));
+    QVERIFY(!toast || toast->isHidden());
     QTRY_COMPARE(secondCleared.count(), 1);
 }
 
@@ -696,7 +695,7 @@ void ModernUiTest::quickSearchColumnResultOpensItsTablePane() {
     input->setText("distinct_field");
     QTRY_VERIFY2(!overlay->results().isEmpty() && overlay->results().first().type == "Object",
                  qPrintable(overlay->findChild<QLabel*>("quickSearchStatus")->text()));
-    QCOMPARE(overlay->results().first().icon, choscordb::design::Icon::File);
+    QCOMPARE(overlay->results().first().icon, choscordb::design::Icon::Table);
     QVERIFY(overlay->results().first().context.contains("column"));
     overlay->findChild<QListWidget*>("quickSearchResults")->setCurrentRow(0);
     QTest::keyClick(input, Qt::Key_Return);
@@ -804,9 +803,8 @@ void ModernUiTest::quickSearchUsesTheBrowsedConnectionWhenTwoAreVisible() {
     window.findChild<QAction*>("runStatement")->trigger();
     QTRY_COMPARE(finished, 1);
     QTRY_COMPARE(tree->model()->rowCount(), 2);
-    tree->selectionModel()->setCurrentIndex(tree->model()->index(1, 0),
-                                            QItemSelectionModel::ClearAndSelect |
-                                                QItemSelectionModel::Rows);
+    QTest::mouseClick(tree->viewport(), Qt::LeftButton, {},
+                      tree->visualRect(tree->model()->index(1, 0)).center());
     QTRY_COMPARE(window.browsingConnection(), std::optional<quint64>{secondConnection});
     window.findChild<QAction*>("quickSwitch")->trigger();
     auto* overlay = window.findChild<choscordb::design::QuickSearchDialog*>("quickSearchDialog");
@@ -814,9 +812,8 @@ void ModernUiTest::quickSearchUsesTheBrowsedConnectionWhenTwoAreVisible() {
     QTRY_VERIFY2(!overlay->results().isEmpty() && overlay->results().first().type == "Object",
                  qPrintable(overlay->findChild<QLabel*>("quickSearchStatus")->text()));
     const QString staleId = overlay->results().first().id;
-    tree->selectionModel()->setCurrentIndex(tree->model()->index(0, 0),
-                                            QItemSelectionModel::ClearAndSelect |
-                                                QItemSelectionModel::Rows);
+    tree->setCurrentIndex(tree->model()->index(0, 0));
+    emit tree->activated(tree->currentIndex());
     QTRY_COMPARE(window.browsingConnection(), std::optional<quint64>{firstConnection});
     QTRY_VERIFY(overlay->results().isEmpty());
     emit overlay->activated(staleId);

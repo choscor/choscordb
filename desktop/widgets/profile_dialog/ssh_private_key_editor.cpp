@@ -52,9 +52,7 @@ SshPrivateKeyDraft SshPrivateKeyEditor::draft() const {
 }
 void SshPrivateKeyEditor::setDraft(const SshPrivateKeyDraft& value, bool saved) {
     value_ = value;
-    preview_->setPlaceholderText(
-        saved ? tr("Saved private key — leave unchanged to keep")
-              : tr("Paste a complete private key. Its contents stay hidden."));
+    preview_->setPlaceholderText(saved ? tr("Saved private key") : QString());
     refresh();
 }
 void SshPrivateKeyEditor::refresh() {

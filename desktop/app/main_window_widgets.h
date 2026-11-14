@@ -7,10 +7,13 @@
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
+#include <QAbstractButton>
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCursor>
 #include <QEvent>
+#include <QHelpEvent>
 #include <QIcon>
 #include <QItemSelectionModel>
 #include <QKeyEvent>
@@ -57,6 +60,9 @@ class NavigatorIconDelegate final : public design::ColumnRowDelegate {
         QStyledItemDelegate::initStyleOption(option, index);
         const auto kind = index.data(NavigatorModel::KindRole).toString();
         const auto style = navigatorRowStyle(kind);
+        if (style == NavigatorRowStyle::Group && option->widget)
+            option->palette.setColor(
+                QPalette::Text, design::resolvedThemeForWidget(*option->widget).colors.textSubtle);
         if (style == NavigatorRowStyle::Group || style == NavigatorRowStyle::Column) {
             option->icon = QIcon();
             option->features &= ~QStyleOptionViewItem::HasDecoration;
@@ -70,51 +76,12 @@ class NavigatorIconDelegate final : public design::ColumnRowDelegate {
                 : objectKindIcon(kind);
         if (option->widget) {
             const auto colors = design::resolvedThemeForWidget(*option->widget).colors;
-            const int size = objectIconSize();
-            option->icon = design::themedIcon(role, colors.fgMuted, size);
+            const int size = design::dimension(design::Dimension::Icon);
+            option->icon = design::themedIcon(role, colors.textSubtle, size);
             option->features |= QStyleOptionViewItem::HasDecoration;
             option->decorationSize = QSize(size, size);
         }
     }
-};
-
-class ContextualActionVisibility final : public QObject {
-  public:
-    ContextualActionVisibility(QWidget* region, QList<QWidget*> actions)
-        : QObject(region), region_(region), actions_(std::move(actions)) {
-        region_->installEventFilter(this);
-        connect(qApp, &QApplication::focusChanged, this,
-                [this](QWidget*, QWidget*) { updateForCurrentInput(); });
-        setActionsVisible(false);
-    }
-
-  protected:
-    bool eventFilter(QObject* watched, QEvent* event) override {
-        if (watched == region_) {
-            if (event->type() == QEvent::Enter) {
-                setActionsVisible(true);
-            } else if (event->type() == QEvent::Leave) {
-                QTimer::singleShot(0, this, [this] { updateForCurrentInput(); });
-            }
-        }
-        return QObject::eventFilter(watched, event);
-    }
-
-  private:
-    void updateForCurrentInput() {
-        auto* focused = QApplication::focusWidget();
-        setActionsVisible(region_->underMouse() || focused == region_ ||
-                          (focused != nullptr && region_->isAncestorOf(focused)));
-    }
-
-    void setActionsVisible(bool visible) {
-        for (auto* action : actions_) {
-            action->setVisible(visible);
-        }
-    }
-
-    QWidget* region_;
-    QList<QWidget*> actions_;
 };
 
 class SidebarWheelForwarder final : public QObject {
@@ -225,6 +192,87 @@ class SidebarConnectionListScroll final : public QObject {
   private:
     QListWidget* list_;
     QScrollArea* scroll_;
+};
+
+class ArrowKeyTabs final : public QObject {
+  public:
+    ArrowKeyTabs(QList<QAbstractButton*> tabs, QObject* parent)
+        : QObject(parent), tabs_(std::move(tabs)) {
+        for (auto* tab : tabs_)
+            tab->installEventFilter(this);
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() != QEvent::KeyPress)
+            return QObject::eventFilter(watched, event);
+        const auto key = static_cast<QKeyEvent*>(event)->key();
+        const int step = key == Qt::Key_Right ? 1 : key == Qt::Key_Left ? -1 : 0;
+        const auto index = tabs_.indexOf(qobject_cast<QAbstractButton*>(watched));
+        if (!step || index < 0)
+            return QObject::eventFilter(watched, event);
+        auto* next = tabs_.at((index + step + tabs_.size()) % tabs_.size());
+        next->setFocus(Qt::TabFocusReason);
+        next->click();
+        return true;
+    }
+
+  private:
+    QList<QAbstractButton*> tabs_;
+};
+
+class ReturnActivatesRow final : public QObject {
+  public:
+    explicit ReturnActivatesRow(QAbstractItemView* view) : QObject(view), view_(view) {
+        view_->installEventFilter(this);
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() != QEvent::KeyPress)
+            return QObject::eventFilter(watched, event);
+        const auto key = static_cast<QKeyEvent*>(event)->key();
+        if ((key != Qt::Key_Return && key != Qt::Key_Enter) || !view_->currentIndex().isValid())
+            return QObject::eventFilter(watched, event);
+        emit view_->activated(view_->currentIndex());
+        return true;
+    }
+
+  private:
+    QAbstractItemView* view_;
+};
+
+class DocumentTabGestures final : public QObject {
+  public:
+    explicit DocumentTabGestures(QTabWidget* tabs) : QObject(tabs), tabs_(tabs) {
+        tabs_->tabBar()->installEventFilter(this);
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        auto* bar = tabs_->tabBar();
+        if (watched != bar)
+            return QObject::eventFilter(watched, event);
+        if (event->type() == QEvent::ToolTip) {
+            const auto* help = static_cast<QHelpEvent*>(event);
+            const int index = bar->tabAt(help->pos());
+            if (index >= 0 && bar->tabToolTip(index) != bar->tabText(index)) {
+                bar->setTabToolTip(index, bar->tabText(index));
+                return QCoreApplication::sendEvent(bar, event);
+            }
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+            const auto* mouse = static_cast<QMouseEvent*>(event);
+            const int index = bar->tabAt(mouse->position().toPoint());
+            if (mouse->button() == Qt::MiddleButton && index >= 0) {
+                emit tabs_->tabCloseRequested(index);
+                return true;
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    QTabWidget* tabs_;
 };
 
 class HoveredTabCloseVisibility final : public QObject {

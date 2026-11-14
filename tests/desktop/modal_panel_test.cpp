@@ -1,4 +1,7 @@
+#include "confirmation_checks.h"
+#include "design_system/button/button.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/modal_panel/modal_panel.h"
@@ -8,13 +11,14 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPushButton>
-#include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QShortcut>
@@ -166,10 +170,9 @@ class ModalPanelTest final : public QObject {
             QTest::mouseClick(owner.windowHandle(), Qt::LeftButton, {},
                               cancel->mapTo(&owner, cancel->rect().center()));
         });
-        QCOMPARE(choscordb::ConfirmationDialog::question(&panel, "Cancel task?", "Keep editing?",
-                                                         QMessageBox::Ok | QMessageBox::Cancel,
-                                                         QMessageBox::Cancel),
-                 QMessageBox::Cancel);
+        QVERIFY(!choscordb::ConfirmationDialog::confirm(
+            &panel, "Cancel task?", "Keep editing?", "Cancel task",
+            choscordb::ConfirmationDialog::Consequence::Safe));
         QVERIFY(liveChild);
         QVERIFY(panelBlocked);
         QVERIFY(panel.isVisible());
@@ -238,30 +241,33 @@ class ModalPanelTest final : public QObject {
         choscordb::design::DialogSections sections;
         sections.headerLayout()->addWidget(new QLabel("New connection", &sections));
         sections.bodyLayout()->addWidget(new QLineEdit(&sections));
-        sections.footerLayout()->addWidget(new QPushButton("Save", &sections));
+        sections.addAction(choscordb::design::DialogActionRole::Primary, "Save");
         sections.resize(600, 400);
         sections.show();
         QCoreApplication::processEvents();
         auto* header = sections.headerLayout()->parentWidget();
         auto* body = sections.bodyLayout()->parentWidget();
-        auto* footer = sections.footerLayout()->parentWidget();
+        auto* footer = sections.findChild<QWidget*>("dialogSectionsFooter");
         QVERIFY(header->height() < 66);
         QVERIFY(footer->height() < 70);
         QVERIFY(body->height() > header->height());
         QCOMPARE(header->geometry().top(), 0);
         QCOMPARE(footer->geometry().bottom(), sections.rect().bottom());
         QCOMPARE(sections.bodyLayout()->contentsMargins().left(),
-                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+                 choscordb::design::spacing(choscordb::design::Spacing::Six));
         QCOMPARE(sections.bodyLayout()->contentsMargins().right(),
-                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+                 choscordb::design::spacing(choscordb::design::Spacing::Six));
         QCOMPARE(sections.headerLayout()->contentsMargins().left(),
-                 choscordb::design::spacing(choscordb::design::Spacing::Three));
-        QCOMPARE(sections.footerLayout()->contentsMargins().right(),
-                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+                 choscordb::design::spacing(choscordb::design::Spacing::Six));
+        QCOMPARE(sections.findChild<QWidget*>("dialogSectionsFooter")
+                     ->layout()
+                     ->contentsMargins()
+                     .right(),
+                 choscordb::design::spacing(choscordb::design::Spacing::Six));
         auto* field = body->findChild<QLineEdit*>();
         QVERIFY(field);
         QCOMPARE(field->geometry().left(),
-                 choscordb::design::spacing(choscordb::design::Spacing::Three));
+                 choscordb::design::spacing(choscordb::design::Spacing::Six));
         for (auto* frame : sections.findChildren<QFrame*>()) {
             if (frame->frameShape() == QFrame::HLine) {
                 QCOMPARE(frame->geometry().left(), 0);
@@ -285,7 +291,7 @@ class ModalPanelTest final : public QObject {
         fields->addWidget(new QLineEdit(sections));
         fields->addWidget(new QLineEdit(sections));
         sections->bodyLayout()->addLayout(fields);
-        sections->footerLayout()->addWidget(new QPushButton("Save", sections));
+        sections->addAction(choscordb::design::DialogActionRole::Primary, "Save");
         const auto built = [&] {
             return sectionedSpacing(shell) + " body=" + layoutSpacing(sections->bodyLayout()) +
                    " fields=" + layoutSpacing(fields);
@@ -303,26 +309,106 @@ class ModalPanelTest final : public QObject {
         QCOMPARE(built(), expected);
         shell.reject();
     }
+    void dialogShellAsksBeforeItDropsADraft() {
+        QWidget owner;
+        owner.resize(640, 480);
+        owner.show();
+        choscordb::DialogShell shell(&owner);
+        shell.setWindowTitle("Example");
+        auto* sections = shell.createSections();
+        auto* field = new QLineEdit("first", sections);
+        sections->bodyLayout()->addWidget(field);
+        shell.show();
+        shell.markDraftClean();
+        shell.reject();
+        QVERIFY(!shell.isVisible());
+        shell.show();
+        shell.markDraftClean();
+        field->setText("changed");
+        const auto answer = [](bool discard) {
+            QTimer::singleShot(0, [discard] {
+                auto* box = qobject_cast<QMessageBox*>(
+                    choscordb::design::DialogPresentation::activeDialog());
+                QVERIFY(box);
+                QCOMPARE(box->defaultButton(), box->button(QMessageBox::Cancel));
+                if (discard)
+                    confirmationAction(box)->click();
+                else
+                    box->button(QMessageBox::Cancel)->click();
+            });
+        };
+        answer(false);
+        shell.reject();
+        QVERIFY(shell.isVisible());
+        QCOMPARE(field->text(), QString("changed"));
+        answer(true);
+        shell.reject();
+        QVERIFY(!shell.isVisible());
+    }
     void dialogSectionsHideAnEmptyFooter() {
         choscordb::design::DialogSections sections;
         sections.bodyLayout()->addWidget(new QLabel("Working…", &sections));
         sections.resize(400, 200);
         sections.show();
         QCoreApplication::processEvents();
-        auto* footer = sections.footerLayout()->parentWidget();
+        auto* footer = sections.findChild<QWidget*>("dialogSectionsFooter");
         auto* separator = sections.findChild<QFrame*>("dialogSectionsFooterSeparator");
-        QVERIFY(separator);
+        QVERIFY(footer && separator);
         QVERIFY(!footer->isVisible());
         QVERIFY(!separator->isVisible());
         QCOMPARE(sections.bodyLayout()->parentWidget()->geometry().bottom(),
                  sections.rect().bottom());
-        auto* action = new QPushButton("Close", &sections);
-        sections.footerLayout()->addWidget(action);
+        auto* action = sections.addAction(choscordb::design::DialogActionRole::Dismiss, "Close");
         QVERIFY(footer->isVisible());
         QVERIFY(separator->isVisible());
-        delete action;
-        QVERIFY(!footer->isVisible());
-        QVERIFY(!separator->isVisible());
+        QVERIFY(footer->isAncestorOf(action));
+    }
+    void dialogFooterPlacesEachRoleInOneOrderWithOneVariant() {
+        using choscordb::design::ButtonVariant;
+        using choscordb::design::DialogActionRole;
+        choscordb::design::DialogSections sections;
+        auto* primary = sections.addAction(DialogActionRole::Primary, "Save");
+        auto* dismiss = sections.addAction(DialogActionRole::Dismiss, "Cancel");
+        auto* clear = sections.addAction(DialogActionRole::DestructiveUtility, "Clear…");
+        auto* restore = sections.addAction(DialogActionRole::Utility, "Restore defaults");
+        sections.resize(600, 200);
+        sections.show();
+        QCoreApplication::processEvents();
+        QCOMPARE(primary->variant(), ButtonVariant::Default);
+        QVERIFY(primary->isDefault());
+        QCOMPARE(dismiss->variant(), ButtonVariant::Outline);
+        QVERIFY(!dismiss->isDefault());
+        QCOMPARE(restore->variant(), ButtonVariant::Secondary);
+        QCOMPARE(clear->variant(), ButtonVariant::Destructive);
+        QVERIFY(clear->geometry().right() < restore->geometry().left());
+        QVERIFY(restore->geometry().right() < dismiss->geometry().left());
+        QVERIFY(dismiss->geometry().right() < primary->geometry().left());
+        choscordb::design::DialogSections destructive;
+        auto* drop = destructive.addAction(DialogActionRole::Destructive, "Drop");
+        auto* cancel = destructive.addAction(DialogActionRole::Dismiss, "Cancel");
+        destructive.resize(600, 200);
+        destructive.show();
+        QCoreApplication::processEvents();
+        QCOMPARE(drop->variant(), ButtonVariant::Destructive);
+        QVERIFY(!drop->isDefault());
+        QVERIFY(cancel->isDefault());
+        QVERIFY(cancel->geometry().right() < drop->geometry().left());
+    }
+    void dialogFormRowsShareOnePlacementAndMarkOptionalFields() {
+        choscordb::design::DialogSections sections;
+        auto* form = sections.addForm();
+        auto* name = new QLineEdit(&sections);
+        auto* note = new QLineEdit(&sections);
+        sections.addFormRow(form, "Name", name);
+        sections.addFormRow(form, "Note", note, choscordb::design::FieldNeed::Optional);
+        auto* nameLabel = qobject_cast<QLabel*>(form->labelForField(name));
+        auto* noteLabel = qobject_cast<QLabel*>(form->labelForField(note));
+        QVERIFY(nameLabel && noteLabel);
+        QCOMPARE(nameLabel->buddy(), name);
+        QCOMPARE(nameLabel->text(), QString("&Name"));
+        QCOMPARE(noteLabel->text(), QString("N&ote (optional)"));
+        QCOMPARE(form->labelAlignment(), Qt::AlignLeft | Qt::AlignVCenter);
+        QCOMPARE(form->rowWrapPolicy(), QFormLayout::DontWrapRows);
     }
     void embeddedModalsBlockOwnerAndRestoreFocus_data() {
         QTest::addColumn<bool>("confirmation");
@@ -496,7 +582,7 @@ class ModalPanelTest final : public QObject {
             QCOMPARE(messageBox->standardButton(messageBox->clickedButton()), QMessageBox::Cancel);
         }
     }
-    void modalSoftensBackgroundDetailAndRestoresItOnClose() {
+    void modalDimsBackgroundDetailWithoutBlurAndRestoresItOnClose() {
         class StripedOwner final : public QWidget {
           protected:
             void paintEvent(QPaintEvent*) override {
@@ -517,8 +603,7 @@ class ModalPanelTest final : public QObject {
         const int contrast =
             qAbs(after.pixelColor(qRound(20 * scale), qRound(8 * scale)).lightness() -
                  after.pixelColor(qRound(22 * scale), qRound(8 * scale)).lightness());
-        QVERIFY2(contrast < 40,
-                 "The reference backdrop blurs fine background detail, not just dims it.");
+        QVERIFY2(contrast > 40, "The Kumo backdrop dims background detail and does not blur it.");
         panel.reject();
         QCOMPARE(parent.grab().toImage(), before);
     }
@@ -565,19 +650,28 @@ class ModalPanelTest final : public QObject {
         const auto rendered = parent.grab().toImage();
         const auto scale = rendered.devicePixelRatio();
         const auto tint = rendered.pixelColor(qRound(8 * scale), qRound(8 * scale));
+        const auto expectedTint = [](choscordb::design::ResolvedAppearance appearance) {
+            const auto colors = choscordb::design::resolveColors(appearance);
+            return choscordb::design::composite(
+                choscordb::design::dialogBackdrop(colors, choscordb::design::Scrim::Dialog),
+                colors.canvas);
+        };
+        const auto near = [](const QColor& actual, const QColor& expected) {
+            return qAbs(actual.red() - expected.red()) <= 1 &&
+                   qAbs(actual.green() - expected.green()) <= 1 &&
+                   qAbs(actual.blue() - expected.blue()) <= 1;
+        };
         QCOMPARE(tint.alpha(), 255);
-        QVERIFY(qAbs(tint.red() - 177) <= 1);
-        QVERIFY(qAbs(tint.green() - 183) <= 1);
-        QVERIFY(qAbs(tint.blue() - 187) <= 1);
+        QVERIFY2(near(tint, expectedTint(choscordb::design::ResolvedAppearance::Light)),
+                 qPrintable(tint.name()));
         theme.setMode(choscordb::design::ThemeMode::Dark);
         theme.applyTo(parent);
         QCoreApplication::processEvents();
         const auto dark = parent.grab().toImage();
         const auto darkTint = dark.pixelColor(qRound(8 * scale), qRound(8 * scale));
-        QCOMPARE(parent.palette().color(QPalette::Window), QColor("#171d20"));
-        QVERIFY2(qAbs(darkTint.red() - 24) <= 2, qPrintable(darkTint.name()));
-        QVERIFY(qAbs(darkTint.green() - 34) <= 2);
-        QVERIFY(qAbs(darkTint.blue() - 39) <= 2);
+        QCOMPARE(parent.palette().color(QPalette::Window), QColor("#030303"));
+        QVERIFY2(near(darkTint, expectedTint(choscordb::design::ResolvedAppearance::Dark)),
+                 qPrintable(darkTint.name()));
         theme.setMode(choscordb::design::ThemeMode::Light);
         theme.applyTo(parent);
         QCoreApplication::processEvents();
@@ -597,7 +691,7 @@ class ModalPanelTest final : public QObject {
         theme.applyTo(parent);
         parent.show();
         choscordb::ConfirmationDialog dialog(
-            QMessageBox::Warning, "Disconnect database session",
+            QMessageBox::Warning, "Disconnect from the database",
             "Disconnect :memory:? Any uncommitted transaction will be rolled back.",
             QMessageBox::Cancel, &parent);
         auto* destructive = dialog.addButton("Disconnect", QMessageBox::DestructiveRole);
@@ -615,9 +709,18 @@ class ModalPanelTest final : public QObject {
         const auto rendered = dialog.grab().toImage();
         const QPoint sample(destructive->width() / 2, destructive->height() - 5);
         const QPoint inDialog = destructive->mapTo(&dialog, sample);
-        QCOMPARE(rendered.pixelColor(qRound(inDialog.x() * rendered.devicePixelRatio()),
-                                     qRound(inDialog.y() * rendered.devicePixelRatio())),
-                 QColor("#f7e9eb"));
+        const auto colors =
+            choscordb::design::resolveColors(choscordb::design::ResolvedAppearance::Light);
+        const auto expected =
+            choscordb::design::emphasisFill(colors, choscordb::design::ResolvedAppearance::Light,
+                                            false, choscordb::design::Emphasis::Danger)
+                .gradientEnd;
+        const auto actual = rendered.pixelColor(qRound(inDialog.x() * rendered.devicePixelRatio()),
+                                                qRound(inDialog.y() * rendered.devicePixelRatio()));
+        QVERIFY2(qAbs(actual.red() - expected.red()) <= 12 &&
+                     qAbs(actual.green() - expected.green()) <= 12 &&
+                     qAbs(actual.blue() - expected.blue()) <= 12,
+                 qPrintable(actual.name()));
         dialog.reject();
     }
     void shortConfirmationUsesCompactLayout() {
@@ -639,9 +742,10 @@ class ModalPanelTest final : public QObject {
         auto* cancel = dialog.button(QMessageBox::Cancel);
         auto* destructive = dialog.buttons().last();
         QVERIFY(icon && cancel && destructive);
-        QVERIFY(body->x() - icon->geometry().right() <= 12);
+        QCOMPARE(body->x() - icon->geometry().right() - 1,
+                 choscordb::design::spacing(choscordb::design::Spacing::Three));
         QVERIFY(cancel->x() - destructive->geometry().right() <= 12);
-        QCOMPARE(dialog.width(), 440);
+        QCOMPARE(dialog.width(), 384);
         QCOMPARE(body->verticalScrollBar()->maximum(), 0);
         QVERIFY(body->height() <= 44);
         QVERIFY(body->y() - heading->geometry().bottom() <= 20);
@@ -698,7 +802,7 @@ class ModalPanelTest final : public QObject {
         theme.applyTo(parent);
         QApplication::processEvents();
         QVERIFY(dialog.iconPixmap().toImage() != lightIcon);
-        QCOMPARE(dialog.width(), 440);
+        QCOMPARE(dialog.width(), 384);
         parent.resize(800, 600);
         QApplication::processEvents();
         QCOMPARE(dialog.geometry().center(), parent.rect().center());
@@ -751,10 +855,9 @@ class ModalPanelTest final : public QObject {
             }
             QTest::keyClick(dialog, Qt::Key_Escape);
         });
-        const auto result = choscordb::ConfirmationDialog::question(
-            &parent, "Discard query", "Discard synthetic changes?",
-            QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
-        QCOMPARE(result, QMessageBox::Cancel);
+        QVERIFY(!choscordb::ConfirmationDialog::confirm(
+            &parent, "Discard changes?", "The synthetic changes are not saved.", "Discard changes",
+            choscordb::ConfirmationDialog::Consequence::Destructive));
         QVERIFY(defaultWasCancel);
         QVERIFY(focusContained);
         QTRY_VERIFY(original.hasFocus());
@@ -778,7 +881,7 @@ class ModalPanelTest final : public QObject {
         const auto capture = dialog.grab();
         const auto scale = capture.devicePixelRatio();
         QCOMPARE(capture.toImage().pixelColor(qRound(160 * scale), qRound(140 * scale)),
-                 QColor("#20272b"));
+                 QColor("#0f0f0f"));
         dialog.close();
     }
     void confirmationPreservesMessageBoxContractInsideDimmedPanel() {
@@ -814,7 +917,7 @@ class ModalPanelTest final : public QObject {
         choscordb::design::ModalPanel panel(&parent);
         auto* sections = panel.createSections();
         sections->bodyLayout()->addWidget(new QLineEdit(sections));
-        sections->footerLayout()->addWidget(new QPushButton("Cancel", sections));
+        sections->addAction(choscordb::design::DialogActionRole::Dismiss, "Cancel");
         panel.show();
         QCOMPARE(panel.width(), 608);
         QCOMPARE(sectionedSpacing(panel), compactSectionedSpacing());
@@ -830,7 +933,7 @@ class ModalPanelTest final : public QObject {
         panel.resize(200, 120);
         const auto image = panel.grab().toImage();
         QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
-        QCOMPARE(image.pixelColor(100, 60), QColor("#20272b"));
+        QCOMPARE(image.pixelColor(100, 60), QColor("#0f0f0f"));
     }
     void destroyingAnOpenPanelRemovesItsBackdrop() {
         QWidget parent;

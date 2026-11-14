@@ -16,7 +16,7 @@ class NavigatorPinModelTest : public QObject {
     void directRootSchemaOffersPinWhenSaved() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -49,7 +49,7 @@ class NavigatorPinModelTest : public QObject {
     void pinRevealReportsRejectedSelection() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -83,7 +83,7 @@ class NavigatorPinModelTest : public QObject {
     void canceledPinRevealCannotReplaceNewSelectionAfterDelayedMetadata() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -136,7 +136,7 @@ class NavigatorPinModelTest : public QObject {
     void cachedObjectIsRecheckedBeforePinCanSelectIt() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -163,7 +163,7 @@ class NavigatorPinModelTest : public QObject {
     void inFlightPageCannotAuthorizeCachedPinTarget() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -198,7 +198,7 @@ class NavigatorPinModelTest : public QObject {
     void pinRevealKeepsFailedMetadataRetryableAndMarksOnlyCompleteAbsenceUnavailable() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -232,7 +232,7 @@ class NavigatorPinModelTest : public QObject {
     void pinRevealLoadsPagesAndSelectsOnlyExactObject() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -273,7 +273,7 @@ class NavigatorPinModelTest : public QObject {
     void hiddenTableIndexPinVerifiesFreshIdentityThenRevealsTable() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -344,7 +344,7 @@ class NavigatorPinModelTest : public QObject {
     void schemaLevelIndexPinStillSelectsItsOwnRow() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -379,7 +379,7 @@ class NavigatorPinModelTest : public QObject {
     void pinMenuUsesSavedProfileAndExcludesNavigationRows() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -441,3 +441,4 @@ class NavigatorPinModelTest : public QObject {
 };
 QTEST_MAIN(NavigatorPinModelTest)
 #include "navigator_pin_model_test.moc"
+#include "widgets/filter_field/filter_field.h"

@@ -4,6 +4,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
@@ -16,6 +17,8 @@
 #include <QCompleter>
 #include <QDialog>
 #include <QEventLoop>
+#include <QFormLayout>
+#include <QHash>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QPointer>
@@ -32,6 +35,56 @@
 class PreferencesWorkspaceTest : public QObject {
     Q_OBJECT
   private slots:
+    void gridDefaultsDoNotReuseWindowKeysForOtherCommands() {
+        choscordb::MainWindow window;
+        window.findChild<QAction*>("preferences")->trigger();
+        auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+        QVERIFY(dialog);
+        auto* form = dialog->findChild<QKeySequenceEdit*>("shortcut_grid_add_row")
+                         ->parentWidget()
+                         ->parentWidget()
+                         ->findChild<QFormLayout*>();
+        QVERIFY(form);
+        QHash<QString, QString> windowKeys, gridKeys;
+        for (auto* edit : dialog->findChildren<QKeySequenceEdit*>()) {
+            if (!edit->objectName().startsWith("shortcut_") || edit->keySequence().isEmpty())
+                continue;
+            auto* label = qobject_cast<QLabel*>(form->labelForField(edit->parentWidget()));
+            QVERIFY(label);
+            (edit->objectName().startsWith("shortcut_grid_") ? gridKeys : windowKeys)
+                .insert(edit->keySequence().toString(QKeySequence::PortableText),
+                        label->text().remove('&'));
+        }
+        dialog->reject();
+        QVERIFY(!gridKeys.isEmpty());
+        QStringList reused;
+        for (auto it = gridKeys.cbegin(); it != gridKeys.cend(); ++it)
+            if (windowKeys.contains(it.key()) && windowKeys.value(it.key()) != it.value())
+                reused << it.key();
+        QVERIFY2(reused.isEmpty(), qPrintable(reused.join(", ")));
+    }
+    void everyWindowCommandWithAKeyIsInTheShortcutCatalog() {
+        choscordb::MainWindow window;
+        window.findChild<QAction*>("newQuery")->trigger();
+        window.findChild<QAction*>("preferences")->trigger();
+        auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+        QVERIFY(dialog);
+        QSet<QString> catalogued;
+        for (auto* edit : dialog->findChildren<QKeySequenceEdit*>())
+            if (edit->objectName().startsWith("shortcut_"))
+                catalogued.insert(edit->keySequence().toString(QKeySequence::PortableText));
+        dialog->reject();
+        QStringList missing;
+        for (auto* action : window.findChildren<QAction*>()) {
+            if (action->shortcut().isEmpty() || action->menuRole() == QAction::QuitRole)
+                continue;
+            const auto key = action->shortcut().toString(QKeySequence::PortableText);
+            if (!catalogued.contains(key))
+                missing << action->text() + QLatin1Char('|') + key;
+        }
+        missing.removeDuplicates();
+        QVERIFY2(missing.isEmpty(), qPrintable(missing.join(", ")));
+    }
     void savedVisibilityUpdatesTwoRootsAndTheEditorsConnectionTarget() {
         using namespace choscordb;
         QTemporaryDir directory;
@@ -184,7 +237,9 @@ class PreferencesWorkspaceTest : public QObject {
             QTRY_VERIFY(checkbox->isEnabled());
             QVERIFY(!checkbox->isChecked());
             checkbox->setChecked(true);
+            const auto prompt = confirmNextPrompt();
             dialog->findChild<QPushButton*>("preferencesClose")->click();
+            QCOMPARE(*prompt, QString("Discard changes?"));
             QVERIFY(!model->showSystemSchemas());
             QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
             window.findChild<QAction*>("preferences")->trigger();
@@ -246,6 +301,35 @@ class PreferencesWorkspaceTest : public QObject {
         QTRY_VERIFY(timeout->isEnabled());
         QCOMPARE(timeout->value(), 27);
     }
+    void themePopupRowsKeepTheirHeightAfterAThemeChange() {
+        using namespace choscordb;
+        MainWindow window;
+        window.show();
+        auto* appearance = window.findChild<AppearanceController*>();
+        QTRY_VERIFY(appearance->isReady());
+        window.findChild<QAction*>("preferences")->trigger();
+        auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+        auto* select = dialog->findChild<QComboBox*>("appearanceTheme");
+        QTRY_VERIFY(select->isEnabled());
+        const auto rowTops = [select] {
+            select->showPopup();
+            QList<int> tops;
+            if (!QTest::qWaitFor([select] { return select->view()->isVisible(); }))
+                return tops;
+            QTest::qWait(300);
+            for (int row = 0; row < select->count(); ++row)
+                tops.append(select->view()->visualRect(select->model()->index(row, 0)).top());
+            return tops;
+        };
+        const auto before = rowTops();
+        select->view()->setCurrentIndex(select->model()->index(2, 0));
+        QTest::keyClick(select->view(), Qt::Key_Return);
+        QTRY_VERIFY(!select->view()->isVisible());
+        QCOMPARE(rowTops(), before);
+        select->hidePopup();
+        const auto discard = confirmNextPrompt();
+        dialog->reject();
+    }
     void appearanceResetRequiresSaveAndSurvivesRestart_data() {
         QTest::addColumn<bool>("corrupt");
         QTest::addColumn<bool>("save");
@@ -296,16 +380,18 @@ class PreferencesWorkspaceTest : public QObject {
             window.findChild<QAction*>("preferences")->trigger();
             auto* dialog = window.findChild<QDialog*>("preferencesDialog");
             auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
-            auto* reset = dialog->findChild<QPushButton*>("appearanceReset");
+            QVERIFY(!dialog->findChild<QPushButton*>("appearanceReset"));
+            auto* reset = dialog->findChild<QPushButton*>("preferencesReset");
             QTRY_VERIFY(reset->isEnabled());
             reset->click();
             QTRY_VERIFY(apply->isEnabled());
             if (save) {
                 apply->click();
-                QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
             } else {
+                const auto discardPrompt = confirmNextPrompt();
                 dialog->findChild<QPushButton*>("preferencesClose")->click();
             }
+            QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
             window.close();
             QTRY_VERIFY(!window.isVisible());
         }
@@ -375,10 +461,12 @@ class PreferencesWorkspaceTest : public QObject {
         QTRY_COMPARE(retried.count(), 1);
         QVERIFY(!warning->text().isEmpty());
         QVERIFY(!apply->isEnabled());
-        dialog->findChild<QPushButton*>("appearanceReset")->click();
+        dialog->findChild<QPushButton*>("preferencesReset")->click();
         QTRY_VERIFY(warning->text().isEmpty());
         QTRY_VERIFY(apply->isEnabled());
+        const auto discardPrompt = confirmNextPrompt();
         dialog->reject();
+        QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
         window.close();
         QTRY_VERIFY(!window.isVisible());
     }
@@ -439,7 +527,9 @@ class PreferencesWorkspaceTest : public QObject {
             mode = dialog->findChild<QComboBox*>("appearanceTheme");
             QTRY_VERIFY(dialog->findChild<QPushButton*>("preferencesApply")->isEnabled());
             mode->setCurrentIndex(mode->findData("dark"));
+            const auto prompt = confirmNextPrompt();
             dialog->reject();
+            QCOMPARE(*prompt, QString("Discard changes?"));
             QCOMPARE(theme->mode(), design::ThemeMode::Light);
             window.close();
             QTRY_VERIFY(!window.isVisible());

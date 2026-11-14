@@ -66,8 +66,12 @@ namespace {
 class NativeUpdater final : public QObject {
   public:
     explicit NativeUpdater(MainWindow& window) : QObject(&window) {
-        auto* menu = window.menuBar()->addMenu(tr("Updates"));
-        auto* check = menu->addAction(tr("Check for Updates…"));
+        auto* menu = window.findChild<QMenu*>(QStringLiteral("helpMenu"));
+        auto* anchor = window.findChild<QAction*>(QStringLiteral("exportDiagnostics"));
+        Q_ASSERT(menu && anchor);
+        auto* check = new QAction(tr("Check for updates…"), menu);
+        menu->insertAction(anchor, check);
+        menu->insertSeparator(anchor);
         check->setObjectName("checkForUpdates");
         check->setMenuRole(QAction::ApplicationSpecificRole);
         check->setEnabled(false);

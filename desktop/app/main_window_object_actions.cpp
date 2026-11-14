@@ -15,6 +15,8 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
+#include "design_system/field/field.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/text/text.h"
 #include "models/navigator_model.h"
 #include <QLabel>
@@ -96,20 +98,19 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         ConfirmationDialog dialog(
             QMessageBox::Warning, tr("Drop %1").arg(displayKind),
             tr("Drop %1 %2?\n\nSQL to execute:\n%3").arg(displayKind, qualifiedName, statement.sql),
-            QMessageBox::NoButton, this);
+            QMessageBox::Cancel, this);
         dialog.setObjectName("dropObjectDialog");
         dialog.setTextFormat(Qt::PlainText);
-        auto* confirm =
-            dialog.addButton(tr("Drop %1").arg(displayKind), QMessageBox::DestructiveRole);
+        auto* confirm = dialog.addActionButton(tr("Drop %1").arg(displayKind),
+                                               ConfirmationDialog::Consequence::Destructive);
         confirm->setObjectName("dropObjectConfirm");
-        auto* cancel = dialog.addButton(QMessageBox::Cancel);
-        dialog.setDefaultButton(cancel);
         dialog.exec();
         if (dialog.clickedButton() != confirm)
             return;
     } else if (action == QStringLiteral("rename")) {
         DialogShell dialog(this);
         dialog.setObjectName("renameObjectDialog");
+        dialog.resize(design::dialogInitialSize(design::DialogSize::Short));
         dialog.setWindowTitle(tr("Rename %1").arg(displayKind));
         auto* sections = dialog.createSections();
         auto* heading = new design::Text(dialog.windowTitle(), sections);
@@ -119,7 +120,6 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         dismiss->setObjectName("renameObjectDismiss");
         connect(dismiss, &QPushButton::clicked, &dialog, &QDialog::reject);
         auto* layout = sections->bodyLayout();
-        layout->setSpacing(design::spacing(design::Spacing::Two));
         layout->addWidget(dialog.createDescription(
             tr("Rename %1 %2 in the same schema or database.").arg(displayKind, qualifiedName),
             &dialog));
@@ -127,7 +127,9 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
         name->setObjectName("renameObjectName");
         name->setAccessibleName(tr("New unqualified name"));
         name->setText(shortName);
-        layout->addWidget(name);
+        auto* validation = new design::FieldValidation(name, &dialog);
+        validation->setObjectName("renameObjectValidation");
+        sections->addFormRow(sections->addForm(), tr("New name"), validation);
         layout->addWidget(dialog.createDescription(tr("SQL to execute"), &dialog));
         auto* preview = new QPlainTextEdit(&dialog);
         preview->setObjectName("renameObjectSql");
@@ -138,28 +140,26 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
             design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
         preview->setFrameShape(QFrame::NoFrame);
         layout->addWidget(preview);
-        auto* status = dialog.createInlineStatus(&dialog);
-        status->setObjectName("renameObjectValidation");
-        layout->addWidget(status);
-        auto* buttons = sections->footerLayout();
-        auto* confirm = new design::Button(tr("Rename"), &dialog);
-        confirm->setObjectName("renameObjectConfirm");
-        confirm->setDefault(true);
-        auto* cancel = new design::Button(tr("Cancel"), &dialog);
+        auto* cancel = sections->addAction(design::DialogActionRole::Dismiss, tr("Cancel"));
         cancel->setObjectName("renameObjectCancel");
-        cancel->setVariant(design::ButtonVariant::Outline);
-        buttons->addStretch();
-        buttons->addWidget(cancel);
-        buttons->addWidget(confirm);
+        auto* confirm = sections->addAction(design::DialogActionRole::Primary, tr("Rename"));
+        confirm->setObjectName("renameObjectConfirm");
         connect(cancel, &QPushButton::clicked, &dialog, &QDialog::reject);
-        connect(confirm, &QPushButton::clicked, &dialog, &QDialog::accept);
+        bool valid = false;
         const auto update = [&] {
             const auto next = ObjectActionSql::rename(driver, kind, objectId, qualifiedName,
                                                       name->text(), relationSubtype);
             preview->setPlainText(next.sql);
-            status->setText(next.valid ? QString{} : next.error);
-            confirm->setEnabled(next.valid);
+            validation->setError(next.valid ? QString{} : next.error);
+            valid = next.valid;
         };
+        connect(confirm, &QPushButton::clicked, &dialog, [&] {
+            update();
+            if (valid)
+                dialog.accept();
+            else
+                name->setFocus(Qt::OtherFocusReason);
+        });
         connect(name, &QLineEdit::textChanged, &dialog, update);
         update();
         name->setFocus();
@@ -247,7 +247,8 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
                                                               fromRust(event.error))
                                          .message));
             else
-                showToast(pendingObjectRefresh_->success, ToastVariant::Success);
+                toast_->showToast(pendingObjectRefresh_->successTitle,
+                                  pendingObjectRefresh_->success, ToastVariant::Success);
             pendingObjectRefresh_.reset();
         }
         return;
@@ -314,6 +315,7 @@ void MainWindow::handleObjectActionEvent(const BridgeEvent& event) {
         recovery_->changed();
     pendingObjectRefresh_ = PendingObjectRefresh{
         action.connection, 0, action.parentObjectId,
+        action.action == QStringLiteral("drop") ? tr("Object dropped") : tr("Object renamed"),
         action.action == QStringLiteral("drop")
             ? tr("%1 %2 dropped.").arg(action.displayKind, action.qualifiedName)
             : tr("%1 %2 renamed to %3.")

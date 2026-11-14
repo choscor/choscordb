@@ -6,6 +6,7 @@
 #ifdef CHOSCORDB_CROSS_PLATFORM_UPDATER
 #include "app/update_readiness.h"
 #include "app/workspace_recovery.h"
+#include "bridge/engine_adapter.h"
 #endif
 #include "choscordb-bridge/src/lib.rs.h"
 #include <QApplication>
@@ -93,7 +94,7 @@ int main(int argc, char** argv) {
         }
     });
     if (diagnosticsStartup.valid())
-        startupPoll.start(10);
+        startupPoll.start(choscordb::EngineAdapter::startupPollMs());
     choscordb::installNativeUpdater(window, args.isSet("smoke-test") || args.isSet("screenshot"));
 #ifdef CHOSCORDB_CROSS_PLATFORM_UPDATER
     const auto readyPath = qEnvironmentVariable("CHOSCORDB_UPDATE_READY_FILE");
@@ -112,7 +113,9 @@ int main(int argc, char** argv) {
     }
 #endif
     if (args.isSet("screenshot")) {
+        // ui-ok: the screenshot option waits for the first layout and paint
         QTimer::singleShot(400, &window, applyScreenshotOptions);
+        // ui-ok: the screenshot option grabs the window after the options apply
         QTimer::singleShot(700, &app,
                            [&] { app.exit(window.grab().save(args.value("screenshot")) ? 0 : 1); });
     } else if (args.isSet("smoke-test")) {

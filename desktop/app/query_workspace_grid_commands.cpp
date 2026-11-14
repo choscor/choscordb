@@ -21,7 +21,8 @@ struct GridCommandSpec {
     const char* name;
 };
 constexpr std::array<GridCommandSpec, 8> gridCommands = {{
-    {"grid_add_row", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Add row"), "Ctrl+N", nullptr},
+    {"grid_add_row", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Add row"), "Ctrl+Shift+N",
+     nullptr},
     {"grid_duplicate_row", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Duplicate row"),
      "Ctrl+D", "duplicateRow"},
     {"grid_delete_rows", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Delete rows"),
@@ -31,7 +32,7 @@ constexpr std::array<GridCommandSpec, 8> gridCommands = {{
     {"grid_set_null", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Set NULL"), "Del", nullptr},
     {"grid_edit_cell", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Edit cell…"), "Shift+Return",
      "editCell"},
-    {"grid_apply_edits", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Apply…"), "Ctrl+S",
+    {"grid_apply_edits", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Apply…"), "Ctrl+Shift+S",
      nullptr},
     {"grid_discard_edits", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Discard"),
      "Ctrl+Shift+Backspace", nullptr},
@@ -153,10 +154,10 @@ QString QueryWorkspace::gridBlockedReason(GridCommand command) const {
     case GridCommand::AddRow:
     case GridCommand::DuplicateRow:
         if (model_->columnCount() > 0 && !model_->canInsert())
-            return editReason_.isEmpty() ? tr("This result is read only.") : editReason_;
+            return readOnlyReason();
         return {};
     case GridCommand::DeleteRows:
-        return selected && !model_->canDelete() && !model_->hasInsertedRows() ? editReason_
+        return selected && !model_->canDelete() && !model_->hasInsertedRows() ? readOnlyReason()
                                                                               : QString();
     case GridCommand::SetNull:
         return selected && !model_->hasEditableCell(selection->selection()) ? editReason_
@@ -219,12 +220,11 @@ void QueryWorkspace::duplicateRow(const QModelIndex& index) {
         message(error);
 }
 void QueryWorkspace::discardStagedEdits() {
-    ConfirmationDialog box(QMessageBox::Warning, tr("Discard grid changes"),
-                           tr("Discard all staged grid changes?"), QMessageBox::NoButton,
+    ConfirmationDialog box(QMessageBox::Warning, tr("Discard grid changes?"),
+                           tr("The staged grid changes are not applied."), QMessageBox::Cancel,
                            widgets_.dialogParent);
-    auto* discard = box.addButton(tr("Discard"), QMessageBox::DestructiveRole);
-    auto* cancel = box.addButton(QMessageBox::Cancel);
-    box.setDefaultButton(cancel);
+    auto* discard =
+        box.addActionButton(tr("Discard changes"), ConfirmationDialog::Consequence::Destructive);
     const QPointer<QueryWorkspace> self(this);
     box.exec();
     if (self && box.clickedButton() == discard &&

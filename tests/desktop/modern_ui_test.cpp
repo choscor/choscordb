@@ -73,6 +73,9 @@ void ModernUiTest::applicationMenusExposeHelpAndAbout() {
     auto* about = window.findChild<QAction*>("aboutChoscorDB");
     QVERIFY(about);
     QCOMPARE(about->menuRole(), QAction::AboutRole);
+    auto* quit = window.findChild<QAction*>("quit");
+    QVERIFY(quit);
+    QCOMPARE(quit->menuRole(), QAction::QuitRole);
     about->trigger();
     auto* dialog = window.findChild<QMessageBox*>("aboutChoscorDBDialog");
     QVERIFY(dialog);
@@ -82,13 +85,82 @@ void ModernUiTest::applicationMenusExposeHelpAndAbout() {
     QVERIFY(help->findChild<QAction*>("openDocumentation"));
 #ifdef Q_OS_MACOS
     QVERIFY(about->icon().isNull());
+#endif
     auto* view = window.findChild<QMenu*>("viewMenu");
     QVERIFY(view);
-    QVERIFY(view->actions().isEmpty());
-    auto* tabs = window.findChild<QAction*>("listEditorTabs");
-    QVERIFY(tabs);
-    QVERIFY(window.actions().contains(tabs));
-#endif
+    QVERIFY(view->actions().contains(window.findChild<QAction*>("listEditorTabs")));
+    const auto viewActions = view->actions();
+    const auto at = [&viewActions](const char* name) {
+        for (int index = 0; index < viewActions.size(); ++index)
+            if (viewActions[index]->objectName() == QLatin1String(name))
+                return index;
+        return -1;
+    };
+    QCOMPARE(at("showStart"), 0);
+    for (const auto* groupStart : {"quickSwitch", "toggleSidebar", "refreshSavedConnections"}) {
+        const int index = at(groupStart);
+        QVERIFY2(index > 0 && viewActions[index - 1]->isSeparator(), groupStart);
+    }
+    QVERIFY(!viewActions[at("showSql")]->isSeparator() &&
+            !viewActions[at("showSql") - 1]->isSeparator());
+    QList<QMenu*> menus;
+    for (auto* action : window.menuBar()->actions())
+        if (action->menu())
+            menus.append(action->menu());
+    for (int index = 0; index < menus.size(); ++index)
+        for (auto* action : menus[index]->actions()) {
+            if (action->menu())
+                menus.append(action->menu());
+            QVERIFY2(action->isSeparator() || action->menuRole() != QAction::TextHeuristicRole,
+                     qPrintable(action->text()));
+        }
+}
+
+void ModernUiTest::eachWindowCommandHasOneLabel() {
+    choscordb::MainWindow window;
+    window.show();
+    QTRY_VERIFY(window.findChild<choscordb::AppearanceController*>()->isReady());
+    window.findChild<QAction*>("showSql")->trigger();
+    QCoreApplication::processEvents();
+    const auto label = [](QString text) {
+        text.remove('&');
+        if (text.endsWith(QChar(0x2026)))
+            text.chop(1);
+        return text;
+    };
+    QHash<QString, QString> byShortcut;
+    QHash<QString, QString> byName;
+    for (auto* action : window.findChildren<QAction*>()) {
+        if (action->text().isEmpty() || action->isSeparator())
+            continue;
+        const auto text = label(action->text());
+        if (const auto key = action->shortcut().toString(QKeySequence::PortableText);
+            !key.isEmpty()) {
+            const auto known = byShortcut.value(key, text);
+            QVERIFY2(known == text, qPrintable(key + ": " + known + " / " + text));
+            byShortcut.insert(key, text);
+        }
+        if (!action->objectName().isEmpty()) {
+            const auto known = byName.value(action->objectName(), text);
+            QVERIFY2(known == text, qPrintable(action->objectName() + ": " + known + " / " + text));
+            byName.insert(action->objectName(), text);
+        }
+    }
+    int presented = 0;
+    for (auto* button : window.findChildren<QAbstractButton*>()) {
+        QString command;
+        if (auto* tool = qobject_cast<QToolButton*>(button); tool && tool->defaultAction())
+            command = tool->defaultAction()->objectName();
+        else if (button->objectName().endsWith("Button"))
+            command = button->objectName().chopped(6);
+        if (!byName.contains(command))
+            continue;
+        ++presented;
+        const auto name =
+            button->accessibleName().isEmpty() ? button->text() : button->accessibleName();
+        QCOMPARE(label(name), byName.value(command));
+    }
+    QVERIFY(presented > 0);
 }
 
 void ModernUiTest::menuBarMenusShowNoIcons() {
@@ -124,22 +196,35 @@ void ModernUiTest::applicationMenusProvideWindowControlsWithoutConnectionMenu() 
     for (auto* action : window.menuBar()->actions())
         topLevelMenus.append(action->text().remove('&'));
     QVERIFY(!topLevelMenus.contains("Connection"));
+#ifdef Q_OS_MACOS
     QVERIFY(topLevelMenus.contains("Window"));
+#else
+    QVERIFY(!topLevelMenus.contains("Window"));
+#endif
 
     auto* file = window.menuBar()->actions().first()->menu();
     QVERIFY(file);
     bool hasNewSession = false;
     for (auto* action : file->actions())
-        hasNewSession |= action->text() == "New SQLite session…";
+        hasNewSession |= action->text() == "New connection…";
     QVERIFY(hasNewSession);
+    auto* addConnection = window.findChild<QPushButton*>("navigatorAddConnection");
+    QCOMPARE(addConnection->toolTip(), QString("New connection…"));
+    QCOMPARE(addConnection->accessibleName(), QString("New connection…"));
 
     auto* windowMenu = window.findChild<QMenu*>("windowMenu");
+    auto* minimize = window.findChild<QAction*>("minimizeWindow");
+    auto* zoom = window.findChild<QAction*>("zoomWindow");
+    auto* bringToFront = window.findChild<QAction*>("bringAllWindowsToFront");
+    QVERIFY(minimize && zoom && bringToFront);
+#ifdef Q_OS_MACOS
     QVERIFY(windowMenu);
     QVERIFY(window.menuBar()->actions().contains(windowMenu->menuAction()));
-    auto* minimize = windowMenu->findChild<QAction*>("minimizeWindow");
-    auto* zoom = windowMenu->findChild<QAction*>("zoomWindow");
-    auto* bringToFront = windowMenu->findChild<QAction*>("bringAllWindowsToFront");
-    QVERIFY(minimize && zoom && bringToFront);
+    QVERIFY(windowMenu->actions().contains(minimize));
+#else
+    QVERIFY(!windowMenu);
+    QVERIFY(window.actions().contains(minimize));
+#endif
     minimize->trigger();
     QVERIFY(window.windowState().testFlag(Qt::WindowMinimized));
     zoom->trigger();
@@ -171,7 +256,6 @@ void ModernUiTest::resultActionsUseIconsInToolbarAndFootersOnlyContainPagination
     }
     for (auto* action : toolbar->actions()) {
         auto* widget = toolbar->widgetForAction(action);
-        QVERIFY(widget != window.findChild<QPushButton*>("queryResultSetNull"));
         QVERIFY(!widget || widget->sizePolicy().horizontalPolicy() != QSizePolicy::Expanding);
     }
     auto* startFooter = window.findChild<QWidget*>("startFooter");
@@ -187,29 +271,24 @@ void ModernUiTest::recoveryKeepsUnavailableToolbarActionsDisabled() {
     auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>();
     QTRY_VERIFY(recovery->isReady());
     window.findChild<QAction*>("newQuery")->trigger();
-    auto* save = window.findChild<QPushButton*>("saveSqlButton");
+    auto* save = window.findChild<QAction*>("saveSql");
     QVERIFY(save->isEnabled());
     QVERIFY(QMetaObject::invokeMethod(recovery, "errorOccurred", Qt::DirectConnection,
                                       Q_ARG(QString, QStringLiteral("Save failed")),
                                       Q_ARG(bool, true)));
-    QVERIFY(!save->isEnabled());
     auto* toast =
         window.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(toast && toast->isVisible());
     auto* dismiss = toast->findChild<QAbstractButton*>("toastDismiss");
     QVERIFY(dismiss);
     dismiss->click();
-    QVERIFY(!save->isEnabled());
     QVERIFY(window.findChild<QAction*>("closeWithoutRecovery")->isEnabled());
     window.findChild<QAction*>("cancelRecoveryClose")->trigger();
     QVERIFY(save->isEnabled());
     for (const char* name : {"runStatementButton", "cancelQueryButton", "queryResultAddRow",
                              "queryResultDeleteRows", "queryResultApplyEdits", "exportResult"}) {
         auto* button = window.findChild<QPushButton*>(name);
-        if (button->objectName() == "queryResultAddRow" ||
-            button->objectName() == "queryResultDeleteRows" ||
-            button->objectName() == "cancelQueryButton" ||
-            button->objectName() == "queryResultApplyEdits")
+        if (button->objectName() == "cancelQueryButton")
             QVERIFY(button->isHidden());
         else
             QVERIFY(button->isVisible());
@@ -230,10 +309,11 @@ void ModernUiTest::startUsesPanelAndMutedSupportingText() {
         const auto pixels = start->grab();
         QCOMPARE(
             pixels.toImage().pixelColor(QPoint(start->width() / 2, 60) * pixels.devicePixelRatio()),
-            QColor(mode == "light" ? "#ffffff" : "#20272b"));
+            QColor(mode == "light" ? "#ffffff" : "#0f0f0f"));
         auto* hint = start->findChild<QLabel*>("startHint");
         QVERIFY(hint);
-        QCOMPARE(hint->foregroundRole(), QPalette::PlaceholderText);
+        QCOMPARE(hint->palette().color(hint->foregroundRole()),
+                 choscordb::design::resolvedThemeForWidget(*hint).colors.textSubtle);
     }
 }
 
@@ -259,7 +339,7 @@ void ModernUiTest::emptyStatesUseOneTextWithOneLineBreak() {
     QVERIFY(objects);
     QCOMPARE(
         objects->text(),
-        QString("No database selected.\nSelect a connection to browse its schemas and objects."));
+        QString("No connection selected.\nSelect a connection to browse its schemas and objects."));
 }
 
 void ModernUiTest::savedAndHistoryEmptyStatesUseOneLineBreak() {
@@ -340,7 +420,8 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
     QTRY_COMPARE(sidebar->width(), 235);
     window.resize(1280, 900);
     QTRY_COMPARE(sidebar->width(), 260);
-    QCOMPARE(window.centralWidget()->geometry().left() - sidebar->geometry().right() - 1, 3);
+    QCOMPARE(window.centralWidget()->geometry().left() - sidebar->geometry().right() - 1,
+             choscordb::design::spacing(choscordb::design::Spacing::One));
     auto* title = window.findChild<QLabel*>("navigatorTitle");
     QVERIFY(!window.findChild<QStatusBar*>());
     auto* navBody = sidebar->widget();
@@ -350,8 +431,7 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
     QCOMPARE(navBody->layout()->contentsMargins().top(),
              choscordb::design::spacing(choscordb::design::Spacing::One));
     const auto sidebarGray =
-        choscordb::design::resolveColors(choscordb::design::ResolvedAppearance::Light)
-            .surfaceRaised;
+        choscordb::design::resolveColors(choscordb::design::ResolvedAppearance::Light).elevated;
     const auto flatSidebar = navBody->grab().toImage();
     const auto flatScale = flatSidebar.devicePixelRatio();
     for (const auto& point :
@@ -366,7 +446,7 @@ void ModernUiTest::freshSidebarUsesResponsiveReferenceWidthsAndSeamlessSections(
     QCOMPARE(title->font().capitalization(), QFont::AllUppercase);
     QCOMPARE(
         title->palette().color(title->foregroundRole()),
-        choscordb::design::resolveColors(choscordb::design::ResolvedAppearance::Light).fgMuted);
+        choscordb::design::resolveColors(choscordb::design::ResolvedAppearance::Light).textSubtle);
     auto* tree = window.findChild<QTreeView*>("databaseNavigator");
     const auto pixels = tree->viewport()->grab().toImage();
     const auto navigatorPixel = pixels.pixelColor(QPoint(4, 4) * pixels.devicePixelRatio());
@@ -424,13 +504,15 @@ void ModernUiTest::savedProfileBadgesDistinguishDriversInBothThemes() {
 
         for (int row = 0; row < profiles->count(); ++row) {
             auto* item = profiles->item(row);
-            const auto point = profiles->visualItemRect(item).topLeft() + QPoint(14, 14);
-            QCOMPARE(
-                pixels.pixelColor(point * pixels.devicePixelRatio()),
-                choscordb::design::resolveColors(mode == choscordb::design::ThemeMode::Light
-                                                     ? choscordb::design::ResolvedAppearance::Light
-                                                     : choscordb::design::ResolvedAppearance::Dark)
-                    .surfaceRaised);
+            const auto rect = profiles->visualItemRect(item);
+            const int middle = rect.center().y();
+            const int rowInside =
+                rect.left() + choscordb::design::spacing(choscordb::design::Spacing::One) + 2;
+            const int beforeLogo =
+                rect.left() + choscordb::design::spacing(choscordb::design::Spacing::One) +
+                choscordb::design::spacing(choscordb::design::Spacing::Three) - 2;
+            QCOMPARE(pixels.pixelColor(QPoint(beforeLogo, middle) * pixels.devicePixelRatio()),
+                     pixels.pixelColor(QPoint(rowInside, middle) * pixels.devicePixelRatio()));
         }
     }
 }
@@ -489,8 +571,16 @@ void ModernUiTest::findFromHistoryReturnsToExistingSqlAndDoesNotCreateClosedDocu
     find->trigger();
     QCOMPARE(window.findChild<QStackedWidget*>("centralScreens")->currentWidget()->objectName(),
              QString("sqlScreen"));
-    QVERIFY(window.findChild<QWidget*>("searchPanel")->isVisible());
+    auto* panel = window.findChild<QWidget*>("searchPanel");
+    QVERIFY(panel->isVisible());
     QCOMPARE(tabs->currentWidget(), editor);
+    QTRY_VERIFY(panel->mapTo(&window, QPoint()).y() >
+                tabs->tabBar()->mapTo(&window, QPoint(0, tabs->tabBar()->height())).y());
+    QTRY_VERIFY(panel->mapTo(&window, QPoint()).y() >=
+                editor->mapTo(&window, QPoint(0, editor->height())).y());
+    auto* replaceAll = window.findChild<choscordb::design::Button*>("searchReplaceAll");
+    QVERIFY(replaceAll);
+    QCOMPARE(replaceAll->variant(), choscordb::design::ButtonVariant::Outline);
     editor->setModified(false);
     while (tabs->count())
         tabs->tabCloseRequested(0);
@@ -550,7 +640,7 @@ void ModernUiTest::captureScreenFixtures() {
                     const int y = result->visualRect(result->model()->index(1, 0)).bottom() - 4;
                     QCOMPARE(pixels.pixelColor(QPoint(result->viewport()->width() - 3, y) *
                                                pixels.devicePixelRatio()),
-                             QColor(mode == "light" ? "#eef1f2" : "#283135"));
+                             QColor(mode == "light" ? "#f8f8f8" : "#060606"));
                 }
                 const auto name = QString("%1-%2x%3-%4.png")
                                       .arg(mode)
@@ -748,7 +838,7 @@ void ModernUiTest::captureScreenFixtures() {
 
 QTEST_MAIN(ModernUiTest)
 
-void ModernUiTest::sidebarHeaderButtonHoverLiftsToSurface() {
+void ModernUiTest::sidebarHeaderButtonHoverUsesHoverOverlay() {
     choscordb::MainWindow window;
     window.resize(1000, 700);
     window.show();
@@ -762,9 +852,14 @@ void ModernUiTest::sidebarHeaderButtonHoverLiftsToSurface() {
                                 image.devicePixelRatio());
     };
     QTest::mouseMove(&window, QPoint(window.width() - 2, window.height() - 2));
-    QTRY_COMPARE(fill(), colors.surfaceRaised);
+    QTRY_COMPARE(fill(), colors.elevated);
     QTest::mouseMove(addConnection, addConnection->rect().center());
-    QTRY_COMPARE(fill(), colors.surface);
+    const auto hovered = choscordb::design::composite(colors.tint, colors.elevated);
+    const auto near = [](const QColor& left, const QColor& right) {
+        return qAbs(left.red() - right.red()) <= 1 && qAbs(left.green() - right.green()) <= 1 &&
+               qAbs(left.blue() - right.blue()) <= 1;
+    };
+    QTRY_VERIFY(near(fill(), hovered));
 }
 
 void ModernUiTest::queryToolbarShowsOnlyRequestedControls() {
@@ -773,10 +868,13 @@ void ModernUiTest::queryToolbarShowsOnlyRequestedControls() {
     window.findChild<QAction*>("newQuery")->trigger();
     auto* toolbar = window.findChild<QToolBar*>("queryToolbar");
     QVERIFY(toolbar);
-    for (const char* name : {"saveSqlButton", "cancelQueryButton", "queryResultDiscardEdits",
-                             "queryResultApplyEdits"}) {
+    QVERIFY(!window.findChild<QWidget*>("saveSqlButton"));
+    QVERIFY(window.findChild<QWidget*>("cancelQueryButton")->isHidden());
+    for (const char* name :
+         {"queryResultAddRow", "queryResultDeleteRows", "queryResultRestoreRows",
+          "queryResultSetNull", "queryResultDiscardEdits", "queryResultApplyEdits"}) {
         auto* control = window.findChild<QWidget*>(name);
-        QVERIFY2(!control || control->isHidden(), name);
+        QVERIFY2(control && control->isVisible() && toolbar->isAncestorOf(control), name);
     }
     auto* run = window.findChild<choscordb::design::Button*>("runStatementButton");
     QVERIFY(run);

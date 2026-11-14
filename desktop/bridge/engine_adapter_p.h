@@ -86,8 +86,10 @@ struct EngineAdapter::Private {
     QString shutdownHistoryError;
     struct Transfer {
         quint64 reserved;
-        std::optional<quint64> retained;
+        std::optional<quint64> retainedPayload;
+        bool retainedWhole = false;
         bool released = false;
+        bool retained() const { return retainedWhole || retainedPayload; }
     };
     QHash<quint64, Transfer> transfers;
     std::shared_ptr<const BridgeEvent> dispatching;

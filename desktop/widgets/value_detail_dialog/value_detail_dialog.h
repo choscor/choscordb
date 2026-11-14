@@ -30,7 +30,6 @@ class ValueDetailDialog final : public DialogShell {
     void reject() override;
 
   private:
-    void setStatus(const QString& message);
     void request(quint64 offset, quint32 maxBytes = EngineAdapter::valueChunkBytes());
     void previousChunk();
     void sizeVisibleColumns();
@@ -43,9 +42,9 @@ class ValueDetailDialog final : public DialogShell {
     QTableView* table_;
     QLabel* status_;
     design::StatusLine* statusLine_;
-    design::Button* retry_;
-    design::Button* previous_;
-    design::Button* next_;
+    design::Button* retry_ = nullptr;
+    design::Button* previous_ = nullptr;
+    design::Button* next_ = nullptr;
     std::optional<quint64> query_;
     QByteArray inlineBytes_;
     bool inlineMode_ = false;

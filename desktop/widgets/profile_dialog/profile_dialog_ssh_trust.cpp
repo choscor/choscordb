@@ -1,4 +1,6 @@
+#include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/status_line/status_line.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/profile_dialog/ssh_host_key_dialog.h"
@@ -8,11 +10,12 @@
 #include <QFormLayout>
 #include <QTimer>
 namespace choscordb {
-void ProfileDialog::createTrustControls(QFormLayout* form) {
-    inspectSshKeys_ = new design::Button(tr("Inspect host keys…"), form_);
-    inspectSshKeys_->setObjectName("profileSshInspectHostKeys");
-    static_cast<design::Button*>(inspectSshKeys_)->setVariant(design::ButtonVariant::Outline);
-    form->addRow(tr("Final SSH server trust"), inspectSshKeys_);
+void ProfileDialog::createTrustControls() {
+    auto* inspect = new design::Button(tr("Inspect host keys…"), form_);
+    inspect->setObjectName("profileSshInspectHostKeys");
+    inspect->setVariant(design::ButtonVariant::Outline);
+    inspectSshKeys_ = inspect;
+    sections_->addFormRow(formLayout_, tr("SSH server trust"), inspect);
     connect(inspectSshKeys_, &QPushButton::clicked, this, &ProfileDialog::inspectHostKeys);
     connect(sshEnabled_, &QCheckBox::toggled, this, &ProfileDialog::updateTrustControls);
     connect(adapter_, &EngineAdapter::sshHostKeysInspected, this,
@@ -39,7 +42,7 @@ void ProfileDialog::createTrustControls(QFormLayout* form) {
                 review->setAttribute(Qt::WA_DeleteOnClose);
                 trustDialog_ = review;
                 auto* validity = new QTimer(review);
-                validity->setInterval(50);
+                validity->setInterval(EngineAdapter::trustValidityPollMs());
                 connect(validity, &QTimer::timeout, review, [this, review, validity] {
                     if (revision_ != trustRevision_) {
                         review->invalidate();

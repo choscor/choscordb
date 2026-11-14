@@ -72,7 +72,7 @@ void NavigatorSqlWorkspaceTest::statusLineShowsTheTargetOfEachDocument() {
     auto* source = window.findChild<QLabel*>("executionSummary");
     auto* first = qobject_cast<choscordb::SqlEditor*>(tabs->currentWidget());
     QVERIFY(first && source);
-    QTRY_VERIFY(source->toolTip().contains("Disconnected — choose a SQL target"));
+    QTRY_VERIFY(source->toolTip().contains("Disconnected. Choose a SQL target."));
     QSignalSpy connected(workspace, &choscordb::QueryWorkspace::connectionReady);
     const auto alpha = directory.filePath("alpha.sqlite");
     const auto beta = directory.filePath("beta.sqlite");
@@ -152,6 +152,7 @@ void NavigatorSqlWorkspaceTest::changeConnectionMenuRebindsOnlyIdleSqlTabs() {
     editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
     run->trigger();
     QTRY_VERIFY(cancel->isEnabled());
+    QTRY_VERIFY(cancel->isVisible());
     change = openMenu();
     QVERIFY(change);
     QVERIFY(change->actions().at(1)->isChecked());

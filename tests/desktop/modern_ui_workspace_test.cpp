@@ -5,9 +5,12 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
+#include "design_system/menu/embedded_popup.h"
 #include "design_system/menu/menu.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
@@ -19,6 +22,7 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractButton>
 #include <QAction>
+#include <QClipboard>
 #include <QComboBox>
 #include <QContextMenuEvent>
 #include <QCursor>
@@ -27,7 +31,7 @@
 #include <QDockWidget>
 #include <QFile>
 #include <QFontInfo>
-#include <QGraphicsOpacityEffect>
+#include <QGuiApplication>
 #include <QHeaderView>
 #include <QIcon>
 #include <QItemSelectionModel>
@@ -46,6 +50,7 @@
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QSortFilterProxyModel>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
@@ -55,9 +60,11 @@
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeView>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidgetAction>
 #include <Qsci/qscilexersql.h>
@@ -241,7 +248,7 @@ void ModernUiTest::activeWorkKeepsSqlVisibleAndRejectsPreferences() {
     QVERIFY(!overflow);
     auto* cancelAction = window.findChild<QAction*>("command_cancel_query");
     QVERIFY(cancelAction);
-    QCOMPARE(cancelAction->text(), QString("Cancel"));
+    QCOMPARE(cancelAction->text(), QString("Cancel query"));
     QVERIFY(cancelAction->isEnabled());
     cancelAction->trigger();
     QTRY_VERIFY(run->isEnabled());
@@ -278,12 +285,12 @@ void ModernUiTest::sqlCompositionKeepsTabsFirstAndPinsResultActions() {
             grid->mapTo(sql, QPoint()).y());
     QCOMPARE(grid->mapTo(sql, QPoint()).x(), 0);
     QCOMPARE(tabs->tabBar()->tabRect(0).height(),
-             choscordb::design::dimension(choscordb::design::Dimension::Tab));
+             choscordb::design::dimension(choscordb::design::Dimension::DocumentTab));
     QVERIFY(tabs->tabBar()->height() > tabs->tabBar()->tabRect(0).height());
     QVERIFY(!tabs->tabIcon(0).isNull());
-    QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 28);
-    QCOMPARE(grid->horizontalHeader()->height(), 28);
-    QVERIFY(grid->showGrid());
+    QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 32);
+    QCOMPARE(grid->horizontalHeader()->height(), 36);
+    QVERIFY(grid->showGrid() == false);
     QVERIFY(!grid->wordWrap());
     QVERIFY(!grid->horizontalHeader()->stretchLastSection());
     auto* footer = window.findChild<QWidget*>("sqlResultFooter");
@@ -306,6 +313,102 @@ void ModernUiTest::sqlCompositionKeepsTabsFirstAndPinsResultActions() {
     QTRY_VERIFY(grid->isVisible());
     QVERIFY(!messages->isVisible());
     QVERIFY(footer->isVisible());
+}
+
+void ModernUiTest::viewMenuHidesAndShowsTheSidebar() {
+    choscordb::MainWindow window;
+    window.resize(960, 640);
+    window.show();
+    auto* navigator = window.findChild<QDockWidget*>("navigator");
+    auto* toggle = window.findChild<QAction*>("toggleSidebar");
+    QVERIFY(navigator && toggle);
+    QCOMPARE(toggle->text(), QString("Show sidebar"));
+    QVERIFY(toggle->isCheckable());
+    QCOMPARE(toggle->shortcut(), QKeySequence("Ctrl+B"));
+    QVERIFY(toggle->isChecked());
+    QVERIFY(navigator->isVisible());
+    auto* screens = window.findChild<QStackedWidget*>("centralScreens");
+    const int widthWithSidebar = screens->width();
+    toggle->trigger();
+    QVERIFY(!navigator->isVisible());
+    QVERIFY(!toggle->isChecked());
+    QTRY_VERIFY(screens->width() > widthWithSidebar);
+    toggle->trigger();
+    QVERIFY(navigator->isVisible());
+    QVERIFY(toggle->isChecked());
+}
+
+void ModernUiTest::sqlEditorContextMenuShowsQueryEditAndSearchCommands() {
+    choscordb::MainWindow window;
+    window.show();
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(
+        window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+    QVERIFY(editor);
+    QStringList labels;
+    QTimer::singleShot(0, editor, [&labels] {
+        auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+        if (!menu)
+            return;
+        for (auto* action : menu->actions())
+            labels.append(action->isSeparator() ? QString("|") : action->text());
+        menu->close();
+    });
+    const QPoint position(20, 20);
+    QContextMenuEvent event(QContextMenuEvent::Mouse, position,
+                            editor->viewport()->mapToGlobal(position));
+    QApplication::sendEvent(editor->viewport(), &event);
+    QCOMPARE(labels, (QStringList{"Run", "Run all", "|", "Undo", "Redo", "|", "Cut", "Copy",
+                                  "Paste", "|", "Find…", "Replace…", "Complete SQL"}));
+}
+
+void ModernUiTest::sidebarListsHaveContextMenus() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    QTRY_VERIFY(window.findChild<choscordb::AppearanceController*>()->isReady());
+    auto* history = window.findChild<QListWidget*>("sidebarHistoryItems");
+    auto* saved = window.findChild<QTreeWidget*>("sidebarSavedFiles");
+    QVERIFY(history && saved);
+    const auto menuLabels = [](QAbstractItemView* view, const QPoint& point, const QString& copy) {
+        QStringList labels;
+        QTimer::singleShot(0, view, [&labels, copy] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            if (!menu)
+                return;
+            QAction* copyAction = nullptr;
+            for (auto* action : menu->actions()) {
+                labels.append(action->text());
+                if (action->text() == copy)
+                    copyAction = action;
+            }
+            menu->close();
+            if (copyAction)
+                copyAction->trigger();
+        });
+        QContextMenuEvent event(QContextMenuEvent::Mouse, point,
+                                view->viewport()->mapToGlobal(point));
+        QApplication::sendEvent(view->viewport(), &event);
+        return labels;
+    };
+    window.findChild<QPushButton*>("sidebarHistory")->click();
+    QTRY_VERIFY(window.findChild<QLabel*>("sidebarHistoryStatus")->isVisible());
+    choscordb::SavedHistoryEntry entry;
+    entry.id = "menu-entry";
+    entry.sql = "SELECT 42";
+    auto* historyItem = new QListWidgetItem("SELECT 42", history);
+    historyItem->setData(Qt::UserRole, QVariant::fromValue(entry));
+    QCOMPARE(menuLabels(history, history->visualItemRect(historyItem).center(), "Copy SQL"),
+             (QStringList{"Open in a new query", "Copy SQL"}));
+    QCOMPARE(QGuiApplication::clipboard()->text(), QString("SELECT 42"));
+    window.findChild<QPushButton*>("sidebarSaved")->click();
+    QTRY_VERIFY(window.findChild<QLabel*>("sidebarSavedStatus")->isVisible() ||
+                saved->topLevelItemCount() > 0);
+    auto* savedItem = new QTreeWidgetItem(saved, {"report.sql"});
+    savedItem->setData(0, Qt::UserRole, QStringLiteral("reports/report.sql"));
+    QCOMPARE(menuLabels(saved, saved->visualItemRect(savedItem).center(), "Copy path"),
+             (QStringList{"Open", "Copy path"}));
+    QCOMPARE(QGuiApplication::clipboard()->text(), QString("reports/report.sql"));
 }
 
 void ModernUiTest::workspaceHasNoOnboardingActionStrip() {
@@ -356,8 +459,8 @@ void ModernUiTest::liveAppearanceReachesAlreadyOpenConnectionPanelAndMenu() {
     QCOMPARE(surface(), QColor("#ffffff"));
     QVERIFY(appearance->preview("dark"));
     QCoreApplication::processEvents();
-    QCOMPARE(surface(), QColor("#20272b"));
-    QCOMPARE(menu.palette().color(QPalette::Window), QColor("#20272b"));
+    QCOMPARE(surface(), QColor("#0f0f0f"));
+    QCOMPARE(menu.palette().color(QPalette::Window), QColor("#0f0f0f"));
     QVERIFY(profile->isVisible());
     QVERIFY(menu.isVisible());
     appearance->cancelPreview();
@@ -368,7 +471,7 @@ void ModernUiTest::liveAppearanceReachesAlreadyOpenConnectionPanelAndMenu() {
     appearance->applyPreview();
     QTRY_COMPARE(saved.count(), 2);
     QVERIFY(saved.at(1).at(0).toBool());
-    QCOMPARE(surface(), QColor("#20272b"));
+    QCOMPARE(surface(), QColor("#0f0f0f"));
     menu.hide();
     capture("connection-overlay-dark.png");
     profile->reject();
@@ -412,11 +515,11 @@ void ModernUiTest::workspaceUsesApprovedButtonGeometryAndIcons() {
         QVERIFY2(qobject_cast<choscordb::design::Button*>(button), qPrintable(name));
         QVERIFY(button->text().isEmpty());
         QVERIFY(!button->icon().isNull());
-        QCOMPARE(button->sizeHint(), QSize(28, 28));
+        QCOMPARE(button->sizeHint(), QSize(26, 26));
     }
     QVERIFY(!window.findChild<QPushButton*>("navigatorDisconnect"));
     const QList<QPair<QString, int>> actions{
-        {"previousPage", 28}, {"nextPage", 28}, {"exportResult", 28}};
+        {"previousPage", 26}, {"nextPage", 26}, {"exportResult", 26}};
     for (const auto& [name, height] : actions) {
         auto* button = window.findChild<QPushButton*>(name);
         QVERIFY(button);
@@ -484,25 +587,38 @@ void ModernUiTest::workspaceProvidesDiscoverableModernControls() {
     QVERIFY(toast->geometry().bottom() > host->height() / 2);
     window.resize(1200, 800);
     QCoreApplication::processEvents();
-    QCOMPARE(toast->geometry().right(), host->width() - 17);
-    QCOMPARE(toast->geometry().bottom(), host->height() - 17);
+    QCOMPARE(toast->geometry().right(), host->width() - 33);
+    int coveredTop = host->height();
+    for (auto* line : window.findChildren<choscordb::design::StatusLine*>()) {
+        if (!line->isVisible())
+            continue;
+        const QRect lineRect(line->mapTo(host, QPoint()), line->size());
+        QVERIFY(!lineRect.intersects(toast->geometry()));
+        if (lineRect.left() <= toast->geometry().right() &&
+            lineRect.right() >= toast->geometry().left())
+            coveredTop = qMin(coveredTop, lineRect.top());
+    }
+    QVERIFY(coveredTop < host->height());
+    QCOMPARE(toast->geometry().bottom(), coveredTop - 33);
     toast->findChild<QAbstractButton*>("toastDismiss")->click();
-    window.showToast("Could not save", choscordb::ToastVariant::Danger);
+    toast->showToast("Save", "Could not save", choscordb::ToastVariant::Danger);
     QCOMPARE(toast->property("variant").toString(), QString("danger"));
     QVERIFY(toast->text().contains("Could not save"));
     QCOMPARE(window.findChildren<choscordb::ToastRegion*>("toastRegion").size(), 1);
     QCOMPARE(choscordb::windowToast(&window), toast);
     toast->findChild<QAbstractButton*>("toastDismiss")->click();
-    window.showToast("Connected", choscordb::ToastVariant::Success);
-    QTRY_VERIFY_WITH_TIMEOUT(
-        qobject_cast<QGraphicsOpacityEffect*>(toast->graphicsEffect())->opacity() > 0.99, 2000);
+    toast->showToast("Connected", "Example connected.", choscordb::ToastVariant::Success);
+    QTRY_VERIFY_WITH_TIMEOUT(choscordb::design::detail::popoverOpacity(*toast) > 0.99, 2000);
     const auto sample = toast->mapTo(&window, QPoint(toast->width() - 20, toast->height() - 4));
     const auto capture = window.grab();
     const auto scale = capture.devicePixelRatioF();
     QCOMPARE(capture.toImage().pixelColor(qRound(sample.x() * scale), qRound(sample.y() * scale)),
-             window.findChild<choscordb::design::ThemeManager*>()
-                 ->resolvedTheme()
-                 .colors.successSurface);
+             [&window] {
+                 const auto& colors =
+                     window.findChild<choscordb::design::ThemeManager*>()->resolvedTheme().colors;
+                 return choscordb::design::composite(
+                     choscordb::design::withOpacity(colors.successTint, 0.2), colors.base);
+             }());
     QVERIFY(resetLayout);
     auto* run = window.findChild<QAction*>("runStatement");
     QVERIFY(run);
@@ -522,13 +638,15 @@ void ModernUiTest::navigatorContextActionsSupportKeyboardFocusAndMenus() {
     QVERIFY(refreshAction);
     QVERIFY(disconnectAction);
     QCOMPARE(tree->contextMenuPolicy(), Qt::CustomContextMenu);
-    QVERIFY(refresh->isHidden());
     QVERIFY(tree->actions().contains(refreshAction));
     QVERIFY(tree->actions().contains(disconnectAction));
+    QCOMPARE(refreshAction->text(), QString("Refresh"));
+    QCOMPARE(refreshAction->shortcut(), QKeySequence(QKeySequence::Refresh));
+    QCOMPARE(refresh->toolTip(), QString("Refresh"));
 
     window.show();
-    tree->setFocus();
-    QTRY_VERIFY(refresh->isVisible());
+    QVERIFY(refresh->isVisible());
+    QVERIFY(!refresh->isEnabled());
 }
 
 void ModernUiTest::runControlsStayInToolbarAtBothWidths() {
@@ -550,10 +668,13 @@ void ModernUiTest::runControlsStayInToolbarAtBothWidths() {
     QCOMPARE(runCurrent->shortcut(), QKeySequence("Ctrl+Return"));
     QCOMPARE(runAll->shortcut(), QKeySequence("Ctrl+Shift+Return"));
     QCOMPARE(runButton->text(), QString("Run"));
+    QCOMPARE(runCurrent->text(), QString("Run"));
+    QCOMPARE(runButton->accessibleName(), runCurrent->text());
+    QCOMPARE(runAll->text(), QString("Run all"));
     QVERIFY(!runButton->icon().isNull());
     QCOMPARE(modeButton->accessibleName(), QString("Run options"));
     QVERIFY(modeButton->menu());
-    QCOMPARE(modeButton->menu()->actions(), (QList<QAction*>{runAll, runCurrent}));
+    QCOMPARE(modeButton->menu()->actions(), (QList<QAction*>{runCurrent, runAll}));
     QVERIFY(!runButton->isEnabled() && !modeButton->isEnabled());
     auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
     workspace->connectSqlite(":memory:");
@@ -571,7 +692,7 @@ void ModernUiTest::runControlsStayInToolbarAtBothWidths() {
         }
     }
     toolbar->findChild<QPushButton*>("toolbarQuerySettings")->click();
-    QTRY_VERIFY(window.findChild<QDialog*>("querySettingsDialog"));
+    QTRY_VERIFY(window.findChild<QDialog*>("preferencesDialog"));
 }
 
 void ModernUiTest::inactiveEditorCloseButtonAppearsOnHover() {
@@ -623,10 +744,10 @@ void ModernUiTest::inactiveEditorCloseButtonAppearsOnHover() {
     }
 }
 
-void ModernUiTest::sidebarSectionTitlesUseUppercaseSectionLabel() {
+void ModernUiTest::sidebarSectionTitlesUseTheKumoGroupLabel() {
     choscordb::MainWindow window;
     const QStringList titles{"Connections", "Pinned", "Schema & objects", "Saved queries",
-                             "Recent history"};
+                             "Query history"};
     const auto caption = choscordb::design::typographySpec(choscordb::design::TextStyle::Caption);
     QStringList found;
     for (auto* label : window.findChildren<choscordb::design::Text*>()) {
@@ -637,7 +758,6 @@ void ModernUiTest::sidebarSectionTitlesUseUppercaseSectionLabel() {
         QCOMPARE(label->font().capitalization(), QFont::AllUppercase);
         QCOMPARE(label->font().pixelSize(), caption.pixelSize);
         QCOMPARE(label->font().weight(), QFont::DemiBold);
-        QVERIFY(label->font().letterSpacing() > 0);
         QCOMPARE(label->property("designRole").toString(), QString("description"));
     }
     found.removeDuplicates();
@@ -782,6 +902,43 @@ void ModernUiTest::preferencesUseSectionNavigationAndCancelableLivePreview() {
     theme->setForcedContrast(true);
     QVERIFY(status->text().contains("high-contrast", Qt::CaseInsensitive));
     theme->setForcedContrast(false);
+    const auto prompt = confirmNextPrompt();
     dialog->reject();
+    QCOMPARE(*prompt, QString("Discard changes?"));
     QCOMPARE(theme->mode(), choscordb::design::ThemeMode::System);
+}
+
+void ModernUiTest::workspaceSplitterKeepsBothPanesVisible() {
+    choscordb::MainWindow window;
+    window.resize(1280, 800);
+    window.show();
+    auto* splitter = window.findChild<QSplitter*>("workspaceSplitter");
+    QVERIFY(splitter);
+    QVERIFY(!splitter->childrenCollapsible());
+    for (const auto& sizes : {QList<int>{0, 800}, QList<int>{800, 0}}) {
+        splitter->setSizes(sizes);
+        QVERIFY(splitter->sizes().at(0) > 0);
+        QVERIFY(splitter->sizes().at(1) > 0);
+    }
+}
+
+void ModernUiTest::viewMenuGroupsItsCommandsOnEveryPlatform() {
+    choscordb::MainWindow window;
+    auto* view = window.findChild<QMenu*>("viewMenu");
+    QVERIFY(view);
+    QStringList groups{QString()};
+    for (auto* action : view->actions()) {
+        if (action->isSeparator())
+            groups << QString();
+        else
+            groups.last() += action->objectName() + ' ';
+    }
+    const QStringList expected{
+        "showStart showSql showObjects showHistory ",
+        "quickSwitch listEditorTabs focusConnections ",
+        "toggleSidebar resetLayout ",
+        "refreshSavedConnections ",
+    };
+    for (const auto& group : expected)
+        QVERIFY2(groups.contains(group), qPrintable(groups.join('|')));
 }

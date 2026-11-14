@@ -12,6 +12,7 @@ class QSpinBox;
 class QDoubleSpinBox;
 class QComboBox;
 namespace choscordb {
+enum class PreferencesPage { Appearance, Editor, Results, Connections, History, Keyboard };
 namespace design {
 class FieldValidation;
 class StatusLine;
@@ -24,6 +25,7 @@ class PreferencesDialog final : public DialogShell {
     explicit PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescriptor> catalog,
                                QWidget* parent = nullptr,
                                AppearanceController* appearance = nullptr);
+    void showPage(PreferencesPage page);
 
   signals:
     void preferencesSaveSubmitted(quint64 token);
@@ -70,7 +72,7 @@ class PreferencesDialog final : public DialogShell {
     QString appearanceWarning_;
     bool forcedContrast_ = false;
     QComboBox* theme_ = nullptr;
-    QPushButton *apply_, *reset_;
+    QPushButton *apply_ = nullptr, *reset_ = nullptr, *retryAppearance_ = nullptr;
     quint64 token_ = 0, queryToken_ = 0, historyToken_ = 0;
     quint64 appearanceRevision_ = 0;
     bool appearancePending_ = false;

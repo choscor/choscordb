@@ -12,7 +12,7 @@ class NavigatorPinResolveTest : public QObject {
     void hiddenConnectionResolvesPagedObjectWithoutNavigatingExplorer() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -56,7 +56,7 @@ class NavigatorPinResolveTest : public QObject {
     void reusedIdentityIsUnavailableAndNeverReturned() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -83,7 +83,7 @@ class NavigatorPinResolveTest : public QObject {
     void staleAndFailedLookupsRemainRetryable() {
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
@@ -123,3 +123,4 @@ class NavigatorPinResolveTest : public QObject {
 };
 QTEST_MAIN(NavigatorPinResolveTest)
 #include "navigator_pin_resolve_test.moc"
+#include "widgets/filter_field/filter_field.h"

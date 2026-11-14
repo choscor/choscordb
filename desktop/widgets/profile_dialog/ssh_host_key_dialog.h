@@ -1,12 +1,14 @@
 #pragma once
 #include "bridge/engine_adapter.h"
 #include "design_system/dialog_shell/dialog_shell.h"
+class QFormLayout;
 class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
 namespace choscordb {
 namespace design {
+class FieldValidation;
 class StatusLine;
 }
 class SshHostKeyDialog final : public DialogShell {
@@ -27,8 +29,10 @@ class SshHostKeyDialog final : public DialogShell {
     void updateActions();
     QList<SshHostKeyCandidate> candidates_;
     QListWidget* list_;
+    QFormLayout* form_;
     QLineEdit *original_, *hostname_, *port_, *alias_, *algorithm_, *fingerprint_, *path_;
     QLabel* status_;
+    design::FieldValidation* pathValidation_;
     design::StatusLine* statusLine_;
     QPushButton *approve_, *retry_;
     bool pending_ = false, valid_ = true, approved_ = false;

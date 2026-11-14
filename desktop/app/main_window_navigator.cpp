@@ -156,6 +156,8 @@ void MainWindow::connectNavigator(const Ui& ui) {
                     .arg(EngineAdapter::rowStatus(RowStatusCause::ChildrenFailed, error).message));
         });
     const auto updateObjectsEmpty = [this, tree, filter, objectsEmpty] {
+        filter->setEnabled(!filter->text().isEmpty() || tree->model()->rowCount() > 0 ||
+                           !selectedProfileIds_.isEmpty());
         presentPanel(objectsEmpty, PanelKind::Objects,
                      {.loaded = true,
                       .hasRows = tree->model()->rowCount() > 0,
@@ -186,10 +188,13 @@ void MainWindow::connectNavigator(const Ui& ui) {
                 if (!notice.isEmpty())
                     reportNotice(notice);
             });
-    auto* refreshNavigatorAction = new QAction(tr("Refresh selected object"), tree);
+    auto* refreshNavigatorAction = new QAction(tr("Refresh"), tree);
     refreshNavigatorAction->setObjectName("navigatorRefreshAction");
+    refreshNavigatorAction->setShortcut(QKeySequence::Refresh);
+    refreshNavigatorAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     refreshNavigatorAction->setEnabled(false);
-    auto* disconnectNavigatorAction = new QAction(tr("Disconnect selected session"), tree);
+    preferences_->addAction("refresh", refreshNavigatorAction);
+    auto* disconnectNavigatorAction = new QAction(tr("Disconnect"), tree);
     disconnectNavigatorAction->setObjectName("navigatorDisconnectAction");
     disconnectNavigatorAction->setEnabled(false);
     tree->addAction(newConnection);
@@ -200,18 +205,13 @@ void MainWindow::connectNavigator(const Ui& ui) {
     connect(disconnectNavigatorAction, &QAction::triggered, navigatorController,
             &NavigatorController::disconnectCurrent);
     connect(refreshNavigator, &QPushButton::clicked, refreshNavigatorAction, &QAction::trigger);
-    connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this,
-            [this, tree](const QModelIndex& current, const QModelIndex& previous) {
-                if (!current.isValid())
-                    return;
-                if (!allowDocumentChange()) {
-                    const QSignalBlocker blocker(tree->selectionModel());
-                    tree->selectionModel()->setCurrentIndex(
-                        previous, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-                    return;
-                }
-                activateNavigatorObject(current);
-            });
+    const auto openNavigatorRow = [this](const QModelIndex& index) {
+        if (index.isValid() && allowDocumentChange())
+            activateNavigatorObject(index);
+    };
+    connect(tree, &QTreeView::clicked, this, openNavigatorRow);
+    connect(tree, &QTreeView::activated, this, openNavigatorRow);
+    new main_window_detail::ReturnActivatesRow(tree);
     connect(tree->selectionModel(), &QItemSelectionModel::currentChanged, this,
             [tree, refreshNavigator, refreshNavigatorAction,
              disconnectNavigatorAction](const QModelIndex&) {
@@ -291,7 +291,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
         completion_->setCatalog(CompletionService(std::move(items), snapshot.partial));
     };
     connect(workspace_, &QueryWorkspace::documentTargetChanged, this, rebuildCompletion);
-    const auto rebuildLoadedCompletion = coalescedCall(this, 250, rebuildCompletion);
+    const auto rebuildLoadedCompletion = coalescedCall(this, rebuildCompletion);
     connect(navigatorController->model(), &NavigatorModel::completionChanged, this,
             [completionConnection, catalogSize, rebuildCompletion,
              rebuildLoadedCompletion](quint64 id) {

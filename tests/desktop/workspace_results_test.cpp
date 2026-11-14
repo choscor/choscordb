@@ -6,6 +6,7 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
 #include "design_system/metrics/metrics.h"
@@ -74,8 +75,8 @@ void WorkspaceTest::resultGridUsesCompactRowsAndHeader() {
     auto* grid = window.findChild<QTableView*>("queryResults");
     QVERIFY(grid);
     QCOMPARE(grid->verticalHeader()->defaultSectionSize(),
-             choscordb::design::dimension(choscordb::design::Dimension::Row));
-    QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 28);
+             choscordb::design::dimension(choscordb::design::Dimension::TableRow));
+    QCOMPARE(grid->verticalHeader()->defaultSectionSize(), 32);
     QCOMPARE(grid->horizontalHeader()->height(),
              choscordb::design::dimension(choscordb::design::Dimension::Header));
 }
@@ -210,6 +211,16 @@ void WorkspaceTest::nestedEventLoopKeepsLiveTransferReserved() {
     QVERIFY(retained);
     QVERIFY(survived);
     QTRY_COMPARE(adapter.memoryUsage().used, adapter.memoryUsage().source);
+}
+
+void WorkspaceTest::shownResultPageRaisesNoLeaseFailure() {
+    WorkspaceFixture f;
+    QTRY_VERIFY(f.run.isEnabled());
+    QSignalSpy failures(f.workspace.adapter(), &choscordb::EngineAdapter::commandFailed);
+    f.execute("SELECT 1 AS a, 2 AS b");
+    QTRY_COMPARE(f.grid.model()->rowCount(), 1);
+    QTRY_VERIFY(f.workspace.adapter()->memoryUsage().used <= 2 * 1024 * 1024);
+    QCOMPARE(failures.count(), 0);
 }
 
 void WorkspaceTest::previousPageUsesSharedHotCache() {
@@ -400,7 +411,7 @@ void WorkspaceTest::exportCancellationPreservesExistingDestination() {
         for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget)) {
                 confirmation.stop();
-                box->done(QMessageBox::Yes);
+                confirmationAction(box)->click();
             }
     });
     confirmation.start();
@@ -437,7 +448,7 @@ void WorkspaceTest::exportFailureLeavesResultUsable() {
     auto* toast =
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(!toast || !toast->isVisible());
-    QCOMPARE(dialog->findChild<QPushButton*>("exportStart")->text(), QString("&Retry"));
+    QCOMPARE(dialog->findChild<QPushButton*>("exportStart")->text(), QString("Retry"));
     QVERIFY(f.run.isEnabled());
     QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("42"));
     QVERIFY(QDir(directory.path())

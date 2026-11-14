@@ -1,8 +1,10 @@
 #include "app/object_data_workspace.h"
 #include "app/query_workspace.h"
 #include "app/result_column_header.h"
+#include "app/result_pane_tabs.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
+#include "design_system/separator/separator.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/table/table_style.h"
 #include "design_system/text/text.h"
@@ -15,6 +17,7 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QStackedWidget>
 #include <QStringList>
 #include <QTableView>
 #include <QVBoxLayout>
@@ -42,23 +45,41 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     table->setHorizontalHeader(new ResultColumnHeader(table));
     table->setAccessibleName(tr("Object data"));
     table->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
-    design::configureResultTable(*table, false);
+    design::configureResultTable(*table);
     table->setWordWrap(false);
     table->setFrameShape(QFrame::NoFrame);
-    table->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
+    table->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::TableRow));
     table->horizontalHeader()->setFixedHeight(design::dimension(design::Dimension::Header));
     table->horizontalHeader()->setDefaultSectionSize(
         design::dimension(design::Dimension::TableColumn));
     table->horizontalHeader()->setStretchLastSection(false);
-    layout->addWidget(table, 1);
     auto* messages = new QPlainTextEdit(this);
     messages->setObjectName("objectDataMessages");
-    messages->setAccessibleName(tr("Object data diagnostics"));
+    messages->setAccessibleName(tr("Object data messages"));
     messages->setReadOnly(true);
+    messages->setProperty("designRole", "log");
+    messages->setFont(
+        design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
     messages->setMaximumBlockCount(1000);
-    messages->setMaximumHeight(design::dimension(design::Dimension::Row) * 3);
-    messages->hide();
-    layout->addWidget(messages);
+    auto* panes = new QStackedWidget(this);
+    panes->setObjectName("objectDataViews");
+    auto* resultPage = new QWidget(panes);
+    auto* resultPageLayout = new QVBoxLayout(resultPage);
+    resultPageLayout->setContentsMargins(0, 0, 0, 0);
+    resultPageLayout->setSpacing(0);
+    resultPageLayout->addWidget(table, 1);
+    panes->addWidget(resultPage);
+    panes->addWidget(messages);
+    auto* paneHeader = new QWidget(this);
+    paneHeader->setObjectName("objectDataPaneHeader");
+    auto* paneHeaderLayout = new QHBoxLayout(paneHeader);
+    paneHeaderLayout->setContentsMargins(
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One),
+        design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One));
+    paneHeaderLayout->addWidget(createResultPaneTabs(panes, "objectDataPaneTabs"));
+    paneHeaderLayout->addStretch(1);
+    layout->addWidget(paneHeader);
+    layout->addWidget(panes, 1);
     auto* statusLine = new design::StatusLine(this);
     footer_ = statusLine;
     footer_->setObjectName("objectDataFooter");
@@ -125,28 +146,27 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
     history_->hide();
     auto* exportButton =
         makeButton(toolbar, tr("Export…"), "objectDataExport", design::Icon::Export);
+    toolbar->addWidget(design::createToolbarSeparator(toolbar_));
     auto* addRow = makeButton(toolbar, tr("Add row"), "objectDataAddRow", design::Icon::Add);
     auto* deleteRows =
-        makeButton(toolbar, tr("Delete selected"), "objectDataDeleteRows", design::Icon::Close);
+        makeButton(toolbar, tr("Delete rows"), "objectDataDeleteRows", design::Icon::Trash);
     auto* restoreRows =
-        makeButton(toolbar, tr("Restore selected"), "objectDataRestoreRows", design::Icon::Refresh);
-    auto* setNull = makeButton(toolbar, tr("Set NULL"), "objectDataSetNull", design::Icon::Square);
+        makeButton(toolbar, tr("Restore rows"), "objectDataRestoreRows", design::Icon::Refresh);
+    auto* setNull =
+        makeButton(toolbar, tr("Set NULL"), "objectDataSetNull", design::Icon::Prohibit);
     auto* discardEdits =
         makeButton(toolbar, tr("Discard"), "objectDataDiscardEdits", design::Icon::Cancel);
-    for (auto* button : {addRow, deleteRows, restoreRows, setNull, discardEdits}) {
-        toolbar->removeWidget(button);
-        button->hide();
-    }
     auto* applyEdits = makeButton(toolbar, tr("Apply…"), "objectDataApply", design::Icon::Check);
+    auto* editReason = createEditReasonLabel("objectDataEditReason", this);
+    toolbar->addWidget(editReason);
     auto* cancelButton =
-        makeButton(toolbar, tr("Cancel"), "objectDataCancel", design::Icon::Cancel);
-    toolbar->removeWidget(cancelButton);
+        makeButton(toolbar, tr("Cancel query"), "objectDataCancel", design::Icon::Cancel);
     cancelButton->hide();
     toolbar->addStretch(1);
     layout->addWidget(footer_);
     auto* run = new QAction(this);
     auto* runAll = new QAction(this);
-    auto* cancel = new QAction(tr("Cancel"), this);
+    auto* cancel = new QAction(tr("Cancel query"), this);
     auto* newConnection = new QAction(this);
     result_ = new QueryWorkspace(
         {run,
@@ -175,7 +195,8 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
          duration,
          page,
          rows,
-         memory},
+         memory,
+         editReason},
         this);
     auto headerSizing = std::make_shared<HeaderSizingState>();
     connect(table->model(), &QAbstractItemModel::modelReset, table, [table, headerSizing] {
@@ -211,17 +232,17 @@ ObjectDataWorkspace::ObjectDataWorkspace(QueryWorkspace* sqlWorkspace, QWidget* 
             });
     connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton] {
         cancelButton->setEnabled(cancel->isEnabled());
+        cancelButton->setVisible(cancel->isEnabled());
         cancelButton->setAccessibleName(cancel->text());
         cancelButton->setToolTip(cancel->text());
     });
     cancelButton->setEnabled(cancel->isEnabled());
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
-    connect(result_, &QueryWorkspace::executionStateChanged, messages,
-            [messages](QueryState state) {
-                const auto pane = EngineAdapter::queryPresentation(state).pane;
-                if (pane != ResultPane::Unchanged)
-                    messages->setVisible(pane == ResultPane::Messages);
-            });
+    connect(result_, &QueryWorkspace::executionStateChanged, panes, [panes](QueryState state) {
+        const auto pane = EngineAdapter::queryPresentation(state).pane;
+        if (pane != ResultPane::Unchanged)
+            panes->setCurrentIndex(pane == ResultPane::Messages ? 1 : 0);
+    });
     connect(result_, &QueryWorkspace::activityChanged, this, [this, cancelButton](bool busy) {
         if (sql_)
             sql_->setExternalWork(this, busy);

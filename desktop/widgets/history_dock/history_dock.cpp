@@ -4,6 +4,7 @@
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/field/focus_indicator.h"
 #include "design_system/history_row/history_row.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
@@ -32,7 +33,6 @@ namespace choscordb {
 namespace {
 // ui-budget: characters of SQL the preview pane shows per page; it is display paging only.
 constexpr qsizetype PreviewChars = 65536;
-constexpr quint32 pageSize = 100;
 class HistoryRowDelegate final : public QStyledItemDelegate {
   public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -56,14 +56,14 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
         const int gap = design::spacing(design::Spacing::Two);
         const int badgeRadius = design::radius(design::Radius::Small);
         painter->save();
-        painter->fillRect(bounds, option.state & QStyle::State_Selected ? colors.selection
-                                                                        : colors.surface);
-        painter->setPen(colors.border);
+        painter->fillRect(bounds,
+                          option.state & QStyle::State_Selected ? colors.tint : colors.base);
+        painter->setPen(colors.hairline);
         painter->drawLine(bounds.bottomLeft(), bounds.bottomRight());
         const auto sqlFont =
             design::resolveTypography(design::TextStyle::Callout, design::FontDesign::Monospaced);
         painter->setFont(sqlFont);
-        painter->setPen(colors.fg);
+        painter->setPen(colors.textDefault);
         const int width = qMax(0, bounds.width() - 2 * inset);
         const QRect sqlRect(
             bounds.left() + inset, bounds.top() + gap, width,
@@ -94,15 +94,11 @@ class HistoryRowDelegate final : public QStyledItemDelegate {
         const int detailLeft = badge.right() + 1 + design::spacing(design::Spacing::Two);
         const QRect detailRect(detailLeft, badge.top(),
                                qMax(0, bounds.right() + 1 - inset - detailLeft), badge.height());
-        painter->setPen(colors.fgMuted);
+        painter->setPen(colors.textSubtle);
         painter->drawText(
             detailRect, Qt::AlignLeft | Qt::AlignVCenter,
             QFontMetrics(small).elidedText(detail, Qt::ElideRight, detailRect.width()));
-        if (option.state & QStyle::State_HasFocus) {
-            painter->setPen(QPen(colors.ring, design::focusSpec().ringWidth));
-            painter->setBrush(Qt::NoBrush);
-            painter->drawRect(bounds.adjusted(1, 1, -1, -1));
-        }
+        design::paintRowFocusRing(*painter, option, option.widget, bounds, 0);
         painter->restore();
     }
 };
@@ -126,7 +122,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
                                 design::spacing(design::Spacing::Three), 0);
     search_ = new QLineEdit(body);
     search_->setObjectName("historySearch");
-    search_->setPlaceholderText(tr("Filter this page"));
+    search_->setPlaceholderText(tr("Filter this page…"));
     search_->setAccessibleName(tr("Filter this history page"));
     search_->setToolTip(
         tr("Search visible SQL excerpts, connection names, and statuses on this page."));
@@ -146,7 +142,7 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     clear_ = new design::Button(tr("Clear history…"), body);
     clear_->setObjectName("clearHistory");
     clear_->setVariant(design::ButtonVariant::Destructive);
-    clear_->setDesignIcon(design::Icon::Close);
+    clear_->setDesignIcon(design::Icon::Trash);
     clear_->setAccessibleName(tr("Clear history"));
     clear_->setToolTip(tr("Clear history…"));
     clear_->setText({});
@@ -202,8 +198,8 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
     previewNext_->setVariant(design::ButtonVariant::Outline);
     previewPrevious_->setButtonSize(design::ButtonSize::Small);
     previewNext_->setButtonSize(design::ButtonSize::Small);
-    previewPrevious_->setDesignIcon(design::Icon::ChevronLeft);
-    previewNext_->setDesignIcon(design::Icon::ChevronRight);
+    previewPrevious_->setDesignIcon(design::Icon::CaretLeft);
+    previewNext_->setDesignIcon(design::Icon::CaretRight);
     auto* previewPaging = new design::ButtonGroup(Qt::Horizontal, previewBody);
     previewPaging->addButton(previewPrevious_);
     previewPaging->addButton(previewNext_);
@@ -318,10 +314,9 @@ HistoryDock::HistoryDock(EngineAdapter* adapter, QWidget* parent)
         adapter_->setHistoryPolicy(proposed, policyToken_);
     });
     connect(clear_, &QPushButton::clicked, this, [this] {
-        if (!adapter_ || ConfirmationDialog::question(this, tr("Clear history"),
-                                                      tr("Delete all stored query history?"),
-                                                      QMessageBox::Yes | QMessageBox::No,
-                                                      QMessageBox::No) != QMessageBox::Yes)
+        if (!adapter_ || !ConfirmationDialog::confirm(
+                             this, tr("Clear history"), tr("Delete all stored query history?"),
+                             tr("Clear history"), ConfirmationDialog::Consequence::Destructive))
             return;
         failed_ = false;
         clearToken_ = nextRequestToken();
@@ -399,8 +394,8 @@ void HistoryDock::changeEvent(QEvent* event) {
 void HistoryDock::refreshManageIcon() {
     if (!manage_)
         return;
-    manage_->setIcon(design::themedIcon(design::Icon::ChevronDown,
-                                        design::resolvedThemeForWidget(*manage_).colors.fg,
+    manage_->setIcon(design::themedIcon(design::Icon::CaretDown,
+                                        design::resolvedThemeForWidget(*manage_).colors.textDefault,
                                         design::dimension(design::Dimension::Icon)));
 }
 void HistoryDock::applyConfirmedPolicy(const HistoryPolicy& policy) {
@@ -432,7 +427,7 @@ void HistoryDock::loadPage(quint32 offset) {
     if (!failed_)
         statusText_.clear();
     updateControls();
-    adapter_->listHistory(pageSize, offset, listToken_);
+    adapter_->listHistory(EngineAdapter::historyPageRows(), offset, listToken_);
 }
 void HistoryDock::selectEntry() {
     previewOffsets_.clear();

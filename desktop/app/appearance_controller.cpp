@@ -1,6 +1,9 @@
 #include "app/appearance_controller.h"
+#include "bridge/engine_adapter.h"
 #include "bridge/request_token.h"
 #include "design_system/theme_manager.h"
+#include <QAbstractButton>
+#include <QAction>
 #include <QDockWidget>
 #include <QEvent>
 #include <QGuiApplication>
@@ -8,8 +11,10 @@
 #include <QMouseEvent>
 #include <QScreen>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTimer>
 #include <algorithm>
+#include <utility>
 
 namespace choscordb {
 namespace {
@@ -27,16 +32,19 @@ design::ThemeMode themeMode(const QString& value) {
 
 AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAdapter* adapter,
                                            QMainWindow* window, QDockWidget* navigator,
-                                           QSplitter* workspace)
+                                           QSplitter* workspace, SidebarLayout sidebar,
+                                           std::shared_ptr<ResultColumnWidths> columnWidths)
     : QObject(window), theme_(theme), adapter_(adapter), window_(window), navigator_(navigator),
-      workspace_(workspace), saveTimer_(new QTimer(this)) {
+      workspace_(workspace), sidebar_(std::move(sidebar)), columnWidths_(std::move(columnWidths)),
+      saveTimer_(new QTimer(this)) {
     connect(theme_, &design::ThemeManager::accessibilityPolicyChanged, this,
             &AppearanceController::accessibilityPolicyChanged);
     saveTimer_->setSingleShot(true);
-    saveTimer_->setInterval(300);
+    saveTimer_->setInterval(EngineAdapter::layoutSaveDelayMs());
     connect(saveTimer_, &QTimer::timeout, this, [this] { submitSave(Request::AutomaticSave); });
     connect(workspace_, &QSplitter::splitterMoved, this, [this] { scheduleSave(); });
     connect(navigator_, &QDockWidget::visibilityChanged, this, [this] { scheduleSave(); });
+    connect(sidebar_.panels, &QStackedWidget::currentChanged, this, [this] { scheduleSave(); });
     navigator_->installEventFilter(this);
     connect(theme_, &design::ThemeManager::themeChanged, this, [this] { scheduleSave(); });
     window_->installEventFilter(this);
@@ -108,7 +116,7 @@ AppearanceController::AppearanceController(design::ThemeManager* theme, EngineAd
                 } else if (request == Request::Save)
                     emit saveFinished(false, error);
                 else if (request == Request::Reset)
-                    emit warningChanged(tr("Appearance reset failed: %1").arg(error));
+                    emit warningChanged(tr("Could not reset the appearance: %1").arg(error));
                 else if (request == Request::AutomaticSave) {
                     dirty_ = true;
                     emit warningChanged(tr("Layout could not be saved: %1").arg(error));
@@ -143,7 +151,9 @@ AppearanceLayout AppearanceController::current() const {
     if (total > 0)
         result.editorResultsSplit =
             static_cast<quint16>(std::clamp((sizes[0] * 1000 + total / 2) / total, 100, 900));
-    result.navigatorVisible = true;
+    result.navigatorVisible = sidebar_.visible->isChecked();
+    result.sidebarTab = static_cast<quint8>(sidebar_.panels->currentIndex());
+    result.resultColumnWidths = columnWidths_->user;
     result.historyVisible = false;
     const auto geometry = window_->normalGeometry();
     result.x = geometry.x();
@@ -199,7 +209,7 @@ void AppearanceController::applyPreview() {
         return;
     }
     if (token_) {
-        emit saveFinished(false, tr("Layout settings are still being saved. %1")
+        emit saveFinished(false, tr("The layout is still being saved. %1")
                                      .arg(EngineAdapter::recoveryHint(RecoveryHint::Retry)));
         return;
     }
@@ -209,7 +219,7 @@ void AppearanceController::applyPreview() {
 }
 void AppearanceController::stageReset() {
     if (!loaded_ || token_) {
-        emit warningChanged(tr("Appearance settings are still loading or saving. %1")
+        emit warningChanged(tr("Appearance preferences are still loading or saving. %1")
                                 .arg(EngineAdapter::recoveryHint(RecoveryHint::Retry)));
         return;
     }
@@ -244,6 +254,8 @@ void AppearanceController::resetLayout() {
     value.historyHeight = defaults.historyHeight;
     value.navigatorVisible = defaults.navigatorVisible;
     value.historyVisible = defaults.historyVisible;
+    value.sidebarTab = defaults.sidebarTab;
+    value.resultColumnWidths = defaults.resultColumnWidths;
     value.x = defaults.x;
     value.y = defaults.y;
     value.width = defaults.width;
@@ -278,7 +290,9 @@ void AppearanceController::apply(const AppearanceLayout& value, bool includeLayo
             }
         if (onScreen)
             window_->setGeometry(requested);
-        navigator_->show();
+        sidebar_.visible->setChecked(value.navigatorVisible);
+        sidebar_.tabs.at(value.sidebarTab)->click();
+        columnWidths_->user = value.resultColumnWidths;
         window_->resizeDocks({navigator_}, {static_cast<int>(value.navigatorWidth)},
                              Qt::Horizontal);
 

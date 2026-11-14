@@ -30,7 +30,7 @@ WorkspaceRecoveryController::WorkspaceRecoveryController(QTabWidget* tabs,
     : QObject(parent), tabs_(tabs), addEditor_(std::move(addEditor)) {
     qRegisterMetaType<QList<SavedWorkspaceTab>>();
     debounce_.setSingleShot(true);
-    debounce_.setInterval(350);
+    debounce_.setInterval(EngineAdapter::recoverySaveDelayMs());
     connect(&debounce_, &QTimer::timeout, this, &WorkspaceRecoveryController::flush);
     connect(tabs_->tabBar(), &QTabBar::tabMoved, this, &WorkspaceRecoveryController::changed);
     connect(tabs_, &QTabWidget::currentChanged, this, &WorkspaceRecoveryController::changed);
@@ -126,9 +126,10 @@ void WorkspaceRecoveryController::applyTabs(const QList<SavedWorkspaceTab>& tabs
         if (tab.isObject) {
             auto* widget = objectFactory_ ? objectFactory_(tab) : nullptr;
             if (widget && tabs_->indexOf(widget) < 0) {
-                const auto icon = design::themedIcon(
-                    objectKindIcon(tab.objectType),
-                    design::resolvedThemeForWidget(*tabs_).colors.fgMuted, objectIconSize());
+                const auto icon =
+                    design::themedIcon(objectKindIcon(tab.objectType),
+                                       design::resolvedThemeForWidget(*tabs_).colors.textSubtle,
+                                       design::dimension(design::Dimension::Icon));
                 tabs_->addTab(widget, icon, objectTabTitle(tab.objectId, tab.label));
             }
         } else {

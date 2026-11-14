@@ -74,7 +74,7 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
     QVERIFY2(firstRow.height() == choscordb::design::dimension(choscordb::design::Dimension::Row),
              qPrintable(QStringLiteral("Navigation row is %1 px high").arg(firstRow.height())));
     const auto checkRows = [&] {
-        const auto color = theme->resolvedTheme().colors.fgMuted;
+        const auto color = theme->resolvedTheme().colors.textSubtle;
         for (int row = 0; row < 4; ++row) {
             const auto index = proxy->index(row, 0, visibleRoot);
             QCOMPARE(index.data(NavigatorModel::KindRole).toString(),
@@ -84,11 +84,11 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
             option.rect = tree->visualRect(index);
             QVERIFY(option.rect.isValid());
             delegate->initStyleOption(&option, index);
-            const auto expected = row == 0   ? design::Icon::Grid2x2
+            const auto expected = row == 0   ? design::Icon::GridFour
                                   : row == 1 ? design::Icon::Eye
                                   : row == 2 ? design::Icon::Key
                                              : design::Icon::File;
-            const int size = objectIconSize();
+            const int size = design::dimension(design::Dimension::Icon);
             QCOMPARE(option.decorationSize, QSize(size, size));
             QCOMPARE(option.icon.pixmap(size, size).toImage(),
                      design::themedIcon(expected, color, size).pixmap(size, size).toImage());
@@ -100,9 +100,9 @@ void SchemaSidebarWorkspaceTest::tableAndViewIconsFollowTheNavigatorAndTabTheme(
     emit window.objectContextSelected(11, "main.rebuild", "rebuild", "function");
     QCOMPARE(tabs->count(), 3);
     const auto checkTabs = [&] {
-        const auto color = theme->resolvedTheme().colors.fgMuted;
+        const auto color = theme->resolvedTheme().colors.textSubtle;
         for (int row = 0; row < tabs->count(); ++row) {
-            const auto expected = row == 0   ? design::Icon::Grid2x2
+            const auto expected = row == 0   ? design::Icon::GridFour
                                   : row == 1 ? design::Icon::Eye
                                              : design::Icon::File;
             const int size = objectIconSize();
@@ -167,12 +167,12 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
     QCOMPARE(longRow.data(Qt::DisplayRole).toString(), longName.name);
     QCOMPARE(longRow.data(NavigatorModel::ObjectIdRole).toString(), longName.id);
     QCOMPARE(longRow.data(Qt::ToolTipRole).toString(),
-             QString("extremely_long_customer_record_identifier — VARCHAR(255)"));
+             QString("extremely_long_customer_record_identifier · VARCHAR(255)"));
     QCOMPARE(longRow.data(Qt::AccessibleDescriptionRole).toString(),
              longRow.data(Qt::ToolTipRole).toString());
     QCOMPARE(blankRow.data(NavigatorModel::DatabaseTypeRole).toString(), QString());
     QCOMPARE(longTypeRow.data(Qt::ToolTipRole).toString(),
-             QString("b — timestamp(6) with time zone and an extended declared suffix"));
+             QString("b · timestamp(6) with time zone and an extended declared suffix"));
 
     const auto verifyPaint = [&] {
         tree->setFixedWidth(220);
@@ -195,10 +195,11 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
         QStyleOptionViewItem paintOption;
         paintOption.widget = tree;
         paintOption.rect = QRect(QPoint{}, longTypeRect.size());
+        paintOption.state = QStyle::State_Enabled;
         QPainter painter(&detailStrip);
         tree->itemDelegate()->paint(&painter, paintOption, longTypeRow);
         painter.end();
-        const auto muted = theme->resolvedTheme().colors.fgMuted;
+        const auto muted = theme->resolvedTheme().colors.textSubtle;
         int mutedPixels = 0;
         for (int y = 0; y < detailStrip.height(); ++y)
             for (int x = 0; x < detailStrip.width(); ++x)
@@ -224,7 +225,7 @@ void SchemaSidebarWorkspaceTest::columnRowsShowDeclaredTypesWithoutLosingTheirNa
     QTRY_COMPARE(tree->height(), wideHeight);
     QTRY_COMPARE(tree->verticalScrollBar()->maximum(), 0);
 
-    tree->setCurrentIndex(longRow);
+    QTest::mouseClick(tree->viewport(), Qt::LeftButton, {}, tree->visualRect(longRow).center());
     QCOMPARE(tree->currentIndex(), QModelIndex(longRow));
     auto* panes = window.findChild<QTabBar*>("objectTabs");
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");

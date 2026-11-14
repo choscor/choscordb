@@ -70,11 +70,11 @@ class QuerySettingsCorruptionTest : public QObject {
         auto* settings = window.findChild<QAction*>("querySettings");
         QVERIFY(settings);
         settings->trigger();
-        auto* dialog = window.findChild<QDialog*>("querySettingsDialog");
+        auto* dialog = window.findChild<QDialog*>("preferencesDialog");
         QVERIFY(dialog);
-        auto* apply = dialog->findChild<QPushButton*>("querySettingsApply");
-        auto* reset = dialog->findChild<QPushButton*>("querySettingsReset");
-        auto* status = dialog->findChild<QLabel*>("querySettingsStatus");
+        auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
+        auto* reset = dialog->findChild<QPushButton*>("preferencesReset");
+        auto* status = dialog->findChild<QLabel*>("preferencesStatus");
         QVERIFY(status);
         auto* size = dialog->findChild<QSpinBox*>("queryPageSize");
         QVERIFY(apply);
@@ -94,7 +94,7 @@ class QuerySettingsCorruptionTest : public QObject {
         QCOMPARE(controller->preferences().timeoutSeconds, quint32(0));
         QCOMPARE(executions, 1);
         QCOMPARE(grid->model()->rowCount(), 1000);
-        dialog->close();
+        QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
     }
 };
 QTEST_MAIN(QuerySettingsCorruptionTest)

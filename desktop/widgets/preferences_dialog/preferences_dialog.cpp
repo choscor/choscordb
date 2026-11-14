@@ -50,21 +50,18 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     auto* pages = new QTabWidget(this);
     pages->setObjectName("preferencesSections");
     pages->setAccessibleName(tr("Preference sections"));
-    pages->setDocumentMode(true);
     pages->setProperty("designTabVariant", "pane");
-    pages->setUsesScrollButtons(true);
+    pages->setUsesScrollButtons(false);
+    pages->setElideMode(Qt::ElideRight);
     pages_ = pages;
     auto* body = sections->bodyLayout();
-    body->setContentsMargins(0, 0, 0, 0);
+    const int paneInset = body->contentsMargins().left() - design::spacing(design::Spacing::Two);
+    body->setContentsMargins(paneInset, 0, paneInset, 0);
     body->addWidget(pages, 1);
-    statusLine_ = new design::StatusLine(this);
+    statusLine_ = sections->addStatusLine();
     statusLine_->setObjectName("preferencesStatusLine");
     status_ = statusLine_->findChild<QLabel*>("statusMessage");
     status_->setObjectName("preferencesStatus");
-    status_->setTextFormat(Qt::PlainText);
-    status_->setWordWrap(true);
-    status_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-    body->addWidget(statusLine_);
     auto addPage = [pages](QWidget* page, const QString& title) {
         auto* scroll = new QScrollArea(pages);
         scroll->setWidgetResizable(true);
@@ -73,14 +70,12 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         page->setProperty("designSurface", "panel");
         page->setAttribute(Qt::WA_StyledBackground);
         page->setBackgroundRole(QPalette::Base);
-        if (auto* form = qobject_cast<QFormLayout*>(page->layout())) {
-            form->setRowWrapPolicy(QFormLayout::WrapLongRows);
-            form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-        }
+        if (auto* form = qobject_cast<QFormLayout*>(page->layout()))
+            design::DialogSections::configureForm(form);
         if (page->layout())
             page->layout()->setContentsMargins(
-                design::spacing(design::Spacing::Three), design::spacing(design::Spacing::Three),
-                design::spacing(design::Spacing::Three), design::spacing(design::Spacing::Three));
+                design::spacing(design::Spacing::Two), design::spacing(design::Spacing::Four),
+                design::spacing(design::Spacing::Two), design::spacing(design::Spacing::Four));
         scroll->setWidget(page);
         pages->addTab(scroll, title);
     };
@@ -98,21 +93,19 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     appearanceStatus_->setTextFormat(Qt::PlainText);
     appearanceStatus_->setWordWrap(true);
     appearanceStatus_->hide();
-    appearanceForm->addRow(tr("Theme"), theme_);
-    appearanceForm->addRow(appearanceStatus_);
+    sections->addFormRow(appearanceForm, tr("Theme"), theme_);
     auto* appearanceActions = new QWidget(appearancePage);
     auto* appearanceActionsLayout = new QHBoxLayout(appearanceActions);
     appearanceActionsLayout->setContentsMargins(0, 0, 0, 0);
-    auto* retryAppearance = new design::Button(tr("Retry load"), appearanceActions);
-    retryAppearance->setVariant(design::ButtonVariant::Outline);
+    appearanceActionsLayout->setSpacing(design::spacing(design::Spacing::Two));
+    auto* retryAppearance = new design::Button(tr("Retry loading appearance"), appearanceActions);
+    retryAppearance->setVariant(design::ButtonVariant::Secondary);
     retryAppearance->setObjectName("appearanceRetry");
-    auto* resetAppearance =
-        new design::Button(tr("Reset appearance and layout"), appearanceActions);
-    resetAppearance->setVariant(design::ButtonVariant::Destructive);
-    resetAppearance->setObjectName("appearanceReset");
-    appearanceActionsLayout->addWidget(retryAppearance);
-    appearanceActionsLayout->addWidget(resetAppearance);
+    retryAppearance_ = retryAppearance;
+    retryAppearance_->hide();
+    appearanceActionsLayout->addWidget(retryAppearance_);
     appearanceActionsLayout->addStretch();
+    appearanceForm->addRow(appearanceStatus_);
     appearanceForm->addRow(appearanceActions);
     addPage(appearancePage, tr("Appearance"));
 
@@ -127,8 +120,8 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     const auto limits = EngineAdapter::editorPreferenceLimits();
     size_->setRange(limits.minFontSize, limits.maxFontSize);
     form->addRow(system_);
-    form->addRow(tr("Font family"), font_);
-    form->addRow(tr("Font size"), size_);
+    sections->addFormRow(form, tr("Font family"), font_);
+    sections->addFormRow(form, tr("Font size"), size_);
     preview_ = new SqlEditor(editor);
     preview_->setObjectName("preferencesPreview");
     preview_->setText("SELECT name, count(*)\nFROM sample\nWHERE active = true\nGROUP BY name;");
@@ -150,8 +143,8 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     timeout_->setObjectName("queryTimeoutSeconds");
     timeout_->setRange(0, queryLimits.maxTimeoutSeconds);
     timeout_->setSpecialValueText(tr("No timeout"));
-    resultForm->addRow(tr("Rows per page"), pageSize_);
-    resultForm->addRow(tr("Statement timeout (seconds)"), timeout_);
+    sections->addFormRow(resultForm, tr("Rows per page"), pageSize_);
+    sections->addFormRow(resultForm, tr("Statement timeout (seconds)"), timeout_);
     resultForm->addRow(createDescription(
         tr("Applies to new queries. Existing results keep their page size and timeout."), results));
     addPage(results, tr("Results && execution"));
@@ -160,7 +153,7 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     connectionTimeout_ = new QSpinBox(connections);
     connectionTimeout_->setObjectName("connectionTimeoutSeconds");
     connectionTimeout_->setRange(1, queryLimits.maxConnectionTimeoutSeconds);
-    connectionForm->addRow(tr("Connection timeout (seconds)"), connectionTimeout_);
+    sections->addFormRow(connectionForm, tr("Connection timeout (seconds)"), connectionTimeout_);
     connectionForm->addRow(createDescription(
         tr("Applies to new SSH tunnels and database logins through them."), connections));
     showSystemSchemas_ = new QCheckBox(tr("Show system schemas"), connections);
@@ -168,7 +161,7 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     showSystemSchemas_->setAccessibleName(tr("Show system schemas"));
     connectionForm->addRow(showSystemSchemas_);
     connectionForm->addRow(createDescription(tr("Show PostgreSQL catalog and temporary schemas in "
-                                                "Schema & Objects and SQL suggestions."),
+                                                "Schema & objects and SQL suggestions."),
                                              connections));
     addPage(connections, tr("Connections"));
     auto* history = new QWidget(pages);
@@ -184,8 +177,8 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     historyRecords_->setObjectName("preferencesHistoryRecords");
     historyRecords_->setRange(1, std::numeric_limits<quint32>::max());
     historyForm->addRow(recordHistory_);
-    historyForm->addRow(tr("Keep history (days)"), historyDays_);
-    historyForm->addRow(tr("Maximum history entries"), historyRecords_);
+    sections->addFormRow(historyForm, tr("Keep history (days)"), historyDays_);
+    sections->addFormRow(historyForm, tr("Maximum history entries"), historyRecords_);
     historyForm->addRow(createDescription(
         tr("Unsaved SQL drafts are recovered automatically. Restored drafts stay disconnected "
            "and never execute automatically."),
@@ -213,22 +206,12 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     }
     addPage(keyboard, tr("Keyboard shortcuts"));
     pages->setCurrentIndex(0);
-    auto* buttons = sections->footerLayout();
-    auto* footer = buttons->parentWidget();
-    auto* reset = new design::Button(tr("Restore defaults"), footer);
-    reset_ = reset;
-    reset->setObjectName("preferencesReset");
-    reset->setVariant(design::ButtonVariant::Outline);
-    buttons->addWidget(reset);
-    buttons->addStretch();
-    auto* close = new design::Button(tr("Close"), footer);
+    reset_ = sections->addAction(design::DialogActionRole::Utility, tr("Restore defaults"));
+    reset_->setObjectName("preferencesReset");
+    auto* close = sections->addAction(design::DialogActionRole::Dismiss, tr("Cancel"));
     close->setObjectName("preferencesClose");
-    close->setVariant(design::ButtonVariant::Outline);
-    buttons->addWidget(close);
-    auto* apply = new design::Button(tr("Save preferences"), footer);
-    apply_ = apply;
-    apply->setObjectName("preferencesApply");
-    buttons->addWidget(apply);
+    apply_ = sections->addAction(design::DialogActionRole::Primary, tr("Save preferences"));
+    apply_->setObjectName("preferencesApply");
     connect(close, &QPushButton::clicked, this, &PreferencesDialog::reject);
     connect(this, &QDialog::rejected, this, [this] {
         if (appearance_)
@@ -243,11 +226,11 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         setStatus({});
         statusLine_->setAvailable(true);
         statusLine_->setNeutral();
-        if (appearance_) {
-            theme_->setCurrentIndex(theme_->findData("system"));
-        }
+        if (appearance_)
+            appearance_->stageReset();
         ready_ = true;
         setBusy(false);
+        statusLine_->showInfo(tr("Defaults restored. Save to apply them."));
     });
     connect(system_, &QCheckBox::toggled, this, &PreferencesDialog::updatePreview);
     connect(font_, &QFontComboBox::currentFontChanged, this, &PreferencesDialog::updatePreview);
@@ -310,12 +293,7 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                         errors_.append(tr("Appearance: %1").arg(message));
                     finishRequests();
                 });
-        connect(retryAppearance, &QPushButton::clicked, appearance_, &AppearanceController::retry);
-        connect(resetAppearance, &QPushButton::clicked, appearance_,
-                &AppearanceController::stageReset);
-    } else {
-        retryAppearance->setEnabled(false);
-        resetAppearance->setEnabled(false);
+        connect(retryAppearance_, &QPushButton::clicked, appearance_, &AppearanceController::retry);
     }
     appearanceChanged();
     connect(adapter, &EngineAdapter::editorPreferencesReady, this,
@@ -388,7 +366,7 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
         adapter_->getEditorPreferences(token_);
     } else {
         token_ = queryToken_ = historyToken_ = 0;
-        errors_.append(tr("Settings service is unavailable."));
+        errors_.append(tr("The preferences service is not available."));
         finishRequests();
     }
 }
@@ -404,6 +382,7 @@ void PreferencesDialog::updateAppearanceStatus() {
     }
     appearanceStatus_->setText(messages.join(QLatin1Char('\n')));
     appearanceStatus_->setVisible(!messages.isEmpty());
+    retryAppearance_->setVisible(!appearanceWarning_.isEmpty() && appearance_);
 }
 
 EditorPreferences PreferencesDialog::draft() const {
@@ -457,12 +436,10 @@ void PreferencesDialog::fitPreview() {
                              (sideways->maximum() > 0 ? sideways->sizeHint().height() : 0));
 }
 void PreferencesDialog::setBusy(bool busy) {
-    statusLine_->setBusy(busy);
-    if (busy) {
-        statusLine_->setAvailable(true);
-        statusLine_->setNeutral();
-        setStatus(saving_ ? tr("Saving preferences…") : tr("Loading preferences…"));
-    }
+    if (busy)
+        statusLine_->showProgress(saving_ ? tr("Saving preferences…") : tr("Loading preferences…"));
+    else
+        statusLine_->setBusy(false);
     busy_ = busy;
     pages_->setEnabled(!busy);
     reset_->setEnabled(!busy);
@@ -473,7 +450,7 @@ bool PreferencesDialog::placeValidationError(const ShortcutValidation& validatio
         field->setError({});
     if (validation.command < 0)
         return false;
-    static_cast<QTabWidget*>(pages_)->setCurrentIndex(5);
+    showPage(PreferencesPage::Keyboard);
     sequenceValidations_[validation.command]->setError(validation.message);
     sequences_[validation.command]->setFocus();
     return true;
@@ -484,10 +461,8 @@ void PreferencesDialog::apply() {
     const auto value = draft();
     const auto validation = validateShortcuts(value.shortcuts, catalog_);
     if (!validation.ok()) {
-        if (!placeValidationError(validation)) {
-            statusLine_->setAvailable(false);
-            setStatus(validation.message);
-        }
+        if (!placeValidationError(validation))
+            statusLine_->showError(validation.message);
         return;
     }
     QueryPreferences query;
@@ -507,7 +482,6 @@ void PreferencesDialog::apply() {
     const auto queryToken = queryToken_ = nextRequestToken();
     const auto historyToken = historyToken_ = nextRequestToken();
     appearancePending_ = !appearance_.isNull();
-    setStatus(tr("Saving preferences…"));
     emit preferencesSaveSubmitted(editorToken);
     emit queryPreferencesSaveSubmitted(queryToken);
     adapter_->setEditorPreferences(value, editorToken);
@@ -546,39 +520,41 @@ void PreferencesDialog::finishRequests() {
         ready_ = errors_.isEmpty();
     setBusy(false);
     if (!errors_.isEmpty()) {
-        statusLine_->setAvailable(false);
-        setStatus(errors_.join(QLatin1Char('\n')));
+        statusLine_->showError(errors_.join(QLatin1Char('\n')));
         return;
     }
-    setStatus({});
-    statusLine_->setAvailable(true);
-    statusLine_->setNeutral();
+    statusLine_->clearReport();
     if (saved) {
-        if (parentWidget())
-            windowToast(parentWidget())
-                ->showToast(tr("Success"), tr("Preferences saved."), ToastVariant::Success);
         if (confirmedSystemSchemaVisibility_)
             emit systemSchemaVisibilitySaved(*confirmedSystemSchemaVisibility_);
-        accept();
+        markDraftClean();
+        closeWithSuccess(tr("Preferences saved"), tr("New preferences apply to new queries."));
+        return;
     }
+    markDraftClean();
 }
 void PreferencesDialog::reject() {
     if (saving_) {
-        setStatus(tr("Saving preferences… Please wait for storage to finish."));
+        statusLine_->showProgress(tr("Saving preferences… Wait for storage to finish."));
         return;
     }
     DialogShell::reject();
 }
 void PreferencesDialog::closeEvent(QCloseEvent* event) {
     if (saving_) {
-        setStatus(tr("Saving preferences… Please wait for storage to finish."));
+        statusLine_->showProgress(tr("Saving preferences… Wait for storage to finish."));
         event->ignore();
         return;
     }
     DialogShell::closeEvent(event);
 }
+void PreferencesDialog::showPage(PreferencesPage page) {
+    static_cast<QTabWidget*>(pages_)->setCurrentIndex(int(page));
+}
 void PreferencesDialog::setStatus(const QString& message) {
-    statusLine_->setMessage(message);
-    statusLine_->setVisible(!message.isEmpty());
+    if (message.isEmpty())
+        statusLine_->clearReport();
+    else
+        statusLine_->showInfo(message);
 }
 }

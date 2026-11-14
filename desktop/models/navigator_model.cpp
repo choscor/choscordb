@@ -230,8 +230,10 @@ QVariant NavigatorModel::data(const QModelIndex& index, int role) const {
         if (value->column)
             return value->object.databaseType.isEmpty()
                        ? value->object.name
-                       : QStringLiteral("%1 — %2").arg(value->object.name,
+                       : QStringLiteral("%1 · %2").arg(value->object.name,
                                                        value->object.databaseType);
+        if (role == Qt::ToolTipRole)
+            return value->object.name;
         return {};
     case ConnectionRole:
         return QVariant::fromValue(value->connection);
@@ -582,7 +584,7 @@ bool NavigatorModel::failChildren(quint64 connection, const QString& parentObjec
     if (!value || value->state != Node::Loading || value->token != token)
         return false;
     value->state = Node::Failed;
-    value->error = error.isEmpty() ? tr("Metadata loading failed.") : error;
+    value->error = error.isEmpty() ? tr("Could not load the metadata.") : error;
     setStatus(value,
               value->cached ? RowStatusCause::ChildrenCachedFailed : RowStatusCause::ChildrenFailed,
               value->error);

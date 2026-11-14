@@ -6,6 +6,7 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/field/field.h"
 #include "design_system/toast_region/toast_region.h"
@@ -64,7 +65,8 @@ void WorkspaceTest::savedProfilesCreateDuplicateTestDeleteAndConnect() {
     QTRY_COMPARE(list->count(), 1);
     QTRY_VERIFY(save->isEnabled());
     auto* toast = choscordb::windowToast(dialog);
-    QTRY_VERIFY(toast->text().contains("Profile saved."));
+    QTRY_VERIFY(toast->text().contains("Connection saved."));
+    QVERIFY(!toast->text().contains("Success"));
     toast->findChild<QAbstractButton*>("toastDismiss")->click();
     dialog->testDraft(profile);
     QTRY_VERIFY(toast->text().contains("succeeded"));
@@ -76,7 +78,7 @@ void WorkspaceTest::savedProfilesCreateDuplicateTestDeleteAndConnect() {
     QTimer::singleShot(0, dialog, [] {
         for (auto* widget : {choscordb::design::DialogPresentation::activeDialog()})
             if (auto* box = qobject_cast<QMessageBox*>(widget))
-                box->done(QMessageBox::Yes);
+                confirmationAction(box)->click();
     });
     dialog->findChild<QPushButton*>("profileDelete")->click();
     QTRY_COMPARE(list->count(), 1);
@@ -298,7 +300,7 @@ void WorkspaceTest::mysqlSelectedScriptNavigatesDifferentResultSchemas() {
     connect(&reject, &QTimer::timeout, &f.parent, [&] {
         auto* box =
             qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
-        if (box && box->windowTitle() == "Confirm SQL execution") {
+        if (box && box->windowTitle() == "Run statement?") {
             rejected = true;
             box->button(QMessageBox::Cancel)->click();
         }
@@ -477,7 +479,7 @@ void WorkspaceTest::postgresProfileExecutesPagesAndCancels() {
     dialog->saveDraft(profile);
     QTRY_VERIFY(save->isEnabled());
     auto* toast = choscordb::windowToast(dialog);
-    QTRY_VERIFY(toast->text().contains("Profile saved."));
+    QTRY_VERIFY(toast->text().contains("Connection saved."));
     toast->findChild<QAbstractButton*>("toastDismiss")->click();
     QTRY_VERIFY(toast->isHidden());
     password->setText(qEnvironmentVariable("CHOSCORDB_TEST_POSTGRES_PASSWORD"));
@@ -536,14 +538,14 @@ void WorkspaceTest::sqlTransactionsCommitAndRollBack() {
     QTRY_VERIFY(f.workspace.activeTransaction(connection));
     f.messages.clear();
     f.execute("INSERT INTO t VALUES(1)");
-    QTRY_VERIFY(f.messages.toPlainText().contains("1 rows affected"));
+    QTRY_VERIFY(f.messages.toPlainText().contains("1 row affected"));
     f.execute("ROLLBACK");
     QTRY_VERIFY(!f.workspace.activeTransaction(connection));
     f.execute("BEGIN");
     QTRY_VERIFY(f.workspace.activeTransaction(connection));
     f.messages.clear();
     f.execute("INSERT INTO t VALUES(2)");
-    QTRY_VERIFY(f.messages.toPlainText().contains("1 rows affected"));
+    QTRY_VERIFY(f.messages.toPlainText().contains("1 row affected"));
     f.execute("COMMIT");
     QTRY_VERIFY(!f.workspace.activeTransaction(connection));
     f.execute("SELECT x FROM t");

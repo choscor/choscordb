@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QMenu>
 #include <QScopeGuard>
+#include <QScrollBar>
 #include <QSemaphore>
 #include <QTemporaryDir>
 #include <QThreadPool>
@@ -98,7 +99,7 @@ class EditorTest : public QObject {
         };
         const auto defaultCaps = capHeight();
         QVERIFY2(defaultCaps >= 8, qPrintable(QString::number(defaultCaps)));
-        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 20L);
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 21L);
         const auto defaultWidth =
             editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
                                  static_cast<std::uintptr_t>(QsciLexerSQL::Default), "MMMM");
@@ -107,7 +108,7 @@ class EditorTest : public QObject {
         editor.setEditorFont(custom);
         QCoreApplication::processEvents();
         QVERIFY(capHeight() >= 16);
-        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 20L);
+        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 21L);
         QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTWIDTH,
                                      static_cast<std::uintptr_t>(QsciLexerSQL::Default),
                                      "MMMM") > defaultWidth * 1.5);
@@ -115,7 +116,7 @@ class EditorTest : public QObject {
         editor.setSelection(0, 1, 0, 3);
         const auto revision = editor.revision();
         editor.setEditorFont(resolveTypography(TextStyle::Body, FontDesign::Monospaced));
-        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 20L);
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 21L);
         QCOMPARE(editor.selectedText(), QString("MM"));
         QCOMPARE(editor.revision(), revision);
         QCOMPARE(editor.text(), QString("MMMM\nMMMM;"));
@@ -128,10 +129,10 @@ class EditorTest : public QObject {
         font.setPointSize(13);
         editor.setEditorFont(font);
         QCOMPARE(editor.lexer()->font(QsciLexerSQL::Default).pointSize(), 13);
-        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 23L);
+        QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL), 21L);
         font.setPointSize(32);
         editor.setEditorFont(font);
-        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 23L);
+        QVERIFY(editor.SendScintilla(QsciScintilla::SCI_TEXTHEIGHT, 0UL) > 21L);
         QCOMPARE(editor.extraAscent(), 0);
         QCOMPARE(editor.extraDescent(), 0);
     }
@@ -151,7 +152,7 @@ class EditorTest : public QObject {
                  static_cast<long>(QsciLexerSQL::Number));
         QCOMPARE(editor.SendScintilla(QsciScintilla::SCI_GETSTYLEAT, 21UL),
                  static_cast<long>(QsciLexerSQL::CommentLine));
-        QCOMPARE(editor.lexer()->color(QsciLexerSQL::Keyword), QColor("#885da7"));
+        QCOMPARE(editor.lexer()->color(QsciLexerSQL::Keyword), QColor("#d73a49"));
         QVERIFY(editor.lexer()->color(QsciLexerSQL::Keyword) !=
                 editor.palette().color(QPalette::Link));
         for (const auto mode : {ThemeMode::Light, ThemeMode::Dark}) {
@@ -183,7 +184,23 @@ class EditorTest : public QObject {
         editor.show();
         QCoreApplication::processEvents();
         const int x = editor.marginWidth(0) + editor.marginWidth(1) + editor.marginWidth(2) / 2;
-        QCOMPARE(editor.grab().toImage().pixelColor(x, 160), QColor("#20272b"));
+        QCOMPARE(editor.grab().toImage().pixelColor(x, 160), QColor("#0f0f0f"));
+    }
+    void shortTextHasNoHorizontalScrollbarAndTheCaretLineIsMarked() {
+        using namespace choscordb::design;
+        choscordb::SqlEditor editor;
+        editor.resize(400, 200);
+        editor.setPalette(applicationPalette(
+            {ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light), false}));
+        editor.setText("SELECT 1;");
+        editor.show();
+        QCoreApplication::processEvents();
+        QVERIFY(!editor.horizontalScrollBar()->isVisible());
+        editor.setText("SELECT " + QString(400, 'x') + ";");
+        QCoreApplication::processEvents();
+        QTRY_VERIFY(editor.horizontalScrollBar()->isVisible());
+        QVERIFY(editor.SendScintilla(QsciScintillaBase::SCI_GETCARETLINEVISIBLE));
+        QCOMPARE(editor.folding(), QsciScintilla::PlainFoldStyle);
     }
     void editorFillsItsEdgesWithoutAFrame() {
         using namespace choscordb::design;
@@ -194,9 +211,9 @@ class EditorTest : public QObject {
         editor.show();
         QCoreApplication::processEvents();
         const auto image = editor.grab().toImage();
-        const QColor paper = resolveColors(ResolvedAppearance::Light).surface;
+        const QColor paper = resolveColors(ResolvedAppearance::Light).base;
         QCOMPARE(image.pixelColor(image.width() - 1, 100), paper);
-        QCOMPARE(image.pixelColor(200, 0), paper);
+        QCOMPARE(image.pixelColor(200, 0), resolveColors(ResolvedAppearance::Light).elevated);
         QCOMPARE(image.pixelColor(1, 100), paper);
     }
     void restoresBufferAndSelectionWithoutReadingFile() {

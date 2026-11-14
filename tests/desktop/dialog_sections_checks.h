@@ -25,14 +25,15 @@ inline QString sectionedSpacing(const QDialog& dialog) {
         return QStringLiteral("no DialogSections");
     return QStringLiteral("root=%1 sections=%2 header=%3 footer=%4")
         .arg(layoutSpacing(dialog.layout()), layoutSpacing(sections->layout()),
-             layoutSpacing(sections->headerLayout()), layoutSpacing(sections->footerLayout()));
+             layoutSpacing(sections->headerLayout()),
+             layoutSpacing(sections->findChild<QWidget*>("dialogSectionsFooter")->layout()));
 }
 
 inline QString compactSectionedSpacing() {
     const choscordb::design::DialogSections reference;
     return QStringLiteral("root=0,0,0,0/0 sections=%1 header=%2 footer=%3")
         .arg(layoutSpacing(reference.layout()), layoutSpacing(reference.headerLayout()),
-             layoutSpacing(reference.footerLayout()));
+             layoutSpacing(reference.findChild<QWidget*>("dialogSectionsFooter")->layout()));
 }
 
 inline QString headerHeadline(const QDialog& dialog) {
@@ -67,7 +68,7 @@ inline QString footerOverrides(const QDialog& dialog) {
     if (!sections)
         return QStringLiteral("no DialogSections");
     QStringList overrides;
-    auto* footer = sections->footerLayout()->parentWidget();
+    auto* footer = sections->findChild<QWidget*>("dialogSectionsFooter");
     if (footer->property("designSurface").isValid())
         overrides << QStringLiteral("footer designSurface");
     for (const auto* button : footer->findChildren<choscordb::design::Button*>())

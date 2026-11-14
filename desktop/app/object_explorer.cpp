@@ -10,7 +10,9 @@
 #include "design_system/button/button.h"
 #include "design_system/menu/menu.h"
 #include "design_system/panel_state/panel_state.h"
+#include "design_system/separator/separator.h"
 #include "design_system/status_line/status_line.h"
+#include "design_system/table/table_style.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
@@ -88,7 +90,8 @@ class DdlEditor final : public QPlainTextEdit {
   private:
     int gutterWidth() const {
         const int digits = qMax(3, QString::number(blockCount()).size());
-        return fontMetrics().horizontalAdvance(QString(digits, QLatin1Char('0'))) + 12;
+        return fontMetrics().horizontalAdvance(QString(digits, QLatin1Char('0'))) +
+               design::spacing(design::Spacing::Three);
     }
     void updateGutterWidth() {
         gutter_->setFont(font());
@@ -99,7 +102,7 @@ class DdlEditor final : public QPlainTextEdit {
     }
     void paintGutter(QPaintEvent* event) {
         QPainter painter(gutter_);
-        painter.fillRect(event->rect(), design::resolvedThemeForWidget(*this).colors.surfaceRaised);
+        painter.fillRect(event->rect(), design::resolvedThemeForWidget(*this).colors.elevated);
         painter.setPen(palette().color(QPalette::Text));
         painter.setFont(font());
         auto block = firstVisibleBlock();
@@ -189,7 +192,8 @@ class ObjectColumnDelegate final : public QStyledItemDelegate {
         if (role.isValid() && option->widget) {
             option->icon = design::themedIcon(
                 static_cast<design::Icon>(role.toInt()),
-                design::resolvedThemeForWidget(*option->widget).colors.fgMuted, objectIconSize());
+                design::resolvedThemeForWidget(*option->widget).colors.textSubtle,
+                objectIconSize());
             option->features |= QStyleOptionViewItem::HasDecoration;
             option->decorationSize = QSize(objectIconSize(), objectIconSize());
         }
@@ -218,7 +222,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     table_->setItemDelegate(new ObjectColumnDelegate(table_));
     table_->verticalHeader()->hide();
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table_->setShowGrid(false);
+    design::configureDataTable(*table_);
     table_->setWordWrap(false);
     table_->setFrameShape(QFrame::NoFrame);
     table_->horizontalHeader()->setResizeContentsPrecision(50);
@@ -256,10 +260,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One));
     layout->insertWidget(0, headerBody);
     header->addWidget(tabs_);
-    auto* separator = new QFrame(headerBody);
-    separator->setFrameShape(QFrame::VLine);
-    separator->setFixedHeight(design::dimension(design::Dimension::ControlSmall));
-    header->addWidget(separator);
+    header->addWidget(design::createToolbarSeparator(headerBody));
     auto* footerBody = new design::StatusLine(this);
     footerBody->setObjectName("objectFooter");
     footer_ = footerBody;
@@ -274,22 +275,31 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         menu.addActions(actions());
         design::execContextMenu(menu, mapToGlobal(position));
     });
-    retry_ = new QAction(tr("Retry"), this);
-    retry_->setObjectName("objectRetry");
-    retry_->setEnabled(false);
-    addAction(retry_);
+    refreshAction_ = new QAction(tr("Refresh"), this);
+    refreshAction_->setObjectName("objectRefreshAction");
+    refreshAction_->setEnabled(false);
+    addAction(refreshAction_);
     reconnect_ = new QAction(tr("Reconnect…"), this);
     reconnect_->setObjectName("objectReconnect");
     reconnect_->setEnabled(false);
     addAction(reconnect_);
     connect(reconnect_, &QAction::triggered, this, &ObjectExplorer::reconnectRequested);
-    auto* refresh = new design::Button(tr("Refresh object"), headerBody);
+    reconnectButton_ = new design::Button(reconnect_->text(), this);
+    reconnectButton_->setObjectName("objectReconnectButton");
+    reconnectButton_->setVariant(design::ButtonVariant::Outline);
+    reconnectButton_->setButtonSize(design::ButtonSize::Small);
+    reconnectButton_->hide();
+    layout->insertWidget(layout->indexOf(placeholder_) + 1, reconnectButton_, 0, Qt::AlignHCenter);
+    layout->insertStretch(layout->indexOf(placeholder_));
+    layout->insertStretch(layout->indexOf(reconnectButton_) + 1);
+    connect(reconnectButton_, &QPushButton::clicked, reconnect_, &QAction::trigger);
+    auto* refresh = new design::Button(tr("Refresh"), headerBody);
     refresh->setVariant(design::ButtonVariant::Outline);
     refresh->setButtonSize(design::ButtonSize::Small);
     refresh->setDesignIcon(design::Icon::Refresh);
     refresh_ = refresh;
     refresh_->setObjectName("objectRefresh");
-    refresh_->setEnabled(false);
+    setRefreshEnabled(false);
     header->addWidget(refresh_);
     auto* open = new design::Button(tr("Open query"), headerBody);
     open->setVariant(design::ButtonVariant::Outline);
@@ -299,6 +309,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     open_->hide();
     connect(open_, &QPushButton::clicked, this, [this] { generateSql("select"); });
     auto* generate = new design::Button(tr("Generate SQL"), headerBody);
+    generate->setVariant(design::ButtonVariant::Outline);
     generate->setButtonSize(design::ButtonSize::Small);
     generate_ = generate;
     generate_->setObjectName("objectGenerateSql");
@@ -325,11 +336,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     }
     setTabOrder(tabs_, refresh_);
     updateActions();
-    connect(refresh_, &QPushButton::clicked, this, [this] {
-        if (tabs_->currentIndex() == 4)
-            graphLoaded_ = false;
-        requestPane();
-    });
+    connect(refresh_, &QPushButton::clicked, refreshAction_, &QAction::trigger);
     layout->addWidget(footerBody);
     connect(tabs_, &QTabBar::currentChanged, this, [this](int index) {
         if (operationBusy_ && index != activePane_) {
@@ -342,10 +349,12 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         activePane_ = index;
         updateFooter();
         emit paneChanged(index);
-        if (!restoredInert_)
+        if (panelState_ == PanelState::Disconnected)
+            setStatus(PanelState::Disconnected, {});
+        else if (!restoredInert_)
             requestPane();
     });
-    connect(retry_, &QAction::triggered, this, [this] {
+    connect(refreshAction_, &QAction::triggered, this, [this] {
         if (tabs_->currentIndex() == 4)
             graphLoaded_ = false;
         requestPane();
@@ -365,7 +374,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                     requestToken_ != token)
                     return;
                 requestToken_ = 0;
-                refresh_->setEnabled(!operationBusy_);
+                setRefreshEnabled(refreshAllowed());
                 render(inspection);
             });
     connect(adapter_, &EngineAdapter::objectInspectionFailed, this,
@@ -376,8 +385,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                 requestToken_ = 0;
                 model_->clear();
                 applyPanelEvent(PanelEvent::LoadFailed, error);
-                refresh_->setEnabled(!operationBusy_);
-                retry_->setEnabled(true);
+                setRefreshEnabled(refreshAllowed());
             });
     connect(
         adapter_, &EngineAdapter::objectGraphReady, this,
@@ -387,7 +395,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                 return;
             requestToken_ = 0;
             graphLoaded_ = true;
-            refresh_->setEnabled(!operationBusy_);
+            setRefreshEnabled(refreshAllowed());
             renderGraph(graph);
         });
     connect(adapter_, &EngineAdapter::objectGraphFailed, this,
@@ -398,8 +406,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
                 requestToken_ = 0;
                 erd_->clearGraph();
                 applyPanelEvent(PanelEvent::LoadFailed, error);
-                refresh_->setEnabled(!operationBusy_);
-                retry_->setEnabled(true);
+                setRefreshEnabled(refreshAllowed());
             });
 }
 void ObjectExplorer::openObject(quint64 connection, const QString& object, const QString& label,
@@ -480,11 +487,8 @@ void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QStr
     setStatus(
         EngineAdapter::panelObservation(PanelKind::ObjectDetails, {.disconnected = !connection_})
             .state,
-        connection_
-            ? tr("%1 · Select this tab to load fresh metadata.").arg(label_)
-            : tr("%1 · Connection unavailable. %2")
-                  .arg(label_, EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
-    refresh_->setEnabled(false);
+        connection_ ? tr("%1 · Select this tab to load fresh metadata.").arg(label_) : QString());
+    setRefreshEnabled(false);
     emit objectChanged();
 }
 void ObjectExplorer::activateRestoredObject() {
@@ -508,14 +512,11 @@ void ObjectExplorer::setDisconnected() {
     requestToken_ = 0;
     model_->clear();
     ddl_->clear();
-    retry_->setEnabled(false);
     reconnect_->setEnabled(true);
-    refresh_->setEnabled(false);
+    setRefreshEnabled(false);
     updateActions();
     updateFooter();
-    applyPanelEvent(PanelEvent::Disconnect,
-                    tr("%1 · Connection unavailable. %2")
-                        .arg(label_, EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
+    applyPanelEvent(PanelEvent::Disconnect, {});
     emit objectChanged();
 }
 void ObjectExplorer::requestPane() {
@@ -529,8 +530,7 @@ void ObjectExplorer::requestPane() {
     }
     model_->clear();
     ddl_->clear();
-    retry_->setEnabled(false);
-    refresh_->setEnabled(false);
+    setRefreshEnabled(false);
     if (tabs_->currentIndex() == 0 && basicObject(kind_)) {
         pages_->setCurrentIndex(0);
         const auto idBytes = object_.toUtf8();
@@ -565,7 +565,7 @@ void ObjectExplorer::requestPane() {
         }
         // perf-ok: object metadata; precision limits the sample to 50 rows.
         table_->resizeColumnsToContents();
-        refresh_->setEnabled(!operationBusy_);
+        setRefreshEnabled(refreshAllowed());
         setStatus(PanelState::Ready, tr("%1 · Details loaded").arg(label_));
         return;
     }
@@ -582,7 +582,7 @@ void ObjectExplorer::requestPane() {
         if (graphLoaded_) {
             setStatus(PanelState::Loading);
             applyPanelEvent(graphEvent_, graphMessage_);
-            refresh_->setEnabled(!operationBusy_);
+            setRefreshEnabled(refreshAllowed());
             return;
         }
         erd_->clearGraph();
@@ -609,9 +609,12 @@ void ObjectExplorer::setStatus(PanelState state, const QString& detail) {
     operationNotice_ = false;
     const auto kind = tabs_->currentIndex() == 4 ? PanelKind::Diagram : PanelKind::ObjectDetails;
     const auto shown = EngineAdapter::panelPresentation(kind, state, detail);
-    showStatus(shown.message, shown.tone, shown.busy);
+    const bool placeholderShown = panelStateKind(shown.body) != design::PanelStateKind::Hidden;
+    showStatus(placeholderShown ? label_ : shown.message, shown.tone, shown.busy);
     showPanelState(placeholder_, shown);
     showPresentationToast(this, shown);
+    reconnectButton_->setVisible(state == PanelState::Disconnected);
+    pages_->setVisible(!placeholderShown && state != PanelState::Disconnected);
 }
 void ObjectExplorer::applyPanelEvent(PanelEvent event, const QString& detail) {
     const auto next = EngineAdapter::panelTransition(panelState_, event);
@@ -652,7 +655,7 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
         applyPanelEvent(PanelEvent::LoadedRows, tr("%1 · DDL loaded").arg(label_));
         return;
     }
-    table_->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::Row));
+    table_->verticalHeader()->setDefaultSectionSize(design::dimension(design::Dimension::TableRow));
     if (inspection.pane == ObjectInspectionPane::Columns) {
         columnsLoaded_ = true;
         for (const auto& row : inspection.rows)
@@ -672,7 +675,7 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
                 headers.append(property.name);
             }
     model_->setHorizontalHeaderLabels(headers);
-    const auto mutedText = design::resolvedThemeForWidget(*this).colors.fgMuted;
+    const auto mutedText = design::resolvedThemeForWidget(*this).colors.textSubtle;
     const QIcon keyIcon = design::themedIcon(design::Icon::Key, mutedText, objectIconSize());
     const QIcon fileIcon = design::themedIcon(design::Icon::File, mutedText, objectIconSize());
     const QFont metadataFont =
@@ -714,12 +717,9 @@ void ObjectExplorer::render(const ObjectInspection& inspection) {
             model_->setItem(modelRow, column, items[column]);
         ++modelRow;
     }
-    // perf-ok: object metadata; precision limits the sample to 50 rows.
-    table_->resizeColumnsToContents();
-    for (int column = 0; column < model_->columnCount(); ++column) {
-        table_->setColumnWidth(column, qBound(80, table_->columnWidth(column), 320));
+    design::fitColumnsToContents(*table_);
+    for (int column = 0; column < model_->columnCount(); ++column)
         model_->horizontalHeaderItem(column)->setToolTip(headers.at(column));
-    }
     applyPanelEvent(
         inspection.rows.isEmpty() ? PanelEvent::LoadedNone : PanelEvent::LoadedRows,
         inspection.rows.isEmpty()
@@ -800,12 +800,14 @@ void ObjectExplorer::installDataWidget(QWidget* widget) {
 void ObjectExplorer::updateFooter() {
     const bool dataVisible = dataFooter_ && tabs_->currentIndex() == 5;
     for (const auto& action : dataHeaderActions_)
-        if (action)
-            action->setEnabled(dataVisible && connection_.has_value());
+        if (action) {
+            action->setVisible(dataVisible);
+            action->setEnabled(connection_.has_value());
+        }
     if (dataFooter_)
         dataFooter_->setVisible(dataVisible);
     footer_->setVisible(!dataVisible);
-    refresh_->setEnabled(!operationBusy_ && connection_.has_value() && !requestToken_);
+    setRefreshEnabled(refreshAllowed());
 }
 void ObjectExplorer::setOperationBusy(bool busy) {
     operationBusy_ = busy;
@@ -815,7 +817,7 @@ void ObjectExplorer::setOperationBusy(bool busy) {
     if (!busy)
         line->setMessage({});
     updateActions();
-    refresh_->setEnabled(!busy && connection_.has_value() && !requestToken_);
+    setRefreshEnabled(refreshAllowed());
     if (busy)
         activePane_ = tabs_->currentIndex();
     else if (operationNotice_)
@@ -854,5 +856,12 @@ void ObjectExplorer::generateSql(const QString& kind) {
         return;
     }
     emit sqlGenerated(*connection_, result.sql);
+}
+bool ObjectExplorer::refreshAllowed() const {
+    return !operationBusy_ && connection_.has_value() && !requestToken_;
+}
+void ObjectExplorer::setRefreshEnabled(bool enabled) {
+    refresh_->setEnabled(enabled);
+    refreshAction_->setEnabled(enabled);
 }
 }

@@ -1,5 +1,6 @@
 #include "app/main_window.h"
 
+#include "app/appearance_controller.h"
 #include "app/application_data.h"
 #include "app/editor_preferences.h"
 #include "app/main_window_ui.h"
@@ -18,21 +19,26 @@
 #include "design_system/menu/menu.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/status_line/status_line.h"
+#include "design_system/table/table_style.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "models/navigator_model.h"
 #include "widgets/editor_completion/editor_completion.h"
+#include "widgets/filter_field/filter_field.h"
 #include "widgets/screen_state/screen_state.h"
 #include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemModel>
 #include <QAction>
+#include <QClipboard>
 #include <QDir>
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QFutureWatcher>
+#include <QGuiApplication>
+#include <QHash>
 #include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QKeyEvent>
@@ -53,6 +59,7 @@
 #include <QTreeWidget>
 #include <QtConcurrentRun>
 #include <memory>
+#include <utility>
 
 namespace choscordb {
 namespace {
@@ -146,6 +153,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     const auto nullResultCell = ui.nullResultCell;
     const auto discardResultEdits = ui.discardResultEdits;
     const auto applyResultEdits = ui.applyResultEdits;
+    const auto resultEditReason = ui.resultEditReason;
     const auto messages = ui.messages;
     connect(completion_, &EditorCompletionController::partialCatalog, this,
             [resultFooter = ui.resultFooter, partialShown = false](bool partial) mutable {
@@ -169,9 +177,9 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         }
         auto* editor = qobject_cast<SqlEditor*>(closing);
         if (editor && editor->isModified() &&
-            ConfirmationDialog::question(this, tr("Close query"), tr("Discard unsaved changes?"),
-                                         QMessageBox::Discard | QMessageBox::Cancel,
-                                         QMessageBox::Cancel) != QMessageBox::Discard)
+            !ConfirmationDialog::confirm(
+                this, tr("Discard changes?"), tr("The changes in this query are not saved."),
+                tr("Discard changes"), ConfirmationDialog::Consequence::Destructive))
             return;
         if (!allowDocumentChange())
             return;
@@ -216,14 +224,16 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             presentPanel(savedStatus, PanelKind::SavedSql,
                          {.loaded = true, .hasRows = anyMatch, .filtered = !query.blank()});
     };
-    connect(savedSearch, &QLineEdit::textChanged, this, filterSavedFiles);
+    connect(savedSearch, &FilterField::filterChanged, this, filterSavedFiles);
     const auto savedRefreshGeneration = std::make_shared<quint64>(0);
     auto refreshSavedFiles = [this, savedFiles, savedStatus, savedSection, savedDirectory,
                               filterSavedFiles, savedRefreshGeneration] {
         const auto generation = ++*savedRefreshGeneration;
         savedFiles->clear();
         savedStatus->hide();
-        savedSection->setBusy(true, QObject::tr("Loading saved queries…"));
+        savedSection->setBusy(
+            true,
+            EngineAdapter::panelPresentation(PanelKind::SavedSql, PanelState::Loading).message);
         auto* watcher = new QFutureWatcher<SavedSqlListing>(this);
         connect(watcher, &QFutureWatcher<SavedSqlListing>::finished, this,
                 [watcher, savedFiles, savedStatus, savedSection, filterSavedFiles,
@@ -374,6 +384,21 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     };
     connect(savedFiles, &QTreeWidget::itemClicked, this, openSavedItem);
     connect(savedFiles, &QTreeWidget::itemActivated, this, openSavedItem);
+    savedFiles->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(savedFiles, &QWidget::customContextMenuRequested, this,
+            [savedFiles, openSavedItem](const QPoint& point) {
+                auto* item = savedFiles->itemAt(point);
+                const auto path = item ? item->data(0, Qt::UserRole).toString() : QString();
+                if (path.isEmpty())
+                    return;
+                QMenu menu(savedFiles);
+                menu.setObjectName("sidebarSavedMenu");
+                connect(menu.addAction(tr("Open")), &QAction::triggered, savedFiles,
+                        [item, openSavedItem] { openSavedItem(item); });
+                connect(menu.addAction(tr("Copy path")), &QAction::triggered, savedFiles,
+                        [path] { QGuiApplication::clipboard()->setText(path); });
+                design::execContextMenu(menu, savedFiles->viewport()->mapToGlobal(point));
+            });
     auto promptSaveSql = [this, savedDirectory](QPointer<SqlEditor> editor, const QString& title,
                                                 const QString& suggested, bool createDirectory) {
         auto showDialog = [this, editor, title, suggested] {
@@ -448,23 +473,50 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                             durationMetric,
                             pageMetric,
                             rowsMetric,
-                            visibleSizeMetric},
+                            visibleSizeMetric,
+                            resultEditReason},
                            this);
     preferences_->addGrid(workspace_);
     connect(workspace_, &QueryWorkspace::foreignKeyRequested, this, &MainWindow::openReferencedRow);
-    connect(grid->model(), &QAbstractItemModel::modelReset, grid, [grid, fitted = false]() mutable {
+    const auto widths = resultColumnWidths_;
+    struct GridFit {
+        bool fitting = false;
+        bool fitted = false;
+    };
+    const auto fit = std::make_shared<GridFit>();
+    const auto columnName = [grid](int column) {
+        return grid->model()
+            ->headerData(column, Qt::Horizontal, ResultTableModel::HeaderNameRole)
+            .toString();
+    };
+    connect(grid->horizontalHeader(), &QHeaderView::sectionResized, grid,
+            [this, widths, fit, columnName](int column, int, int size) {
+                if (fit->fitting)
+                    return;
+                const auto name = columnName(column);
+                widths->user.removeIf([&name](const auto& entry) { return entry.first == name; });
+                widths->user.append({name, static_cast<quint32>(size)});
+                if (appearance_)
+                    appearance_->scheduleSave();
+            });
+    connect(grid->model(), &QAbstractItemModel::modelReset, grid, [grid, widths, fit, columnName] {
         if (!grid->model()->columnCount()) {
-            fitted = false;
+            fit->fitted = false;
             return;
         }
-        if (fitted)
+        if (fit->fitted)
             return;
-        // perf-ok: configureResultTable limits the content sample to 50 rows.
-        grid->resizeColumnsToContents();
+        fit->fitting = true;
+        design::fitColumnsToContents(*grid);
+        QHash<QString, quint32> remembered;
+        for (const auto& [name, width] : std::as_const(widths->user))
+            remembered.insert(name, width);
         for (int column = 0; column < grid->model()->columnCount(); ++column)
-            grid->setColumnWidth(column, qMax(grid->horizontalHeader()->sectionSizeHint(column),
-                                              qBound(80, grid->columnWidth(column), 400)));
-        fitted = true;
+            if (const auto width = remembered.constFind(columnName(column));
+                width != remembered.cend())
+                grid->setColumnWidth(column, static_cast<int>(*width));
+        fit->fitting = false;
+        fit->fitted = true;
     });
     connect(workspace_, &QueryWorkspace::executionStateChanged, results,
             [results](QueryState state) {
@@ -508,9 +560,9 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             const auto profile = item->data(Qt::UserRole).value<SavedProfile>();
             const bool selected = selectedProfileIds_.contains(profile.id);
             item->setSelected(selected);
-            item->setData(Qt::AccessibleDescriptionRole, selected
-                                                             ? tr("Visible in Schema & Objects")
-                                                             : tr("Hidden from Schema & Objects"));
+            item->setData(Qt::AccessibleDescriptionRole,
+                          selected ? tr("Shown in the object navigator")
+                                   : tr("Hidden from the object navigator"));
             if (!selected)
                 continue;
             if (pendingBrowseProfiles_.contains(profile.id)) {
@@ -553,10 +605,10 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         [this, savedConnections, syncVisible](quint64 token, const QList<SavedProfile>& profiles) {
             if (token != profileListToken_)
                 return;
-            const auto focused =
-                savedConnections->currentItem()
-                    ? savedConnections->currentItem()->data(Qt::UserRole).value<SavedProfile>().id
-                    : QString{};
+            const auto current = savedConnections->currentItem()
+                                     ? savedConnections->currentItem()->data(Qt::UserRole)
+                                     : QVariant{};
+            const auto focused = current.value<SavedProfile>().id;
             QSet<QString> surviving;
             for (const auto& profile : profiles)
                 surviving.insert(profile.id);
@@ -582,7 +634,7 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 item->setData(Qt::UserRole, QVariant::fromValue(profile));
                 item->setData(design::NavigationProfileDelegate::DriverRole, profile.driver);
                 item->setIcon(design::themedIcon(design::driverIcon(profile.driver),
-                                                 theme_->resolvedTheme().colors.fgMuted,
+                                                 theme_->resolvedTheme().colors.textSubtle,
                                                  design::dimension(design::Dimension::Icon)));
                 item->setToolTip(profile.name);
                 if (profile.id == focused)
@@ -681,7 +733,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
     reconnectProfile_ = [this, savedConnections, selectProfile](const QString& id) {
         for (int i = 0; i < savedConnections->count(); ++i) {
             auto* item = savedConnections->item(i);
-            if (item->data(Qt::UserRole).value<SavedProfile>().id != id)
+            const auto data = item->data(Qt::UserRole);
+            if (data.value<SavedProfile>().id != id)
                 continue;
             savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);
             if (!selectedProfileIds_.contains(id))
@@ -737,6 +790,8 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                                                                    {"duplicate", tr("Duplicate")},
                                                                    {"delete", tr("Delete…")}};
                 for (const auto& entry : management) {
+                    if (entry.first == QStringLiteral("delete"))
+                        menu->addSeparator();
                     auto* action = menu->addAction(entry.second);
                     action->setObjectName(entry.first + "SavedConnection");
                     connect(action, &QAction::triggered, this,
@@ -844,15 +899,30 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             });
     auto* refreshSaved = viewMenu->addAction(tr("Refresh saved connections"));
     refreshSaved->setObjectName("refreshSavedConnections");
-#ifdef Q_OS_MACOS
-    for (auto* action : viewMenu->actions()) {
-        addAction(action);
+    const QList<QStringList> viewGroups{
+        {"showStart", "showSql", "showObjects", "showHistory"},
+        {"quickSwitch", "listEditorTabs", "focusConnections"},
+        {"toggleSidebar", "resetLayout"},
+        {"refreshSavedConnections"},
+        {"openDesignSystemPreview"},
+    };
+    const auto viewActions = viewMenu->actions();
+    for (auto* action : viewActions)
         viewMenu->removeAction(action);
+    for (const auto& group : viewGroups) {
+        bool separated = viewMenu->actions().isEmpty();
+        for (const auto& name : group)
+            for (auto* action : viewActions)
+                if (action->objectName() == name) {
+                    if (!std::exchange(separated, true))
+                        viewMenu->addSeparator();
+                    viewMenu->addAction(action);
+                }
     }
-#endif
     connect(refreshSaved, &QAction::triggered, this, refreshProfiles);
     refreshProfiles();
-    connect(querySettings, &QAction::triggered, workspace_, &QueryWorkspace::showQuerySettings);
+    connect(querySettings, &QAction::triggered, this,
+            [this] { preferences_->open(PreferencesPage::Results); });
     preferences_->initialize(workspace_->adapter());
 }
 }

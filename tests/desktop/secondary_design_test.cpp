@@ -1,19 +1,22 @@
 #include "bridge/engine_adapter.h"
+#include "confirmation_checks.h"
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
 #include "design_system/control_style.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/metrics/metrics.h"
+#include "design_system/tabs/tab_add_corner.h"
 #include "design_system/theme_manager.h"
 #include "models/history_model.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/history_dock/history_dock.h"
 #include "widgets/preferences_dialog/preferences_dialog.h"
 #include "widgets/profile_dialog/profile_dialog.h"
-#include "widgets/query_settings_dialog/query_settings_dialog.h"
 #include "widgets/search_panel/search_panel.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
+#include <QFormLayout>
+#include <QLabel>
 #include <QTabWidget>
 #include <QTableView>
 #include <QVBoxLayout>
@@ -26,10 +29,16 @@
 #include <QKeySequenceEdit>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QTabBar>
+#include <QTableWidget>
+#include <QToolButton>
+#include <QTreeWidget>
 #include <QtTest>
 
 class SecondaryDesignTest final : public QObject {
@@ -59,9 +68,9 @@ class SecondaryDesignTest final : public QObject {
     void secondaryDialogsUseSharedActionsAndKeepRejectionSafe_data() {
         QTest::addColumn<QString>("surface");
         QTest::addColumn<QString>("closeName");
-        QTest::newRow("export") << QString("export") << QString("exportClose");
+        QTest::newRow("export") << QString("export") << QString("exportCancel");
         QTest::newRow("value detail") << QString("value") << QString("valueClose");
-        QTest::newRow("query settings") << QString("query") << QString("querySettingsCancel");
+        QTest::newRow("preferences") << QString("preferences") << QString("preferencesClose");
     }
 
     void secondaryDialogsUseSharedActionsAndKeepRejectionSafe() {
@@ -75,7 +84,7 @@ class SecondaryDesignTest final : public QObject {
         else if (surface == "value")
             dialog = std::make_unique<ValueDetailDialog>(&adapter);
         else
-            dialog = std::make_unique<QuerySettingsDialog>(&adapter);
+            dialog = std::make_unique<PreferencesDialog>(&adapter, QList<ShortcutDescriptor>{});
         design::ThemeManager theme;
         theme.applyTo(*dialog);
         QSignalSpy accepted(dialog.get(), &QDialog::accepted);
@@ -89,7 +98,7 @@ class SecondaryDesignTest final : public QObject {
         auto* close = dialog->findChild<design::Button*>(closeName);
         QVERIFY(close);
         QCOMPARE(close->variant(), design::ButtonVariant::Outline);
-        QCOMPARE(dialog->isModal(), surface == "export");
+        QCOMPARE(dialog->isModal(), surface != "value");
         close->click();
         QCOMPARE(accepted.count(), 0);
         QCOMPARE(rejected.count(), 1);
@@ -110,7 +119,8 @@ class SecondaryDesignTest final : public QObject {
             auto* dismiss = dialog->findChild<design::Button*>(prefix + "Dismiss");
             QVERIFY(dismiss);
             QVERIFY(!dismiss->accessibleName().isEmpty());
-            auto* close = dialog->findChild<QPushButton*>(prefix + "Close");
+            auto* close = dialog->findChild<QPushButton*>(
+                dialog == &preferences ? QString("preferencesClose") : QString("exportCancel"));
             auto* primary = dialog->findChild<QPushButton*>(
                 prefix + (dialog == &preferences ? "Apply" : "Start"));
             QVERIFY(close);
@@ -130,11 +140,11 @@ class SecondaryDesignTest final : public QObject {
         QCOMPARE(footerCapture.toImage().pixelColor(
                      QPoint(preferences.width() / 2, preferences.height() - 5) *
                      footerCapture.devicePixelRatio()),
-                 QColor("#eef1f2"));
+                 QColor("#f8f8f8"));
         QCOMPARE(preferences.height(), 412);
         auto* tabs = preferences.findChild<QTabWidget*>("preferencesSections");
-        QCOMPARE(tabs->mapTo(&preferences, QPoint{}).x(), 0);
-        QCOMPARE(tabs->width(), preferences.width());
+        const int inset = design::spacing(design::Spacing::Six);
+        QCOMPARE(tabs->tabBar()->mapTo(&preferences, QPoint{}).x(), inset);
         QCOMPARE(tabs->tabBar()->x(), design::spacing(design::Spacing::Two));
         for (const auto mode : {design::ThemeMode::Light, design::ThemeMode::Dark}) {
             theme.setMode(mode);
@@ -144,7 +154,7 @@ class SecondaryDesignTest final : public QObject {
             const auto point =
                 tabs->mapTo(&preferences, QPoint(tabs->width() / 2, tabs->height() - 20));
             QCOMPARE(capture.toImage().pixelColor(point * capture.devicePixelRatio()),
-                     mode == design::ThemeMode::Light ? QColor("#ffffff") : QColor("#20272b"));
+                     mode == design::ThemeMode::Light ? QColor("#ffffff") : QColor("#0f0f0f"));
         }
         preferences.close();
     }
@@ -279,9 +289,13 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(save->isVisible());
         QVERIFY(dialog.rect().contains(QRect(save->mapTo(&dialog, QPoint()), save->size())));
         QVERIFY(dialog.findChild<QLineEdit*>("profilePassword")->isVisible());
-        QVERIFY(dialog.findChild<QLineEdit*>("profilePassword")
-                    ->placeholderText()
-                    .contains("passwordless", Qt::CaseInsensitive));
+        auto* form = dialog.findChild<QFormLayout*>();
+        QCOMPARE(qobject_cast<QLabel*>(
+                     form->labelForField(
+                         dialog.findChild<QLineEdit*>("profilePassword")->parentWidget()))
+                     ->text()
+                     .remove('&'),
+                 QString("Password (optional)"));
     }
 
     void mariadbProfileChoiceUsesServerFieldsDefaultPortAndSealIcon() {
@@ -304,8 +318,13 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(dialog.findChild<QLineEdit*>("profileHost")->isVisible());
         QVERIFY(!dialog.findChild<QLineEdit*>("profilePath")->isVisible());
         QVERIFY(dialog.findChild<QCheckBox*>("profileSshEnabled")->isVisible());
-        QVERIFY(
-            dialog.findChild<QLineEdit*>("profileUser")->placeholderText().contains("anonymous"));
+        auto* form = dialog.findChild<QFormLayout*>();
+        QCOMPARE(
+            qobject_cast<QLabel*>(
+                form->labelForField(dialog.findChild<QLineEdit*>("profileUser")->parentWidget()))
+                ->text()
+                .remove('&'),
+            QString("Username (optional)"));
         const auto icon = mariadb->icon().pixmap(QSize(32, 32), 2.0).toImage();
         bool brown = false;
         for (int y = 0; y < icon.height(); ++y)
@@ -338,14 +357,23 @@ class SecondaryDesignTest final : public QObject {
         auto* user = dialog.findChild<QLineEdit*>("profileUser");
         auto* database = dialog.findChild<QLineEdit*>("profileDatabase");
         QVERIFY(user && database);
-        QVERIFY(user->placeholderText().contains("anonymous"));
-        QVERIFY(database->placeholderText().contains("connect to the server"));
+        const auto caption = [&dialog](QWidget* field) {
+            for (auto* label : dialog.findChildren<QLabel*>())
+                if (label->buddy() &&
+                    (label->buddy() == field || label->buddy()->isAncestorOf(field)))
+                    return label->text().remove(QLatin1Char('&'));
+            return QString();
+        };
+        auto* databaseHelp = dialog.findChild<QLabel*>("profileDatabaseHelp");
+        QVERIFY(databaseHelp);
+        QCOMPARE(caption(user), QString("Username (optional)"));
+        QCOMPARE(databaseHelp->text(), QString("If empty, the connection opens no database."));
         dialog.findChild<QPushButton*>("profileDriverPostgres")->click();
         QCOMPARE(port->value(), 5432);
         QVERIFY(dialog.findChild<QPushButton*>("profileDriverPostgres")->isChecked());
         QVERIFY(!mysql->isChecked());
-        QCOMPARE(user->placeholderText(), QString("Database username"));
-        QVERIFY(database->placeholderText().contains("defaults to the username"));
+        QCOMPARE(caption(user), QString("Username"));
+        QCOMPARE(databaseHelp->text(), QString("If empty, the database name is the username."));
         auto* ssh = dialog.findChild<QCheckBox*>("profileSshEnabled");
         ssh->setChecked(true);
         mysql->click();
@@ -441,7 +469,9 @@ class SecondaryDesignTest final : public QObject {
         QTRY_VERIFY(next.findChild<QPushButton*>("profileTest")->isEnabled());
         QTest::mouseClick(next.findChild<QPushButton*>("profileDriverPostgres"), Qt::LeftButton);
         QVERIFY(next.findChild<QLineEdit*>("profileHost")->isVisible());
+        const auto prompt = confirmNextPrompt();
         next.close();
+        QCOMPARE(*prompt, QString("Discard changes?"));
         QVERIFY(!next.isVisible());
     }
 
@@ -461,23 +491,22 @@ class SecondaryDesignTest final : public QObject {
                 qRound(dialog.height() / 2.0 * capture.devicePixelRatio()));
         };
         auto* footer = dialog.findChild<design::DialogSections*>("profileSections")
-                           ->footerLayout()
-                           ->parentWidget();
+                           ->findChild<QWidget*>("dialogSectionsFooter");
         const auto footerColor = [&] {
             const auto image = footer->grab().toImage();
             return image.pixelColor(qRound(4 * image.devicePixelRatio()),
                                     qRound(4 * image.devicePixelRatio()));
         };
         QCOMPARE(surface(), QColor("#ffffff"));
-        QCOMPARE(footerColor(), theme.resolvedTheme().colors.surfaceRaised);
+        QCOMPARE(footerColor(), theme.resolvedTheme().colors.elevated);
         theme.setMode(design::ThemeMode::Dark);
         theme.applyTo(dialog);
-        QTRY_COMPARE(surface(), QColor("#20272b"));
-        QTRY_COMPARE(footerColor(), theme.resolvedTheme().colors.surfaceRaised);
+        QTRY_COMPARE(surface(), QColor("#0f0f0f"));
+        QTRY_COMPARE(footerColor(), theme.resolvedTheme().colors.elevated);
         theme.setMode(design::ThemeMode::Light);
         theme.applyTo(dialog);
         QCOMPARE(surface(), QColor("#ffffff"));
-        QCOMPARE(footerColor(), theme.resolvedTheme().colors.surfaceRaised);
+        QCOMPARE(footerColor(), theme.resolvedTheme().colors.elevated);
     }
 
     void connectionDriverChoicesPreserveEachDraft() {
@@ -497,12 +526,12 @@ class SecondaryDesignTest final : public QObject {
         QTRY_VERIFY(sqlite->isEnabled());
         QVERIFY(sqlite->isVisible());
         QVERIFY(postgres->isVisible());
-        QCOMPARE(sqlite->height(), 44);
+        QCOMPARE(sqlite->height(), sqlite->width());
         QVERIFY(sqlite->isChecked());
         const auto selectedImage = sqlite->grab().toImage();
         QCOMPARE(selectedImage.pixelColor(selectedImage.width() / 2,
                                           qRound(6 * sqlite->devicePixelRatioF())),
-                 QColor("#fde4d3"));
+                 QColor("#f5f5f5"));
         auto* path = dialog.findChild<QLineEdit*>("profilePath");
         auto* host = dialog.findChild<QLineEdit*>("profileHost");
         path->setText("/tmp/分析.db");
@@ -539,20 +568,182 @@ class SecondaryDesignTest final : public QObject {
         QVERIFY(save);
         QVERIFY(connect);
         QVERIFY(remove);
-        QCOMPARE(save->variant(), design::ButtonVariant::Outline);
+        QCOMPARE(save->variant(), design::ButtonVariant::Secondary);
         QCOMPARE(connect->variant(), design::ButtonVariant::Default);
         QCOMPARE(remove->variant(), design::ButtonVariant::Destructive);
         QTRY_VERIFY(save->isEnabled());
         QImage rendered(connect->size(), QImage::Format_ARGB32_Premultiplied);
         rendered.fill(Qt::transparent);
         connect->render(&rendered);
-        QCOMPARE(rendered.pixelColor(rendered.width() / 2, 6), QColor("#c2410c"));
+        QCOMPARE(rendered.pixelColor(rendered.width() / 2, 0), QColor("#045ede"));
+        const auto end = rendered.pixelColor(rendered.width() / 2, rendered.height() - 2);
+        QVERIFY2(qAbs(end.red() - 0x05) <= 6 && qAbs(end.green() - 0x6d) <= 6 &&
+                     qAbs(end.blue() - 0xff) <= 6,
+                 qPrintable(end.name()));
         QVERIFY(dialog.isModal());
         dialog.findChild<QLineEdit*>("profileName")->setText("Analysis");
         dialog.findChild<QLineEdit*>("profilePath")->setText(":memory:");
         save->click();
         QTRY_COMPARE(saved.count(), 1);
         QCOMPARE(qvariant_cast<SavedProfile>(saved.first().at(1)).name, QString("Analysis"));
+    }
+    void tabAddButtonFollowsTheLastTabWithoutAFrameOfOverlap() {
+        QTabWidget tabs;
+        tabs.resize(900, 300);
+        auto* corner = new choscordb::design::TabAddCorner(&tabs);
+        tabs.addTab(new QWidget, "first");
+        tabs.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&tabs));
+        QCoreApplication::processEvents();
+        for (int index = 1; index < 4; ++index) {
+            tabs.addTab(new QWidget, QString("tab %1").arg(index));
+            const auto lastTab = tabs.tabBar()->tabRect(tabs.count() - 1);
+            const auto lastTabEnd = tabs.tabBar()->mapTo(&tabs, lastTab.topRight()).x();
+            QVERIFY2(corner->geometry().left() > lastTabEnd,
+                     qPrintable(QString("corner %1, last tab end %2")
+                                    .arg(corner->geometry().left())
+                                    .arg(lastTabEnd)));
+        }
+        auto* bar = tabs.tabBar();
+        bar->move(bar->x(), bar->y() + choscordb::design::spacing(choscordb::design::Spacing::Two));
+        QCOMPARE(corner->y(), bar->mapTo(&tabs, QPoint()).y());
+    }
+    void fieldHelpIsVisibleTextNotATooltip() {
+        choscordb::EngineAdapter adapter;
+        choscordb::ExportDialog dialog(&adapter);
+        auto* help = dialog.findChild<QLabel*>("exportIdentifierHelp");
+        QVERIFY(help);
+        QCOMPARE(help->property("designRole").toString(), QString("description"));
+        for (auto* field : dialog.findChildren<QLineEdit*>())
+            QVERIFY2(field->toolTip().isEmpty(), qPrintable(field->objectName()));
+        choscordb::ProfileDialog profile(&adapter);
+        QVERIFY(profile.findChild<QLabel*>("profileSshHostHelp"));
+        QVERIFY(profile.findChild<QLineEdit*>("profileSshHost")->toolTip().isEmpty());
+    }
+    void menuAndSelectRowsUseTheKumoMenuRowHeight() {
+        using namespace choscordb;
+        QWidget host;
+        design::ThemeManager theme;
+        theme.installOn(qApp);
+        QMenu menu(&host);
+        menu.addAction("Copy selected cells");
+        menu.addAction("Delete rows");
+        menu.ensurePolished();
+        QCOMPARE(menu.actionGeometry(menu.actions().first()).height(),
+                 design::dimension(design::Dimension::MenuRow));
+        QComboBox select(&host);
+        select.addItems({"CSV", "JSON"});
+        host.show();
+        select.showPopup();
+        auto* view = select.view();
+        QTRY_VERIFY(view->isVisible());
+        QCOMPARE(view->visualRect(view->model()->index(0, 0)).height(),
+                 design::dimension(design::Dimension::MenuRow));
+        select.hidePopup();
+    }
+    void previousAndNextButtonsShowTheSameChevrons() {
+        using namespace choscordb;
+        EngineAdapter adapter;
+        ValueDetailDialog value(&adapter);
+        QWidget searchHost;
+        SearchPanel search([] { return nullptr; }, &searchHost);
+        const QList<QPair<QWidget*, QString>> owners{{&value, "value"}, {&search, "search"}};
+        for (const auto& [owner, prefix] : owners) {
+            for (const auto& name : {prefix + "Previous", prefix + "Next"}) {
+                auto* button = owner->findChild<QPushButton*>(name);
+                QVERIFY2(button, qPrintable(name));
+                QVERIFY2(!button->icon().isNull(), qPrintable(name));
+                QVERIFY2(!button->text().isEmpty(), qPrintable(name));
+            }
+        }
+    }
+    void keyboardFocusShowsTheRingOnRowsCellsTabsAndToolButtons() {
+        using namespace choscordb;
+        QWidget root;
+        design::ThemeManager theme;
+        theme.setMode(design::ThemeMode::Light);
+        theme.installOn(qApp);
+        auto* layout = new QVBoxLayout(&root);
+        auto* list = new QListWidget(&root);
+        list->addItems({"orders", "customers"});
+        auto* table = new QTableWidget(2, 2, &root);
+        for (int row = 0; row < 2; ++row)
+            for (int column = 0; column < 2; ++column)
+                table->setItem(row, column, new QTableWidgetItem("value"));
+        auto* tree = new QTreeWidget(&root);
+        tree->setHeaderHidden(true);
+        new QTreeWidgetItem(tree, QStringList{"public"});
+        new QTreeWidgetItem(tree, QStringList{"sales"});
+        auto* tabs = new QTabBar(&root);
+        tabs->setExpanding(false);
+        tabs->addTab("Columns");
+        tabs->addTab("Indexes");
+        auto* tool = new QToolButton(&root);
+        tool->setText("Refresh");
+        for (QWidget* widget : QList<QWidget*>{list, table, tree, tabs, tool})
+            layout->addWidget(widget);
+        root.resize(400, 640);
+        root.show();
+        root.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&root));
+        list->setCurrentRow(0);
+        table->setCurrentCell(0, 0);
+        tree->setCurrentItem(tree->topLevelItem(0));
+        const auto ring = design::resolvedThemeForWidget(root).colors.brand;
+        table->setTabKeyNavigation(false);
+        const auto tabTo = [](QWidget* widget) {
+            int press = 0;
+            do
+                QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+            while (!widget->hasFocus() && ++press < 8);
+            QCoreApplication::processEvents();
+            return widget->hasFocus();
+        };
+        const auto ringPixels = [&](QWidget* widget, QRect area) {
+            if (!tabTo(widget))
+                return -1;
+            const auto image = widget->grab().toImage();
+            const auto scale = widget->devicePixelRatioF();
+            int count = 0;
+            for (int y = area.top(); y <= area.bottom(); ++y)
+                for (int x = area.left(); x <= area.right(); ++x)
+                    count += image.pixelColor(qRound(x * scale), qRound(y * scale)) == ring;
+            return count;
+        };
+        const auto inViewport = [](QAbstractItemView* view, QRect rect) {
+            return rect.translated(view->viewport()->mapTo(view, QPoint()));
+        };
+        list->setFocus(Qt::MouseFocusReason);
+        QCoreApplication::processEvents();
+        QVERIFY(list->hasFocus());
+        const auto pointerFocus = list->grab().toImage();
+        const auto row = inViewport(list, list->visualItemRect(list->item(0)));
+        int pointerRingPixels = 0;
+        for (int y = row.top(); y <= row.bottom(); ++y)
+            for (int x = row.left(); x <= row.right(); ++x)
+                pointerRingPixels +=
+                    pointerFocus.pixelColor(qRound(x * list->devicePixelRatioF()),
+                                            qRound(y * list->devicePixelRatioF())) == ring;
+        QCOMPARE(pointerRingPixels, 0);
+        QVERIFY(!root.testAttribute(Qt::WA_KeyboardFocusChange));
+        QVERIFY2(ringPixels(list, inViewport(list, list->visualItemRect(list->item(0)))) > 20,
+                 "list row");
+        QVERIFY2(ringPixels(table, inViewport(table, table->visualItemRect(table->item(0, 0)))) >
+                     20,
+                 "table cell");
+        QVERIFY2(ringPixels(tree, inViewport(tree, tree->visualItemRect(tree->topLevelItem(0)))) >
+                     20,
+                 "tree row");
+        QVERIFY2(ringPixels(tabs, tabs->tabRect(tabs->currentIndex())) > 20, "pane tab");
+        QVERIFY(tabTo(tool));
+        const auto frame = root.grab().toImage();
+        const auto around = tool->geometry().adjusted(-4, -4, 4, 4);
+        int toolRing = 0;
+        for (int y = around.top(); y <= around.bottom(); ++y)
+            for (int x = around.left(); x <= around.right(); ++x)
+                toolRing += frame.pixelColor(qRound(x * root.devicePixelRatioF()),
+                                             qRound(y * root.devicePixelRatioF())) == ring;
+        QVERIFY2(toolRing > 20, "tool button");
     }
 };
 

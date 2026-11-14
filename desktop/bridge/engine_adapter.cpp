@@ -63,6 +63,11 @@ void assignAppearance(AppearanceLayout& value, const AppearanceLayoutDto& dto) {
     value.editorResultsSplit = dto.editor_results_split;
     value.navigatorVisible = dto.navigator_visible;
     value.historyVisible = dto.history_visible;
+    value.sidebarTab = dto.sidebar_tab;
+    value.resultColumnWidths.clear();
+    for (size_t index = 0; index < dto.result_column_names.size(); ++index)
+        value.resultColumnWidths.append(
+            {fromRust(dto.result_column_names[index]), dto.result_column_widths[index]});
     value.x = dto.x;
     value.y = dto.y;
     value.width = dto.width;
@@ -334,7 +339,7 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
                 if (event.has_lease) {
                     transfers.push_back(event.lease_id);
                     d_->transfers.insert(event.lease_id,
-                                         {event.reserved_bytes, std::nullopt, false});
+                                         {event.reserved_bytes, std::nullopt, false, false});
                 }
                 const auto owned = std::make_shared<const BridgeEvent>(std::move(event));
                 const auto outer = std::exchange(d_->dispatching, owned);
@@ -344,8 +349,10 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
         }
         for (const auto id : transfers) {
             const auto transfer = d_->transfers.take(id);
-            if (transfer.retained && !transfer.released) {
-                auto result = shrink_page_lease(*d_->engine, id, *transfer.retained);
+            if (transfer.retainedWhole && !transfer.released)
+                continue;
+            if (transfer.retainedPayload && !transfer.released) {
+                auto result = shrink_page_lease(*d_->engine, id, *transfer.retainedPayload);
                 if (!result.accepted)
                     emit commandFailed(fromRust(result.error));
             } else {
@@ -812,10 +819,10 @@ void EngineAdapter::shutdown() {
 }
 bool EngineAdapter::retainTransfer(quint64 lease, quint64 payloadBytes) {
     auto transfer = d_->transfers.find(lease);
-    if (transfer == d_->transfers.end() || transfer->released || transfer->retained ||
+    if (transfer == d_->transfers.end() || transfer->released || transfer->retained() ||
         !page_lease_fits(transfer->reserved, payloadBytes))
         return false;
-    transfer->retained = payloadBytes;
+    transfer->retainedPayload = payloadBytes;
     return true;
 }
 std::shared_ptr<const BridgeEvent> EngineAdapter::retainEvent(const BridgeEvent& event) {
@@ -823,9 +830,9 @@ std::shared_ptr<const BridgeEvent> EngineAdapter::retainEvent(const BridgeEvent&
         return nullptr;
     if (event.has_lease) {
         auto transfer = d_->transfers.find(event.lease_id);
-        if (transfer == d_->transfers.end() || transfer->released || transfer->retained)
+        if (transfer == d_->transfers.end() || transfer->released || transfer->retained())
             return nullptr;
-        transfer->retained = transfer->reserved;
+        transfer->retainedWhole = true;
     }
     return d_->dispatching;
 }
@@ -834,7 +841,8 @@ bool EngineAdapter::shrinkPageLease(quint64 lease, quint64 payloadBytes) {
     if (transfer != d_->transfers.end()) {
         if (transfer->released || !page_lease_fits(transfer->reserved, payloadBytes))
             return false;
-        transfer->retained = payloadBytes;
+        transfer->retainedWhole = false;
+        transfer->retainedPayload = payloadBytes;
         return true;
     }
     return shrink_page_lease(*d_->engine, lease, payloadBytes).accepted;

@@ -1,6 +1,9 @@
 #include "editor_completion.h"
+#include "bridge/engine_adapter.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/metrics/metrics.h"
+#include "design_system/select/select_popup.h"
+#include "design_system/theme.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemView>
 #include <QCompleter>
@@ -14,16 +17,17 @@
 #include <QtConcurrent>
 #include <cstdint>
 namespace choscordb {
-EditorCompletionController::EditorCompletionController(QObject* parent)
-    : QObject(parent), completer_(new QCompleter(this)), model_(new QStandardItemModel(this)),
-      timer_(new QTimer(this)) {
+EditorCompletionController::EditorCompletionController(KindIcon kindIcon, QObject* parent)
+    : QObject(parent), kindIcon_(std::move(kindIcon)), completer_(new QCompleter(this)),
+      model_(new QStandardItemModel(this)), timer_(new QTimer(this)) {
     completer_->setModel(model_);
     completer_->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
     completer_->setMaxVisibleItems(10);
     completer_->popup()->setObjectName("sqlCompletionPopup");
     completer_->popup()->setAccessibleName(tr("SQL suggestions"));
+    design::detail::preparePopoverList(*completer_->popup());
     timer_->setSingleShot(true);
-    timer_->setInterval(60);
+    timer_->setInterval(EngineAdapter::completionDelayMs());
     connect(timer_, &QTimer::timeout, this, &EditorCompletionController::launch);
     connect(completer_, qOverload<const QModelIndex&>(&QCompleter::activated), this,
             &EditorCompletionController::accept);
@@ -160,6 +164,8 @@ void EditorCompletionController::launch() {
                 QHash<QString, int> names;
                 for (const auto& candidate : page.items)
                     ++names[candidate.label];
+                QHash<QString, QIcon> icons;
+                const auto muted = design::resolvedThemeForWidget(*target).colors.textSubtle;
                 for (const auto& candidate : page.items) {
                     const auto& display =
                         names.value(candidate.label) > 1 ? candidate.insertText : candidate.label;
@@ -170,6 +176,13 @@ void EditorCompletionController::launch() {
                         label += "…";
                     auto* item = new QStandardItem(label + "  ·  " + candidate.kind);
                     item->setData(candidate.insertText, Qt::UserRole);
+                    auto icon = icons.constFind(candidate.kind);
+                    if (icon == icons.cend())
+                        icon = icons.insert(
+                            candidate.kind,
+                            design::themedIcon(kindIcon_(candidate.kind), muted,
+                                               design::dimension(design::Dimension::IconSmall)));
+                    item->setIcon(*icon);
                     item->setToolTip(candidate.insertText.left(1024));
                     model_->appendRow(item);
                 }

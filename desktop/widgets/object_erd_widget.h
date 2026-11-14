@@ -8,6 +8,7 @@
 
 class QGraphicsRectItem;
 class QGraphicsScene;
+class QLabel;
 
 namespace choscordb {
 
@@ -32,12 +33,15 @@ class ObjectErdWidget final : public QWidget {
     void render();
     void initialView();
     void zoom(qreal factor);
+    void fitByUser();
     void zoomAt(qreal factor, const QPoint& anchor);
     void activate(const QString& id);
+    void showZoomLevel();
     ObjectGraph graph_;
     QString selectedId_;
     QGraphicsView* view_;
     QGraphicsScene* scene_;
+    QLabel* zoomLevel_ = nullptr;
     QHash<QString, QGraphicsRectItem*> boxes_;
     qreal horizontalWidth_ = 0;
     qreal minZoom_ = 0.1;

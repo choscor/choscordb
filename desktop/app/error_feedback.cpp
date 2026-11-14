@@ -24,7 +24,7 @@ void ErrorFeedback::present() {
         return;
     const auto count =
         errors_.size() == 1 ? tr("1 error:") : tr("%n errors:", nullptr, int(errors_.size()));
-    const auto text = count + QStringLiteral("\n\n• ") + errors_.join(QStringLiteral("\n• "));
+    const auto text = count + QStringLiteral("\n• ") + errors_.join(QStringLiteral("\n• "));
     if (dialog_) {
         dialog_->setText(text);
         return;

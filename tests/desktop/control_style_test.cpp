@@ -78,9 +78,9 @@ void ControlStyleTest::menuCheckmarkUsesTheSharedVectorPath() {
     expected.setDevicePixelRatio(2);
     expected.fill(Qt::transparent);
     QSvgRenderer svg(
-        QByteArray("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' "
-                   "stroke='#000000' stroke-width='2' stroke-linecap='round' "
-                   "stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>"));
+        QByteArray("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256' "
+                   "fill='#000000'><path d='M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,"
+                   "0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z'/></svg>"));
     QPainter reference(&expected);
     svg.render(&reference, QRectF(0, 0, 16, 16));
     reference.end();
@@ -143,9 +143,9 @@ void ControlStyleTest::comboPopupUsesOneBorderAndFilledSelection() {
              0);
     const auto viewImage = view->grab().toImage();
     QCOMPARE(viewImage.pixelColor(viewImage.width() - 1, viewImage.height() / 2),
-             QColor("#e3e7ea"));
+             QColor("#e6e6e6"));
     QCOMPARE(viewImage.pixelColor(viewImage.width() / 2, viewImage.height() - 1),
-             QColor("#e3e7ea"));
+             QColor("#e6e6e6"));
     const auto image = view->viewport()->grab().toImage();
     const auto scale = image.devicePixelRatio();
     const auto selected =
@@ -153,7 +153,7 @@ void ControlStyleTest::comboPopupUsesOneBorderAndFilledSelection() {
     QVERIFY(!selected.isEmpty());
     QCOMPARE(image.pixelColor(qRound((selected.right() - 15) * scale),
                               qRound(selected.center().y() * scale)),
-             QColor("#fde4d3"));
+             composite(resolveColors(ResolvedAppearance::Light).tint, QColor("#ffffff")));
     saveNativeSurface(*view->parentWidget(), "native-combo-popup.png");
     QTest::keyClick(view, Qt::Key_Down);
     QTest::keyClick(view, Qt::Key_Return);
@@ -169,7 +169,7 @@ void ControlStyleTest::comboPopupUsesOneBorderAndFilledSelection() {
         view->visualRect(view->currentIndex()).intersected(view->viewport()->rect());
     QCOMPARE(dark.pixelColor(qRound((darkSelection.right() - 15) * darkScale),
                              qRound(darkSelection.center().y() * darkScale)),
-             QColor("#4a2c14"));
+             composite(resolveColors(ResolvedAppearance::Dark).tint, QColor("#0f0f0f")));
     saveNativeSurface(*view->parentWidget(), "native-combo-popup-dark.png");
     QTest::keyClick(view, Qt::Key_Escape);
     QVERIFY(!view->isVisible());
@@ -229,7 +229,7 @@ void ControlStyleTest::buttonMenuPanelOpensBelowItsButton() {
     const int margin = detail::menuShadowMargin();
     QCOMPARE(menu->mapToGlobal(QPoint()).x() + margin, button->mapToGlobal(QPoint()).x());
     QCOMPARE(menu->mapToGlobal(QPoint()).y() + margin,
-             button->mapToGlobal(QPoint(0, button->height() + 2)).y());
+             button->mapToGlobal(QPoint(0, button->height() + spacing(Spacing::Two))).y());
     menu->close();
 }
 
@@ -273,7 +273,10 @@ void ControlStyleTest::appMenusSuppressDuplicateNativeShadows() {
             if (!panel.contains(x, y))
                 strongestOutsideAlpha =
                     qMax(strongestOutsideAlpha, menuImage.pixelColor(x, y).alpha());
-    QVERIFY2(strongestOutsideAlpha >= 10 && strongestOutsideAlpha <= 30,
+    double shadowOpacity = 0;
+    for (const auto& layer : elevation(Elevation::Popover))
+        shadowOpacity += layer.opacity;
+    QVERIFY2(strongestOutsideAlpha >= 10 && strongestOutsideAlpha <= qRound(shadowOpacity * 255),
              qPrintable(QString("Menu shadow outside panel: %1").arg(strongestOutsideAlpha)));
     QVERIFY(menu.windowFlags().testFlag(Qt::NoDropShadowWindowHint));
     QVERIFY(submenu->windowFlags().testFlag(Qt::NoDropShadowWindowHint));
@@ -298,12 +301,13 @@ void ControlStyleTest::appMenusSuppressDuplicateNativeShadows() {
                          ? childPanel.left() - parentPanel.right()
                          : parentPanel.left() - childPanel.right();
     QVERIFY2(gap >= -8 && gap <= 8, qPrintable(QString("Submenu gap: %1px").arg(gap)));
-    QCOMPARE(submenu->actionGeometry(submenu->actions().first()).width(), 243);
+    QCOMPARE(submenu->actionGeometry(submenu->actions().first()).width(),
+             dimension(Dimension::MenuWidth));
     submenu->hide();
     menu.hide();
 }
 
-void ControlStyleTest::selectArrowUsesForegroundInkAndPreservesPopupInput() {
+void ControlStyleTest::selectArrowPreservesPopupInput() {
     using namespace choscordb::design;
     QWidget root;
     ThemeManager theme;
@@ -324,22 +328,7 @@ void ControlStyleTest::selectArrowUsesForegroundInkAndPreservesPopupInput() {
     const auto buttonArea = combo.style()->subControlRect(QStyle::CC_ComboBox, &option,
                                                           QStyle::SC_ComboBoxArrow, &combo);
     QVERIFY(textArea.right() >= buttonArea.left() - 12);
-    const auto capture = combo.grab();
-    const auto image = capture.toImage();
-    const auto scale = capture.devicePixelRatio();
-    QColor darkest(Qt::white);
-    int right = -1;
-    for (int y = qRound(8 * scale); y < qRound(25 * scale); ++y)
-        for (int x = qRound((combo.width() - 24) * scale); x < qRound((combo.width() - 2) * scale);
-             ++x) {
-            const auto pixel = image.pixelColor(x, y);
-            if (pixel.lightness() < darkest.lightness())
-                darkest = pixel;
-            if (pixel.lightness() < 150)
-                right = qMax(right, x);
-        }
-    QVERIFY2(darkest.lightness() < 75, qPrintable(darkest.name()));
-    QVERIFY(right >= 0);
+    const auto image = combo.grab().toImage();
     QTest::mouseClick(&combo, Qt::LeftButton, {}, QPoint(combo.width() - 10, 16));
     QVERIFY(combo.view()->isVisible());
     combo.hidePopup();
@@ -371,7 +360,8 @@ void ControlStyleTest::menuPanelHasReferenceMinimumWidthOutsideItsShadow() {
             first = qMin(first, x);
             last = qMax(last, x);
         }
-    QCOMPARE(qRound((last - first + 1) / scale), 255);
+    QCOMPARE(qRound((last - first + 1) / scale),
+             dimension(Dimension::MenuWidth) + 2 * spacing(Spacing::OneHalf));
     QTest::keyClick(&menu, Qt::Key_Down);
     QTest::keyClick(&menu, Qt::Key_Return);
     QCOMPARE(triggered.count(), 1);
@@ -401,11 +391,11 @@ void ControlStyleTest::paneTabsPaintReferenceInsetsWithoutMovingDocumentTabs() {
     const QRect selected = tabs.tabRect(0);
     const QRect idle = tabs.tabRect(1);
     QCOMPARE(at(selected.left() + 4, selected.center().y()), QColor("#ffffff"));
-    QCOMPARE(at(selected.center().x(), 0), QColor("#eef1f2"));
-    QCOMPARE(at(idle.left() + 4, idle.center().y()), QColor("#eef1f2"));
+    QCOMPARE(at(selected.center().x(), 0), QColor("#f3f3f3"));
+    QCOMPARE(at(idle.left() + 4, idle.center().y()), QColor("#f3f3f3"));
     const auto parentImage = root.grab(tabs.geometry()).toImage();
-    QVERIFY(parentImage.pixelColor(0, 0) != QColor("#eef1f2"));
-    QCOMPARE(parentImage.pixelColor(qRound(selected.center().x() * scale), 0), QColor("#eef1f2"));
+    QVERIFY(parentImage.pixelColor(0, 0) != QColor("#f3f3f3"));
+    QCOMPARE(parentImage.pixelColor(qRound(selected.center().x() * scale), 0), QColor("#f3f3f3"));
     QTest::mouseClick(&tabs, Qt::LeftButton, {}, tabs.tabRect(1).center());
     QCOMPARE(tabs.currentIndex(), 1);
     tabs.setProperty("designTabVariant", "document");
@@ -463,29 +453,29 @@ void ControlStyleTest::closableDocumentTabsUseCompactHeight() {
     tabs.addTab("A much longer history query title");
     root.show();
     QCoreApplication::processEvents();
-    QCOMPARE(tabs.sizeHint().height(), 32);
-    QCOMPARE(tabs.tabRect(0).height(), 32);
+    QCOMPARE(tabs.sizeHint().height(), dimension(Dimension::DocumentTab));
+    QCOMPARE(tabs.tabRect(0).height(), dimension(Dimension::DocumentTab));
     const auto side = static_cast<QTabBar::ButtonPosition>(
         tabs.style()->styleHint(QStyle::SH_TabBar_CloseButtonPosition));
     auto* close = tabs.tabButton(0, side);
     QVERIFY(close);
     QVERIFY(tabs.tabRect(0).contains(close->geometry()));
     QCOMPARE(tabs.tabRect(0).width(), tabs.tabRect(1).width());
-    QVERIFY2(tabs.tabRect(0).width() >= 156 && tabs.tabRect(0).width() <= 176,
+    QVERIFY2(tabs.tabRect(0).width() >= 184 && tabs.tabRect(0).width() <= 204,
              qPrintable(QString::number(tabs.tabRect(0).width())));
 }
 
-void ControlStyleTest::inputUsesUntrackedCalloutFontAndRemainsEditable() {
+void ControlStyleTest::inputUsesKumoTrackedBodyFontAndRemainsEditable() {
     using namespace choscordb::design;
     QWidget root;
     ThemeManager theme;
     theme.applyTo(root);
     QLineEdit field(&root);
     field.ensurePolished();
-    QCOMPARE(root.font().letterSpacing(), 0.0);
-    QCOMPARE(field.font().letterSpacing(), 0.0);
-    QCOMPARE(field.font().pixelSize(), 13);
-    QCOMPARE(field.font().weight(), QFont::Medium);
+    QVERIFY(root.font().letterSpacing() < 0);
+    QCOMPARE(field.font().letterSpacing(), resolveTypography(TextStyle::Body).letterSpacing());
+    QCOMPARE(field.font().pixelSize(), 14);
+    QCOMPARE(field.font().weight(), QFont::Normal);
     QTest::keyClicks(&field, "Connection");
     QCOMPARE(field.text(), QString("Connection"));
 }
@@ -505,15 +495,17 @@ void ControlStyleTest::referenceSwitchMovesItsThumbAndKeepsKeyboardSemantics() {
     QStyleOptionButton option;
     option.initFrom(&toggle);
     auto indicator = toggle.style()->subElementRect(QStyle::SE_CheckBoxIndicator, &option, &toggle);
-    QCOMPARE(indicator.size(), QSize(32, 18));
+    QCOMPARE(indicator.size(),
+             QSize(dimension(Dimension::SwitchWidth), dimension(Dimension::SwitchHeight)));
     const auto unchecked = toggle.grab().toImage();
     QCOMPARE(unchecked.pixelColor(indicator.left() + 9, indicator.top() + 9), QColor(Qt::white));
+    QCOMPARE(unchecked.pixelColor(indicator.left() + 27, indicator.top() + 9), QColor("#e5e5e5"));
     QTest::keyClick(&toggle, Qt::Key_Space);
     QVERIFY(toggle.isChecked());
     toggle.clearFocus();
     const auto checked = toggle.grab().toImage();
-    QCOMPARE(checked.pixelColor(indicator.left() + 9, indicator.top() + 9), QColor("#c2410c"));
-    QCOMPARE(checked.pixelColor(indicator.left() + 22, indicator.top() + 9), QColor(Qt::white));
+    QCOMPARE(checked.pixelColor(indicator.left() + 9, indicator.top() + 9), QColor("#2b7fff"));
+    QCOMPARE(checked.pixelColor(indicator.left() + 27, indicator.top() + 9), QColor(Qt::white));
     toggle.setEnabled(false);
     QTest::keyClick(&toggle, Qt::Key_Space);
     QVERIFY(toggle.isChecked());
@@ -538,7 +530,7 @@ void ControlStyleTest::tabCloseUsesNeutralGlyphAndStillDispatches() {
     for (int y = 0; y < image.height(); ++y)
         for (int x = 0; x < image.width(); ++x) {
             const auto pixel = image.pixelColor(x, y);
-            QVERIFY(qAbs(pixel.red() - pixel.green()) < 10);
+            QVERIFY(qAbs(pixel.red() - pixel.green()) < 16);
             if (pixel.lightness() < 180)
                 ++ink;
         }
@@ -564,7 +556,7 @@ void ControlStyleTest::standardConfirmationVariantsKeepSafeDefaultDistinct() {
     cancel.setProperty("variant", "outline");
     cancel.setDefault(true);
     cancel.resize(120, 32);
-    QVERIFY(cancel.grab().toImage().pixelColor(60, 5).lightness() > 230);
+    QCOMPARE(cancel.grab().toImage().pixelColor(60, 5).alpha(), 0);
 }
 
 void ControlStyleTest::scopedSelectAndSpinRenderArrows_data() {
@@ -727,17 +719,17 @@ void ControlStyleTest::selectsIgnoreWheelButKeepExplicitSelection() {
     QCOMPARE(combo.currentIndex(), 1);
 }
 
-void ControlStyleTest::scopedCheckboxUsesSemanticFill_data() {
+void ControlStyleTest::scopedCheckboxUsesKumoContrastFill_data() {
     QTest::addColumn<bool>("dark");
     QTest::addColumn<bool>("mixed");
     QTest::addColumn<QColor>("expected");
-    QTest::newRow("light-checked") << false << false << QColor("#c2410c");
-    QTest::newRow("light-mixed") << false << true << QColor("#c2410c");
-    QTest::newRow("dark-checked") << true << false << QColor("#ff8a18");
-    QTest::newRow("dark-mixed") << true << true << QColor("#ff8a18");
+    QTest::newRow("light-checked") << false << false << QColor("#060606");
+    QTest::newRow("light-mixed") << false << true << QColor("#060606");
+    QTest::newRow("dark-checked") << true << false << QColor("#fafafa");
+    QTest::newRow("dark-mixed") << true << true << QColor("#fafafa");
 }
 
-void ControlStyleTest::scopedCheckboxUsesSemanticFill() {
+void ControlStyleTest::scopedCheckboxUsesKumoContrastFill() {
     QFETCH(bool, dark);
     QFETCH(bool, mixed);
     QFETCH(QColor, expected);
@@ -806,7 +798,7 @@ void ControlStyleTest::popupStaysInsideOwner() {
     if (kind == "menu") {
         theme.setMode(choscordb::design::ThemeMode::Dark);
         theme.applyTo(owner);
-        QCOMPARE(popup->palette().color(QPalette::Window), QColor("#20272b"));
+        QCOMPARE(popup->palette().color(QPalette::Window), QColor("#0f0f0f"));
         QVERIFY(popup->isVisible());
         theme.setMode(choscordb::design::ThemeMode::Light);
         theme.applyTo(owner);

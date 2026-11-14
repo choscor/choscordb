@@ -1,12 +1,20 @@
 #include "widgets/object_erd_widget.h"
 
+#include "design_system/button/button.h"
+#include "design_system/colors/colors.h"
+#include "design_system/kbd/key_hints.h"
+#include "design_system/metrics/metrics.h"
+#include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include <QEvent>
 #include <QGraphicsPathItem>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
+#include <QGraphicsSceneHoverEvent>
 #include <QGraphicsSimpleTextItem>
+#include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QMouseEvent>
 #include <QNativeGestureEvent>
 #include <QPainter>
@@ -19,7 +27,54 @@
 namespace choscordb {
 namespace {
 constexpr int tableIdRole = 0;
+constexpr qreal zoomStep = 1.2;
 constexpr int tableNameRole = 1;
+
+class ErdTableBox final : public QGraphicsRectItem {
+  public:
+    ErdTableBox(const QRectF& rect, const design::Colors& colors, bool central)
+        : QGraphicsRectItem(rect), colors_(colors), central_(central) {
+        setAcceptHoverEvents(true);
+        setCursor(Qt::PointingHandCursor);
+        setFlag(QGraphicsItem::ItemIsSelectable);
+    }
+    void setPressed(bool pressed) {
+        pressed_ = pressed;
+        update();
+    }
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override {
+        const bool marked = central_ || isSelected();
+        auto fill = marked ? colors_.tint : colors_.elevated;
+        if (pressed_)
+            fill = design::composite(colors_.fill, fill);
+        else if (isUnderMouse())
+            fill = design::composite(colors_.tint, fill);
+        const auto focus = design::focusSpec();
+        painter->setPen(QPen(marked ? colors_.brand : colors_.hairline,
+                             marked ? focus.ringWidth : focus.borderWidth));
+        painter->setBrush(fill);
+        painter->drawRect(rect());
+    }
+
+  protected:
+    void hoverEnterEvent(QGraphicsSceneHoverEvent*) override { update(); }
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent*) override {
+        pressed_ = false;
+        update();
+    }
+
+  private:
+    design::Colors colors_;
+    bool central_;
+    bool pressed_ = false;
+};
+
+ErdTableBox* tableBoxAt(QGraphicsView* view, const QPoint& position) {
+    for (auto* item = view->itemAt(position); item; item = item->parentItem())
+        if (auto* box = dynamic_cast<ErdTableBox*>(item))
+            return box;
+    return nullptr;
+}
 
 QString marker(const ObjectGraphColumn& column) {
     if (column.primaryKey && column.foreignKey)
@@ -53,6 +108,50 @@ ObjectErdWidget::ObjectErdWidget(QWidget* parent)
     view_->viewport()->installEventFilter(this);
     view_->installEventFilter(this);
     layout->addWidget(view_, 1);
+    auto* controls = new QHBoxLayout;
+    controls->setContentsMargins(spacing(design::Spacing::Two), spacing(design::Spacing::One),
+                                 spacing(design::Spacing::Two), spacing(design::Spacing::One));
+    controls->setSpacing(spacing(design::Spacing::One));
+    const auto key = [](Qt::Key code) {
+        return QKeySequence(code).toString(QKeySequence::NativeText);
+    };
+    auto* hints = new design::KeyHints({{key(Qt::Key_Plus), tr("Zoom in")},
+                                        {key(Qt::Key_Minus), tr("Zoom out")},
+                                        {key(Qt::Key_0), tr("Fit")}},
+                                       this);
+    hints->setObjectName("objectErdKeyHints");
+    hints->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    controls->addWidget(hints, 1);
+    const auto addZoomButton = [this, controls](const QString& name, const QString& text,
+                                                const QString& label) {
+        auto* button = new design::Button(text, this);
+        button->setObjectName(name);
+        button->setAccessibleName(label);
+        button->setToolTip(label);
+        button->setVariant(design::ButtonVariant::Outline);
+        button->setButtonSize(design::ButtonSize::Small);
+        button->setFocusPolicy(Qt::NoFocus);
+        controls->addWidget(button);
+        return button;
+    };
+    auto* zoomOut = addZoomButton("objectErdZoomOut", QStringLiteral("−"), tr("Zoom out"));
+    auto* zoomLevel = new design::Text({}, this);
+    zoomLevel->setTextStyle(design::TextStyle::Callout);
+    zoomLevel_ = zoomLevel;
+    zoomLevel_->setObjectName("objectErdZoomLevel");
+    zoomLevel_->setAccessibleName(tr("Zoom level"));
+    controls->addWidget(zoomLevel_);
+    auto* zoomIn = addZoomButton("objectErdZoomIn", QStringLiteral("+"), tr("Zoom in"));
+    auto* fit = addZoomButton("objectErdFit", tr("Fit"), tr("Fit the whole diagram"));
+    connect(zoomOut, &QPushButton::clicked, this, [this] { zoom(1.0 / zoomStep); });
+    connect(zoomIn, &QPushButton::clicked, this, [this] { zoom(zoomStep); });
+    connect(fit, &QPushButton::clicked, this, &ObjectErdWidget::fitByUser);
+    layout->addLayout(controls);
+    showZoomLevel();
+}
+
+void ObjectErdWidget::showZoomLevel() {
+    zoomLevel_->setText(QStringLiteral("%1%").arg(qRound(zoomFactor() * 100)));
 }
 
 void ObjectErdWidget::clearGraph() {
@@ -64,6 +163,7 @@ void ObjectErdWidget::clearGraph() {
     boxes_.clear();
     scene_->clear();
     view_->resetTransform();
+    showZoomLevel();
 }
 
 void ObjectErdWidget::setGraph(const ObjectGraph& graph, const QString& selectedId) {
@@ -95,6 +195,7 @@ void ObjectErdWidget::initialView() {
         scene_->setSceneRect(scene_->sceneRect().united(visibleAroundFocus));
         view_->centerOn(focus);
     }
+    showZoomLevel();
 }
 
 qreal ObjectErdWidget::zoomFactor() const {
@@ -111,6 +212,12 @@ void ObjectErdWidget::fitGraph() {
     if (view_->transform().m11() > 1.0)
         view_->scale(1.0 / view_->transform().m11(), 1.0 / view_->transform().m22());
     minZoom_ = qMin(qreal(0.1), zoomFactor());
+    showZoomLevel();
+}
+
+void ObjectErdWidget::fitByUser() {
+    userNavigated_ = true;
+    fitGraph();
 }
 
 void ObjectErdWidget::zoom(qreal factor) {
@@ -125,6 +232,7 @@ void ObjectErdWidget::zoomAt(qreal factor, const QPoint& anchor) {
     userNavigated_ = true;
     const QPointF fixedScenePoint = view_->mapToScene(anchor);
     view_->scale(next / current, next / current);
+    showZoomLevel();
     const QPoint moved = view_->mapFromScene(fixedScenePoint);
     view_->horizontalScrollBar()->setValue(view_->horizontalScrollBar()->value() + moved.x() -
                                            anchor.x());
@@ -161,6 +269,8 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
         if (event->type() == QEvent::MouseButtonPress) {
             const auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->button() == Qt::LeftButton && !graph_.tables.isEmpty()) {
+                if (auto* box = tableBoxAt(view_, mouse->pos()))
+                    box->setPressed(true);
                 panning_ = true;
                 panStart_ = mouse->pos();
                 scrollStart_ = QPoint(view_->horizontalScrollBar()->value(),
@@ -182,6 +292,8 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
         if (event->type() == QEvent::MouseButtonRelease) {
             const auto* mouse = static_cast<QMouseEvent*>(event);
             if (panning_ && mouse->button() == Qt::LeftButton) {
+                for (auto* box : std::as_const(boxes_))
+                    static_cast<ErdTableBox*>(box)->setPressed(false);
                 panning_ = false;
                 return true;
             }
@@ -224,16 +336,15 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
     if ((watched == view_ || watched == view_->viewport()) && event->type() == QEvent::KeyPress) {
         const auto* key = static_cast<QKeyEvent*>(event);
         if (key->key() == Qt::Key_Plus || key->key() == Qt::Key_Equal) {
-            zoom(1.2);
+            zoom(zoomStep);
             return true;
         }
         if (key->key() == Qt::Key_Minus) {
-            zoom(1.0 / 1.2);
+            zoom(1.0 / zoomStep);
             return true;
         }
         if (key->key() == Qt::Key_0) {
-            userNavigated_ = true;
-            fitGraph();
+            fitByUser();
             return true;
         }
         if ((key->key() == Qt::Key_Right || key->key() == Qt::Key_Down ||
@@ -265,7 +376,7 @@ void ObjectErdWidget::render() {
     if (graph_.tables.isEmpty())
         return;
     const auto colors = design::resolvedThemeForWidget(*this).colors;
-    view_->setBackgroundBrush(colors.bg);
+    view_->setBackgroundBrush(colors.canvas);
     const QFont headerFont = design::resolveTypography(design::TextStyle::Headline);
     const QFont rowFont =
         design::resolveTypography(design::TextStyle::Callout, design::FontDesign::Monospaced);
@@ -466,7 +577,7 @@ void ObjectErdWidget::render() {
                              QPointF(bend, end.y() + separation), end);
             }
             auto* line =
-                scene_->addPath(path, QPen(colors.primary, design::focusSpec().borderWidth + 1));
+                scene_->addPath(path, QPen(colors.brand, design::focusSpec().borderWidth + 1));
             line->setToolTip(
                 tr("%1: %2.%3 → %4.%5")
                     .arg(edge.id, edge.sourceId,
@@ -481,20 +592,17 @@ void ObjectErdWidget::render() {
             arrow.moveTo(end);
             arrow.lineTo(end + QPointF(direction * design::spacing(design::Spacing::Two),
                                        design::spacing(design::Spacing::One)));
-            scene_->addPath(arrow, QPen(colors.primary, design::focusSpec().borderWidth + 1));
+            scene_->addPath(arrow, QPen(colors.brand, design::focusSpec().borderWidth + 1));
         }
     }
     for (const auto& table : ordered) {
         const auto placement = placed.value(table.id);
         const bool central = table.id == selectedId_;
-        auto* box = scene_->addRect(placement.rect,
-                                    QPen(central ? colors.primary : colors.border,
-                                         central ? 2 : design::focusSpec().borderWidth),
-                                    QBrush(central ? colors.selection : colors.surfaceRaised));
+        auto* box = new ErdTableBox(placement.rect, colors, central);
+        scene_->addItem(box);
         box->setData(tableIdRole, table.id);
         box->setData(tableNameRole, table.qualifiedName);
         box->setToolTip(tr("Open %1").arg(table.qualifiedName));
-        box->setFlag(QGraphicsItem::ItemIsSelectable);
         boxes_.insert(table.id, box);
         auto addText = [&](const QString& value, const QFont& font, const QColor& color, qreal x,
                            qreal y) {
@@ -504,17 +612,17 @@ void ObjectErdWidget::render() {
             text->setPos(x, y);
             text->setToolTip(value);
         };
-        addText(table.qualifiedName, headerFont, colors.fg, placement.rect.x() + pad,
+        addText(table.qualifiedName, headerFont, colors.textDefault, placement.rect.x() + pad,
                 placement.rect.y() + (headerHeight - headerMeasure.height()) / 2);
         for (int row = 0; row < table.columns.size(); ++row) {
             const auto& column = table.columns.at(row);
             const qreal y = placement.rect.y() + headerHeight + row * rowHeight;
-            addText(marker(column), rowFont, colors.primary, placement.rect.x() + pad,
+            addText(marker(column), rowFont, colors.brand, placement.rect.x() + pad,
                     y + (rowHeight - rowMeasure.height()) / 2);
-            addText(column.name, rowFont, colors.fg, placement.rect.x() + pad * 7,
+            addText(column.name, rowFont, colors.textDefault, placement.rect.x() + pad * 7,
                     y + (rowHeight - rowMeasure.height()) / 2);
             const qreal typeWidth = rowMeasure.horizontalAdvance(column.databaseType);
-            addText(column.databaseType, rowFont, colors.fgMuted,
+            addText(column.databaseType, rowFont, colors.textSubtle,
                     placement.rect.right() - pad - typeWidth,
                     y + (rowHeight - rowMeasure.height()) / 2);
         }

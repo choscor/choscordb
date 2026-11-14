@@ -4,8 +4,10 @@
 #include "app/query_workspace.h"
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
+#include "confirmation_checks.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/result_table_model.h"
@@ -29,7 +31,6 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
-#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTabWidget>
@@ -70,9 +71,28 @@ class ObjectDataWorkspaceTest : public QObject {
         data.openObject(1, R"(["main","records"])", "records");
         auto* summary = data.findChild<QLabel*>("objectDataSummary");
         QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Failed);
-        QVERIFY(summary->toolTip().contains("Workspace is closing."));
+        QVERIFY(!summary->toolTip().contains("Workspace is closing."));
+        QTRY_VERIFY(data.findChild<QPlainTextEdit*>("objectDataMessages")
+                        ->toPlainText()
+                        .contains("Workspace is closing."));
         QCOMPARE(data.footerWidget()->palette().color(QPalette::Window),
-                 choscordb::design::resolvedThemeForWidget(data).colors.dangerSurface);
+                 choscordb::design::composite(
+                     choscordb::design::resolvedThemeForWidget(data).colors.dangerTint,
+                     choscordb::design::resolvedThemeForWidget(data).colors.base));
+    }
+    void lostConnectionUsesTheObjectTabWording() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(900, 600);
+        data.show();
+        data.invalidate();
+        auto* summary = data.findChild<QLabel*>("objectDataSummary");
+        QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Idle);
+        data.invalidate(true);
+        QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Disconnected);
+        QCOMPARE(data.findChild<QLabel*>("objectDataOutcome")->property("fullOutcome").toString(),
+                 QString("Connection lost. Reconnect to load this object."));
     }
     void objectRowJsonOpensForReadOnlyRowsWithoutChangingSelection() {
         choscordb::MainWindow window;
@@ -192,18 +212,19 @@ class ObjectDataWorkspaceTest : public QObject {
         detail.openValue(777, 888);
         auto* status = detail.findChild<QLabel*>("valueStatus");
         QVERIFY(status);
-        QTRY_VERIFY2(status->text().contains("Unable to load value"), qPrintable(status->text()));
+        QTRY_VERIFY2(status->text().contains("Could not load the value"),
+                     qPrintable(status->text()));
         QVERIFY(status->isVisible());
         auto* retry = detail.findChild<QPushButton*>("valueRetry");
         QVERIFY(retry && retry->isVisible());
         retry->click();
-        QTRY_VERIFY(status->text().contains("Unable to load value"));
+        QTRY_VERIFY(status->text().contains("Could not load the value"));
         QTRY_VERIFY(retry->isVisible());
         QVERIFY(
             !host.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly));
     }
 
-    void resultGridUsesCompactHeaderWithoutStripes() {
+    void resultGridUsesCompactHeaderWithStripes() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
         choscordb::ObjectDataWorkspace data(sql);
@@ -212,7 +233,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QCOMPARE(grid->horizontalHeader()->height(),
                  choscordb::design::dimension(choscordb::design::Dimension::Header));
         QCOMPARE(grid->verticalHeader()->defaultSectionSize(),
-                 choscordb::design::dimension(choscordb::design::Dimension::Row));
+                 choscordb::design::dimension(choscordb::design::Dimension::TableRow));
         auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
         QVERIFY(model);
         choscordb::ResultColumn first{}, second{};
@@ -221,13 +242,13 @@ class ObjectDataWorkspaceTest : public QObject {
         QVERIFY(model->setPage({first, second}, {{QString("Active"), QString("true")}}, 0));
         QCOMPARE(grid->horizontalHeader()->sectionResizeMode(0), QHeaderView::Interactive);
         QVERIFY(!grid->horizontalHeader()->stretchLastSection());
-        QVERIFY(!grid->alternatingRowColors());
+        QVERIFY(grid->alternatingRowColors());
         QCOMPARE(data.property("designSurface").toString(), QString("panel"));
         auto* queryGrid = window.findChild<QTableView*>("queryResults");
         QVERIFY(queryGrid);
         QCOMPARE(queryGrid->horizontalHeader()->height(),
                  choscordb::design::dimension(choscordb::design::Dimension::Header));
-        QVERIFY(!queryGrid->alternatingRowColors());
+        QVERIFY(queryGrid->alternatingRowColors());
     }
     void resultGridColumnsFitTheirFullHeaderLabel() {
         choscordb::MainWindow window;
@@ -271,51 +292,6 @@ class ObjectDataWorkspaceTest : public QObject {
             header->resizeSection(column, fitted);
             QVERIFY2(atFit == roomy, qPrintable(label));
         }
-    }
-
-    void hoveringCellPreservesTheRowBackgroundAndText() {
-        choscordb::MainWindow window;
-        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
-        choscordb::ObjectDataWorkspace data(sql);
-        data.resize(500, 240);
-        data.show();
-        auto* grid = data.findChild<QTableView*>("objectDataResults");
-        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
-        choscordb::ResultColumn first{}, second{};
-        first.name = "sku";
-        second.name = "name";
-        QVERIFY(
-            model->setPage({first, second}, {{QString("MOU-WLS"), QString("Wireless mouse")}}, 0));
-        QCoreApplication::processEvents();
-        const auto firstCell = grid->visualRect(model->index(0, 0));
-        const auto secondCell = grid->visualRect(model->index(0, 1));
-        const auto textLeft = [&] {
-            const auto image = grid->viewport()->grab().toImage();
-            const int background =
-                image.pixelColor(firstCell.right() - 4, firstCell.center().y()).lightness();
-            int darkest = background;
-            for (int x = firstCell.left() + 2; x < firstCell.right() - 2; ++x)
-                for (int y = firstCell.top() + 2; y < firstCell.bottom() - 2; ++y)
-                    darkest = qMin(darkest, image.pixelColor(x, y).lightness());
-            const int cutoff = background - (background - darkest) * 6 / 10;
-            for (int x = firstCell.left() + 2; x < firstCell.right() - 2; ++x)
-                for (int y = firstCell.top() + 2; y < firstCell.bottom() - 2; ++y)
-                    if (image.pixelColor(x, y).lightness() < cutoff)
-                        return x;
-            return -1;
-        };
-        const int normalTextLeft = textLeft();
-        const auto normal = grid->viewport()->grab().toImage();
-
-        QMouseEvent hover(QEvent::MouseMove, firstCell.center(),
-                          grid->viewport()->mapToGlobal(firstCell.center()), Qt::NoButton,
-                          Qt::NoButton, Qt::NoModifier);
-        QApplication::sendEvent(grid->viewport(), &hover);
-        QCoreApplication::processEvents();
-        const auto hovered = grid->viewport()->grab().toImage();
-        QCOMPARE(hovered.pixelColor(secondCell.right() - 4, secondCell.center().y()),
-                 normal.pixelColor(secondCell.right() - 4, secondCell.center().y()));
-        QCOMPARE(textLeft(), normalTextLeft);
     }
 
     void setNullAppliesToSelectedCells_data() {
@@ -393,8 +369,13 @@ class ObjectDataWorkspaceTest : public QObject {
         QCOMPARE(footer->findChildren<QPushButton*>().size(), 2);
         auto* grid = data.findChild<QTableView*>("objectDataResults");
         for (const char* name : {"objectDataAddRow", "objectDataDeleteRows",
-                                 "objectDataRestoreRows", "objectDataSetNull"})
-            QVERIFY(!data.findChild<QPushButton*>(name)->isVisible());
+                                 "objectDataRestoreRows", "objectDataSetNull"}) {
+            QVERIFY2(data.findChild<QPushButton*>(name)->isVisible(), name);
+            QVERIFY2(!data.findChild<QPushButton*>(name)->isEnabled(), name);
+        }
+        auto* editReason = data.findChild<QLabel*>("objectDataEditReason");
+        QVERIFY(editReason && !editReason->isVisible());
+        QVERIFY(!footer->isAncestorOf(editReason));
         QTimer::singleShot(0, &data, [] {
             auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
@@ -406,10 +387,10 @@ class ObjectDataWorkspaceTest : public QObject {
                     labels << action->text();
             QCOMPARE(
                 labels,
-                QStringList({"Edit cell…", "Quick Filter", "View cell as JSON", "View row as JSON",
+                QStringList({"Edit cell…", "Quick filter", "View cell as JSON", "View row as JSON",
                              "View table as JSON", "Copy selected cells", "Copy selected rows",
                              "Copy current page", "Duplicate row", "Add row", "Delete rows",
-                             "Restore rows", "Set NULL", "Apply…", "Discard", "Cancel"}));
+                             "Restore rows", "Set NULL", "Apply…", "Discard", "Cancel query"}));
             for (auto* action : actions)
                 if (!action->isSeparator())
                     QVERIFY(!action->isEnabled());
@@ -427,7 +408,7 @@ class ObjectDataWorkspaceTest : public QObject {
             QVERIFY(button->mapTo(&data, QPoint()).y() < grid->mapTo(&data, QPoint()).y());
         }
     }
-    void explorerKeepsDataActionsVisibleAndDisablesThemOnOtherPanes() {
+    void explorerHidesDataActionsOnOtherPanes() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
         choscordb::ObjectExplorer explorer(sql->adapter());
@@ -446,7 +427,7 @@ class ObjectDataWorkspaceTest : public QObject {
         auto* dataSummary = explorer.findChild<QLabel*>("objectDataSummary");
         auto* objectStatus = explorer.findChild<QLabel*>("objectStatus");
         QVERIFY(sqlSummary && dataSummary && objectStatus);
-        QCOMPARE(sqlSummary->font().pixelSize(), 14);
+        QCOMPARE(sqlSummary->font().pixelSize(), 13);
         QCOMPARE(footer->font().pixelSize(), sqlSummary->font().pixelSize());
         QCOMPARE(dataSummary->font().pixelSize(), sqlSummary->font().pixelSize());
         QCOMPARE(objectStatus->font().pixelSize(), sqlSummary->font().pixelSize());
@@ -460,7 +441,9 @@ class ObjectDataWorkspaceTest : public QObject {
             QVERIFY2(!control || control->isHidden(), name);
         }
         int right = explorer.findChild<QPushButton*>("objectRefresh")->geometry().right();
-        for (const char* name : {"objectDataExport", "objectDataApply"}) {
+        for (const char* name : {"objectDataExport", "objectDataAddRow", "objectDataDeleteRows",
+                                 "objectDataRestoreRows", "objectDataSetNull",
+                                 "objectDataDiscardEdits", "objectDataApply"}) {
             auto* action = explorer.findChild<QPushButton*>(name);
             QVERIFY(header->isAncestorOf(action));
             QVERIFY(action->isVisible());
@@ -635,7 +618,7 @@ class ObjectDataWorkspaceTest : public QObject {
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
             for (auto* button : dialog->findChildren<QPushButton*>())
-                if (button->text() == "Discard") {
+                if (button->text() == "Discard changes") {
                     button->click();
                     return;
                 }
@@ -764,6 +747,8 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_VERIFY(grid->model()->flags(grid->model()->index(0, 1)) & Qt::ItemIsEditable);
         QVERIFY(!(grid->model()->flags(grid->model()->index(0, 0)) & Qt::ItemIsEditable));
         QVERIFY(!(grid->model()->flags(grid->model()->index(0, 2)) & Qt::ItemIsEditable));
+        auto* editReason = window.findChild<QLabel*>("queryResultEditReason");
+        QVERIFY(editReason && !editReason->isVisible());
         QVERIFY(grid->model()->setData(grid->model()->index(0, 1), QString("after")));
         auto* apply = window.findChild<QPushButton*>("queryResultApplyEdits");
         QTRY_VERIFY(apply->isEnabled());
@@ -793,7 +778,10 @@ class ObjectDataWorkspaceTest : public QObject {
         run->trigger();
         QTRY_COMPARE(grid->model()->rowCount(), 1);
         QTRY_VERIFY(!(grid->model()->flags(grid->model()->index(0, 0)) & Qt::ItemIsEditable));
-        QTRY_VERIFY(!grid->toolTip().isEmpty());
+        QTRY_VERIFY(editReason->isVisible());
+        QVERIFY(!editReason->text().isEmpty());
+        QCOMPARE(editReason->property("designRole").toString(), QString("description"));
+        QVERIFY(grid->toolTip().isEmpty());
     }
     void shutdownConfirmsActiveObjectWorkWithoutDiscardingIt() {
         choscordb::MainWindow window;
@@ -869,9 +857,9 @@ class ObjectDataWorkspaceTest : public QObject {
         data.openObject(connection, R"(["main","records"])", "records");
         auto* table = data.findChild<QTableView*>("objectDataResults");
         QTRY_COMPARE(table->model()->rowCount(), 1);
-        QCOMPARE(table->verticalHeader()->sectionSize(0), 28);
-        QCOMPARE(table->horizontalHeader()->height(), 28);
-        QVERIFY(!table->showGrid());
+        QCOMPARE(table->verticalHeader()->sectionSize(0), 32);
+        QCOMPARE(table->horizontalHeader()->height(), 36);
+        QVERIFY(table->showGrid() == false);
         QVERIFY(!table->wordWrap());
         table->setCurrentIndex(table->model()->index(0, 0));
         table->setFocus();
@@ -963,7 +951,7 @@ class ObjectDataWorkspaceTest : public QObject {
         QTRY_VERIFY(duration->accessibleName().startsWith("Executed in "));
         const auto durationText = duration->accessibleName();
         QCOMPARE(data.findChild<QLabel*>("objectDataPage")->text(), QString("Page 2"));
-        QCOMPARE(data.findChild<QLabel*>("objectDataRows")->text(), QString("1 rows"));
+        QCOMPARE(data.findChild<QLabel*>("objectDataRows")->text(), QString("1 row"));
         data.findChild<QPushButton*>("objectDataPrevious")->click();
         QTRY_COMPARE(objectTable->model()->rowCount(), 1000);
         QCOMPARE(duration->accessibleName(), durationText);

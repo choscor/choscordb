@@ -1,10 +1,13 @@
 #include "models/result_table_model.h"
 #include "bridge/engine_adapter.h"
+#include "design_system/fonts/fonts.h"
 #include "design_system/table/table_style.h"
 #include <QArrayData>
 #include <QFont>
+#include <QLocale>
 #include <QRect>
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <new>
 #include <numeric>
@@ -60,15 +63,15 @@ QString valueText(const Cell& cell) {
                 return value;
             else if constexpr (std::is_same_v<T, QByteArray>)
                 return QString("0x") + QString::fromLatin1(value.left(64).toHex()) +
-                       (value.size() > 64 ? QString("… (%1 bytes)").arg(value.size()) : QString());
+                       (value.size() > 64
+                            ? QString("… (%1)").arg(QLocale().formattedDataSize(value.size()))
+                            : QString());
             else if constexpr (std::is_same_v<T, DeferredValue>)
                 return value.fallback
-                           ? ResultTableModel::tr("[text fallback · %1 · %2 bytes · open to load]")
-                                 .arg(value.type)
-                                 .arg(value.bytes)
-                           : QString("[%1 · %2 bytes · open to load]")
-                                 .arg(value.type)
-                                 .arg(value.bytes);
+                           ? ResultTableModel::tr("[text fallback · %1 · %2 · open to load]")
+                                 .arg(value.type, QLocale().formattedDataSize(qint64(value.bytes)))
+                           : QString("[%1 · %2 · open to load]")
+                                 .arg(value.type, QLocale().formattedDataSize(qint64(value.bytes)));
             else if constexpr (std::is_same_v<T, FallbackText>) {
                 constexpr qsizetype PreviewChars = 128;
                 const auto preview = value.text.left(PreviewChars);
@@ -251,13 +254,20 @@ QVariant ResultTableModel::cellData(int row, int column, int role) const {
             deferred && deferred->fallback)
             return tr("Read-only server text fallback · %1 · open to load").arg(deferred->type);
     }
-    if (role == Qt::FontRole && std::holds_alternative<std::monostate>(cell)) {
-        static const QFont italic = [] {
-            QFont font;
-            font.setItalic(true);
-            return font;
+    if (role == Qt::FontRole) {
+        const bool null = std::holds_alternative<std::monostate>(cell);
+        if (!null && !deleted_[row])
+            return {};
+        static const auto fonts = [] {
+            std::array<QFont, 4> loaded;
+            for (std::size_t i = 0; i < loaded.size(); ++i) {
+                loaded[i] = design::resolveTypography(design::TextStyle::Callout);
+                loaded[i].setItalic(i & 1);
+                loaded[i].setStrikeOut(i & 2);
+            }
+            return loaded;
         }();
-        return italic;
+        return fonts[std::size_t(null) | (std::size_t(bool(deleted_[row])) << 1)];
     }
     if (role == Qt::TextAlignmentRole &&
         (std::holds_alternative<qint64>(cell) || std::holds_alternative<double>(cell) ||

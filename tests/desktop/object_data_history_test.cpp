@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
 #include <QtTest>
@@ -46,6 +47,17 @@ class ObjectDataHistoryTest : public QObject {
         data.openObject(connection, R"(["main","people"])", "people");
         QTRY_COMPARE(grid->model()->rowCount(), 1);
         QVERIFY(!timeMode->isVisibleTo(&data));
+        auto* panes = data.findChild<QTabBar*>("objectDataPaneTabs");
+        QVERIFY(panes && panes->isVisible());
+        QCOMPARE(panes->tabText(0), QString("Results"));
+        QCOMPARE(panes->tabText(1), QString("Messages"));
+        QCOMPARE(panes->currentIndex(), 0);
+        QVERIFY(!messages->isVisible());
+        panes->setCurrentIndex(1);
+        QVERIFY(messages->isVisible());
+        QVERIFY(!grid->isVisible());
+        panes->setCurrentIndex(0);
+        QVERIFY(grid->isVisible());
 
         data.openObject(connection, R"(["main","people"])", "people", "system_versioned");
         QVERIFY(timeMode->isVisibleTo(&data));

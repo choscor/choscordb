@@ -1,5 +1,6 @@
 #pragma once
 #include "app/pin_store.h"
+#include "app/result_column_widths.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/toast_region/toast_region.h"
@@ -47,7 +48,6 @@ class MainWindow final : public QMainWindow {
     bool showScreen(Screen screen);
     void requestUpdateRestart(std::function<void()> install);
     void openConnectionQuery(quint64 connection);
-    void showToast(const QString& message, ToastVariant variant);
     void reportError(const QString& message);
     void reportNotice(const QString& message, ToastVariant variant = ToastVariant::Warning);
     void clearNotice(const QString& message);
@@ -129,6 +129,7 @@ class MainWindow final : public QMainWindow {
     struct PendingObjectRefresh {
         quint64 connection = 0, token = 0;
         QString parentObjectId;
+        QString successTitle;
         QString success;
     };
     std::optional<PendingObjectRefresh> pendingObjectRefresh_;
@@ -181,6 +182,7 @@ class MainWindow final : public QMainWindow {
     bool allowDocumentChange();
     QPointer<QWidget> activeDocument_;
     QPointer<SqlEditor> lastSqlDocument_;
+    QList<QAction*> editorContextActions_;
     QPointer<ObjectExplorer> lastObjectTab_;
     int nextDocumentNumber_ = 0;
     WorkspaceRecoveryController* recovery_ = nullptr;
@@ -193,6 +195,8 @@ class MainWindow final : public QMainWindow {
     std::function<void()> refreshSavedFiles_;
     EditorPreferencesController* preferences_ = nullptr;
     AppearanceController* appearance_ = nullptr;
+    std::shared_ptr<ResultColumnWidths> resultColumnWidths_ =
+        std::make_shared<ResultColumnWidths>();
     EditorCompletionController* completion_ = nullptr;
     SearchPanel* search_ = nullptr;
     design::QuickSearchDialog* quickSearch_ = nullptr;

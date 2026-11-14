@@ -65,11 +65,10 @@ void report(QWidget* parent, const QString& title, const QString& detail) {
 
 #ifdef Q_OS_LINUX
 void offerManualUpdate(const QUrl& url, const QString& detail) {
-    const auto answer = ConfirmationDialog::question(
-        nullptr, QObject::tr("Manual update available"),
-        detail + QObject::tr(" Open the verified release download page?"),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-    if (answer == QMessageBox::Yes)
+    if (ConfirmationDialog::confirm(
+            nullptr, QObject::tr("Manual update available"),
+            detail + QObject::tr(" Open the verified release download page?"),
+            QObject::tr("Open download page"), ConfirmationDialog::Consequence::Safe))
         QDesktopServices::openUrl(url);
 }
 #endif
@@ -87,7 +86,6 @@ class UpdateProgressDialog final : public DialogShell {
         dismiss->setObjectName(QStringLiteral("updateDownloadDismiss"));
         connect(dismiss, &QPushButton::clicked, this, &QDialog::reject);
         auto* body = sections->bodyLayout();
-        body->setSpacing(design::spacing(design::Spacing::Two));
         message_ = createDescription(tr("Downloading update…"), sections);
         body->addWidget(message_);
         progress_ = new QProgressBar(sections);
@@ -96,12 +94,10 @@ class UpdateProgressDialog final : public DialogShell {
         progress_->setValue(0);
         progress_->setTextVisible(false);
         body->addWidget(progress_);
-        auto* cancel = new design::Button(tr("Cancel"), sections);
+        auto* cancel = sections->addAction(design::DialogActionRole::Dismiss, tr("Cancel"));
         cancel->setObjectName(QStringLiteral("cancelUpdateDownload"));
-        cancel->setVariant(design::ButtonVariant::Outline);
-        sections->footerLayout()->addStretch();
-        sections->footerLayout()->addWidget(cancel);
         connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
+        resize(design::dialogInitialSize(design::DialogSize::Short));
         setAppModal();
     }
     void setProgress(int value) { progress_->setValue(value); }
@@ -137,7 +133,7 @@ class NativeUpdater final : public QObject {
                 const bool failed = watcher->result();
                 watcher->deleteLater();
                 if (failed && window_)
-                    report(window_, tr("Update installation failed"),
+                    report(window_, tr("Could not install the update"),
                            tr("The installer could not complete the upgrade. Your previous version "
                               "remains available. Please try again or install manually."));
             });
@@ -145,25 +141,33 @@ class NativeUpdater final : public QObject {
                 QtConcurrent::run([] { return update_take_windows_failure_marker(); }));
         });
 #endif
-        auto* menu = window.menuBar()->addMenu(tr("Updates"));
-        auto* check = menu->addAction(tr("Check for Updates…"));
+        auto* menu = window.findChild<QMenu*>(QStringLiteral("helpMenu"));
+        auto* anchor = window.findChild<QAction*>(QStringLiteral("exportDiagnostics"));
+        Q_ASSERT(menu && anchor);
+        const auto add = [menu, anchor](const QString& text) {
+            auto* action = new QAction(text, menu);
+            menu->insertAction(anchor, action);
+            return action;
+        };
+        auto* check = add(tr("Check for updates…"));
         check->setObjectName(QStringLiteral("checkForUpdates"));
         check->setMenuRole(QAction::ApplicationSpecificRole);
         connect(check, &QAction::triggered, this, [this] { checkForUpdates(true); });
-        installAction_ = menu->addAction(tr("Install Downloaded Update…"));
+        installAction_ = add(tr("Install downloaded update…"));
         installAction_->setObjectName(QStringLiteral("installDownloadedUpdate"));
         installAction_->setMenuRole(QAction::ApplicationSpecificRole);
         installAction_->setEnabled(false);
         connect(installAction_, &QAction::triggered, this, [this] { promptToInstall(); });
-        auto* automatic = menu->addAction(tr("Check Automatically"));
+        auto* automatic = add(tr("Check for updates automatically"));
         automaticAction_ = automatic;
         automatic->setObjectName(QStringLiteral("automaticUpdateChecks"));
         automatic->setCheckable(true);
         automatic->setEnabled(false);
-        status_ = menu->addAction(QString());
+        status_ = add(QString());
         status_->setObjectName(QStringLiteral("updateStatus"));
         status_->setEnabled(false);
         status_->setVisible(false);
+        menu->insertSeparator(anchor);
         connect(automatic, &QAction::toggled, this, [this](bool enabled) {
             persistConsent(enabled);
             if (enabled) {
@@ -175,7 +179,7 @@ class NativeUpdater final : public QObject {
         });
         timer_.setInterval(std::chrono::seconds(update_check_interval_seconds()));
         connect(&timer_, &QTimer::timeout, this, [this] { checkForUpdates(false); });
-        progressTimer_.setInterval(50);
+        progressTimer_.setInterval(int(update_progress_poll_milliseconds()));
         connect(&progressTimer_, &QTimer::timeout, this, [this] {
             if (!progress_)
                 return;
@@ -249,19 +253,19 @@ class NativeUpdater final : public QObject {
                 automaticAction_->setChecked(result.value);
                 if (result.value) {
                     timer_.start();
-                    QTimer::singleShot(5000, this, [this] { checkForUpdates(false); });
+                    QTimer::singleShot(int(update_startup_check_delay_milliseconds()), this,
+                                       [this] { checkForUpdates(false); });
                 }
                 return;
             }
             QTimer::singleShot(0, this, [this] {
                 if (!window_ || !automaticAction_)
                     return;
-                const auto answer = ConfirmationDialog::question(
+                const bool enabled = ConfirmationDialog::confirm(
                     window_, tr("Automatic update checks"),
                     tr("Check for stable ChoscorDB updates in the background? You can change this "
-                       "in the Updates menu."),
-                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-                const bool enabled = answer == QMessageBox::Yes;
+                       "in the Help menu."),
+                    tr("Check automatically"), ConfirmationDialog::Consequence::Safe);
                 if (automaticAction_->isChecked() != enabled)
                     automaticAction_->setChecked(enabled);
                 else
@@ -322,10 +326,9 @@ class NativeUpdater final : public QObject {
                                            .arg(record_->version)
                                      : tr("Install the downloaded update and restart now? Open "
                                           "work will be saved or confirmed before installation.");
-        ConfirmationDialog prompt(QMessageBox::Question, tr("Install update"), message,
-                                  QMessageBox::Yes | QMessageBox::No, window_);
-        prompt.setTextFormat(Qt::PlainText);
-        if (prompt.exec() == QMessageBox::Yes)
+        if (ConfirmationDialog::confirm(window_, tr("Install update"), message,
+                                        tr("Install and restart"),
+                                        ConfirmationDialog::Consequence::Safe))
             requestInstall();
     }
 
@@ -367,12 +370,10 @@ class NativeUpdater final : public QObject {
             if (!window_)
                 return;
             const auto offered = recordFromDto(result.record);
-            ConfirmationDialog offer(
-                QMessageBox::Information, tr("ChoscorDB %1 is available").arg(offered.version),
-                tr("Release notes:\n%1\n\nDownload this update?").arg(offered.notes),
-                QMessageBox::Yes | QMessageBox::No, window_);
-            offer.setTextFormat(Qt::PlainText);
-            if (offer.exec() == QMessageBox::Yes) {
+            if (ConfirmationDialog::confirm(
+                    window_, tr("ChoscorDB %1 is available").arg(offered.version),
+                    tr("Release notes:\n%1\n\nDownload this update?").arg(offered.notes),
+                    tr("Download update"), ConfirmationDialog::Consequence::Safe)) {
                 if (readyToInstall_) {
                     readyToInstall_ = false;
                     installAction_->setEnabled(false);
@@ -466,17 +467,16 @@ class NativeUpdater final : public QObject {
     void manualDownload() {
         if (!record_)
             return;
-        const auto answer = ConfirmationDialog::question(
-            window_, tr("Manual update required"),
+        if (ConfirmationDialog::confirm(
+                window_, tr("Manual update required"),
 #ifdef Q_OS_LINUX
-            tr("This AppImage cannot be safely replaced at its current path. Open the verified "
-               "release download page?"),
+                tr("This AppImage cannot be safely replaced at its current path. Open the verified "
+                   "release download page?"),
 #else
-            tr("This computer cannot safely stage the installer. Open the verified release "
-               "download page?"),
+                tr("This computer cannot safely stage the installer. Open the verified release "
+                   "download page?"),
 #endif
-            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-        if (answer == QMessageBox::Yes)
+                tr("Open download page"), ConfirmationDialog::Consequence::Safe))
             QDesktopServices::openUrl(record_->url);
     }
 

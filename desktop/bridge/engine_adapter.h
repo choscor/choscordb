@@ -166,6 +166,8 @@ struct AppearanceLayout {
     quint32 navigatorWidth, historyHeight;
     quint16 editorResultsSplit;
     bool navigatorVisible, historyVisible;
+    quint8 sidebarTab;
+    QList<QPair<QString, quint32>> resultColumnWidths;
     qint32 x, y;
     quint32 width, height;
     bool maximized, hasScreenName;
@@ -289,6 +291,7 @@ struct Presentation {
     RowRetry retry = RowRetry::None;
     QString message;
     std::optional<QString> toast;
+    QString toastTitle;
     ToastTone toastTone = ToastTone::Error;
 };
 template <typename State> struct Transition {
@@ -331,7 +334,10 @@ enum class PanelKind : uint8_t {
     Objects,
     ObjectDetails,
     Diagram,
-    QuickSearch
+    QuickSearch,
+    Connections,
+    Welcome,
+    ObjectSelection
 };
 enum class PanelState : uint8_t {
     Idle,
@@ -411,7 +417,7 @@ struct GridEditState {
     TransactionPhase transaction = TransactionPhase::Inactive;
     bool operator==(const GridEditState&) const = default;
 };
-enum class GridEditNote : uint8_t { PlanUnfinished, SubmitFailed, WorkspaceClosed };
+enum class GridEditNote : uint8_t { PlanUnfinished, SubmitFailed, WorkspaceClosed, ReadOnly };
 enum class SshTrustNote : uint8_t {
     Inspecting,
     SettingsChanged,
@@ -577,7 +583,8 @@ class EngineAdapter final : public QObject {
     static quint16 profilePortForDriver(quint16 port, const QString& driver);
     static ProfileDriverForm profileDriverForm(const QString& driver);
     static bool profileHasSavedCredentials(const SavedProfile& profile);
-    static bool sshKnownHostsPathValid(const QString& path);
+    static QString sshKnownHostsPathError(const QString& path);
+    static QString sshKnownHostsPathRule();
     static QString sshPrivateKeyTextError(const QString& text);
     static int profileSecretMaxBytes();
     void duplicateProfile(const QString& source, const QString& name, quint64 token);
@@ -658,6 +665,18 @@ class EngineAdapter final : public QObject {
     static Presentation profileOperationPresentation(ProfileOperation operation,
                                                      const QString& detail = {});
     static int panelNoticeMs();
+    static int filterDelayMs();
+    static int layoutSaveDelayMs();
+    static int tabCountSampleMs();
+    static int pinRevealRetryMs();
+    static int recoverySaveDelayMs();
+    static int completionDelayMs();
+    static int jsonMenuRetryMs();
+    static int trustValidityPollMs();
+    static int signalCoalesceMs();
+    static int startupPollMs();
+    static quint32 historyPageRows();
+    static quint32 recentHistoryRows();
     static bool sidebarChildVisible(const QString& parentKind, const QString& kind);
     static bool relationSubtypeHasHistory(const QString& subtype);
     static QString objectActionUnavailableReason(bool rename, const QString& driver,

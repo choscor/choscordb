@@ -41,9 +41,14 @@ QString EngineAdapter::sshPrivateKeyTextError(const QString& text) {
     return engine_adapter_detail::fromRust(
         ssh_private_key_text_error(engine_adapter_detail::utf8View(bytes)));
 }
-bool EngineAdapter::sshKnownHostsPathValid(const QString& path) {
+QString EngineAdapter::sshKnownHostsPathRule() {
+    static const QString rule = engine_adapter_detail::fromRust(ssh_known_hosts_path_rule());
+    return rule;
+}
+QString EngineAdapter::sshKnownHostsPathError(const QString& path) {
     const auto bytes = path.toUtf8();
-    return ssh_known_hosts_path_valid(engine_adapter_detail::utf8View(bytes));
+    return engine_adapter_detail::fromRust(
+        ssh_known_hosts_path_error(engine_adapter_detail::utf8View(bytes)));
 }
 
 void EngineAdapter::approveSshHostKey(const SshHostKeyCandidate& candidate,

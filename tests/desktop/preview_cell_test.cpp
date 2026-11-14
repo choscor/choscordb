@@ -11,7 +11,7 @@
 #include <QTableWidget>
 #include <QtTest>
 
-void PreviewTest::tableHoverUsesRaisedSurfaceInBothThemes() {
+void PreviewTest::tableHoverUsesHoverOverlayInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("tables"));
     window.show();
@@ -23,7 +23,8 @@ void PreviewTest::tableHoverUsesRaisedSurfaceInBothThemes() {
         QVERIFY(table);
         table->setMouseTracking(true);
         table->clearSelection();
-        const auto raised = choscordb::design::resolvedThemeForWidget(*table).colors.surfaceRaised;
+        const auto colors = choscordb::design::resolvedThemeForWidget(*table).colors;
+        const auto raised = choscordb::design::composite(colors.tint, colors.base);
         for (int row = 0; row < 2; ++row) {
             const auto cell = table->visualItemRect(table->item(row, 0));
             QTest::mouseMove(table->viewport(), cell.center());
@@ -143,6 +144,62 @@ void PreviewTest::resultTableActionTracksModelReplacement() {
     QCOMPARE(activation.count(), 1);
     model.setData(model.index(0, 0), QVariant(), choscordb::design::ForeignKeyLinkLabelRole);
     QVERIFY(!action->isEnabled());
+}
+
+void PreviewTest::changedCellsShowAnEdgeMarkAndInsertedRowsOnlyATint() {
+    using choscordb::design::CellChange;
+    QTableView table;
+    choscordb::design::configureResultTable(table);
+    QStandardItemModel model(3, 1);
+    const CellChange changes[] = {CellChange::Changed, CellChange::Inserted, CellChange::None};
+    for (int row = 0; row < 3; ++row) {
+        model.setData(model.index(row, 0), "value");
+        model.setData(model.index(row, 0), int(changes[row]), choscordb::design::CellChangeRole);
+    }
+    table.setModel(&model);
+    table.show();
+    QCoreApplication::processEvents();
+    const auto colors = choscordb::design::resolvedThemeForWidget(table).colors;
+    const auto image = table.viewport()->grab().toImage();
+    const auto edge = [&](int row) {
+        const auto rect = table.visualRect(model.index(row, 0));
+        return image.pixelColor(QPoint(rect.left() + 1, rect.center().y()) *
+                                table.viewport()->devicePixelRatioF());
+    };
+    QCOMPARE(edge(0), colors.textWarning);
+    const auto inserted = table.visualRect(model.index(1, 0));
+    QCOMPARE(edge(1), image.pixelColor(QPoint(inserted.right() - 2, inserted.center().y()) *
+                                       table.viewport()->devicePixelRatioF()));
+    QVERIFY(edge(2) != colors.textWarning && edge(2) != colors.textSuccess);
+}
+
+void PreviewTest::dataTablesStripeRowsAndEndTheRowHeaderAtTheLastRow() {
+    using namespace choscordb::design;
+    const ResolvedTheme theme{ResolvedAppearance::Light, resolveColors(ResolvedAppearance::Light),
+                              false};
+    QWidget host;
+    host.setPalette(applicationPalette(theme));
+    host.setStyleSheet(applicationStyleSheet(theme));
+    auto* table = new QTableView(&host);
+    choscordb::design::configureDataTable(*table);
+    QStandardItemModel model(2, 1);
+    table->setModel(&model);
+    host.resize(300, 300);
+    table->resize(300, 300);
+    host.show();
+    QCoreApplication::processEvents();
+    const auto image = table->grab().toImage();
+    const auto ratio = image.devicePixelRatio();
+    const auto rowColor = [&](int row) {
+        const auto rect = table->visualRect(model.index(row, 0));
+        const auto point = table->viewport()->mapTo(table, rect.center());
+        return image.pixelColor(point * ratio);
+    };
+    QVERIFY(rowColor(0) != rowColor(1));
+    auto* header = table->verticalHeader();
+    const int below = header->sectionViewportPosition(1) + header->sectionSize(1) + 20;
+    const auto empty = header->mapTo(table, QPoint(header->width() - 1, below));
+    QCOMPARE(image.pixelColor(empty * ratio), table->palette().color(QPalette::Base));
 }
 
 void PreviewTest::typedTableDropdownStagesSelection() {

@@ -121,9 +121,9 @@ class CellEditSqlWorkspaceTest : public QObject {
         QVERIFY(sql->adapter()->disconnectConnection(connection));
         QTRY_COMPARE(summaryState(data.findChild<QLabel*>("objectDataSummary")),
                      choscordb::QueryState::Failed);
-        QVERIFY(data.findChild<QLabel*>("objectDataSummary")
-                    ->accessibleDescription()
-                    .contains("Connection closed"));
+        QTRY_VERIFY(data.findChild<QPlainTextEdit*>("objectDataMessages")
+                        ->toPlainText()
+                        .contains("Connection closed"));
         QTRY_VERIFY(!sheet->isVisible());
         QVERIFY(text->toPlainText().isEmpty());
         save->click();

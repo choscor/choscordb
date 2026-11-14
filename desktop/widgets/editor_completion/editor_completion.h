@@ -1,7 +1,9 @@
 #pragma once
 #include "bridge/completion_service.h"
+#include "design_system/icons.h"
 #include <QObject>
 #include <QPointer>
+#include <functional>
 class QCompleter;
 class QModelIndex;
 class QStandardItemModel;
@@ -11,7 +13,8 @@ class SqlEditor;
 class EditorCompletionController final : public QObject {
     Q_OBJECT
   public:
-    explicit EditorCompletionController(QObject* parent = nullptr);
+    using KindIcon = std::function<design::Icon(const QString&)>;
+    explicit EditorCompletionController(KindIcon kindIcon, QObject* parent = nullptr);
     void setEditor(SqlEditor* editor);
     void setCatalog(CompletionService service);
     void requestCompletion(bool requested = true);
@@ -25,6 +28,7 @@ class EditorCompletionController final : public QObject {
     void dismiss();
     void launch();
     void accept(const QModelIndex& index);
+    KindIcon kindIcon_;
     QPointer<SqlEditor> editor_;
     QCompleter* completer_;
     QStandardItemModel* model_;

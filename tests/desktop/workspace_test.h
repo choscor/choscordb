@@ -39,6 +39,7 @@ class WorkspaceTest : public QObject {
     void visiblePageRemainsBudgetedAfterCoreQueryRelease();
     void repeatedPagingReleasesReplacedViews();
     void nestedEventLoopKeepsLiveTransferReserved();
+    void shownResultPageRaisesNoLeaseFailure();
     void previousPageUsesSharedHotCache();
     void deferredCellOpensBoundedDetailAndClosesOnNewQuery();
     void deferredTextRemainsInspectableAndDisconnectClosesDetail();
@@ -50,12 +51,17 @@ class WorkspaceTest : public QObject {
     void savedProfilesCreateDuplicateTestDeleteAndConnect();
     void profileAdapterPersistsAcrossRestart();
     void connectionSshFormShowsOnlyBasicSettings();
+    void switchingToAServerDriverKeepsEveryFieldInsideTheScrolledForm();
+    void scrolledConnectionFormEndsAtItsLastVisibleRow();
+    void connectionFormDrawsOnTheDialogSurface();
+    void driverChoicesAreSquareLogoButtonsWithTheNameOnHover();
+    void connectionDraftUsesTheSharedDiscardPrompt();
     void connectionFormHasNoTlsSettings();
     void savedTlsVerificationSurvivesProfileEdit();
     void savedDisabledTlsSurvivesProfileEdit();
     void newServerProfilePrefersTlsWithoutSetup_data();
     void newServerProfilePrefersTlsWithoutSetup();
-    void connectionOperationsShowDedicatedProgressModal();
+    void connectionOperationsShowProgressInTheStatusLine();
     void connectionProxyControlsAreHidden();
     void connectionProxyControlsStayHiddenForServerDriver();
     void connectionForwardingControlsAreHidden();

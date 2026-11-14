@@ -22,6 +22,8 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QFileInfo>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStackedWidget>
@@ -33,14 +35,20 @@
 int qInitResources_resources();
 
 namespace choscordb {
-
-void MainWindow::showToast(const QString& message, ToastVariant variant) {
-    if (toast_) {
-        const auto title = variant == ToastVariant::Success   ? tr("Success")
-                           : variant == ToastVariant::Warning ? tr("Warning")
-                                                              : tr("Error");
-        toast_->showToast(title, message, variant);
-    }
+namespace {
+void keepMenuItemsInTheirMenus(const QMenuBar& bar) {
+    QList<QMenu*> menus;
+    for (auto* action : bar.actions())
+        if (action->menu())
+            menus.append(action->menu());
+    for (int index = 0; index < menus.size(); ++index)
+        for (auto* action : menus[index]->actions()) {
+            if (action->menu())
+                menus.append(action->menu());
+            if (action->menuRole() == QAction::TextHeuristicRole)
+                action->setMenuRole(QAction::NoRole);
+        }
+}
 }
 
 MainWindow::MainWindow(QWidget* parent, const QString& storagePath, DiagnosticsService* diagnostics)
@@ -60,7 +68,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath, DiagnosticsS
                                                 : design::ResolvedAppearance::Light);
             });
     preferences_ = new EditorPreferencesController(this);
-    completion_ = new EditorCompletionController(this);
+    completion_ = new EditorCompletionController(objectKindIcon, this);
     setWindowTitle(tr("ChoscorDB"));
 #ifdef Q_OS_MACOS
 #if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
@@ -68,7 +76,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath, DiagnosticsS
 #endif
     connect(theme_, &design::ThemeManager::themeChanged, this, [this] { updateNativeTitleBar(); });
 #endif
-    setWindowIcon(design::themedIcon(design::Icon::AppMark, theme_->resolvedTheme().colors.primary,
+    setWindowIcon(design::themedIcon(design::Icon::AppMark, theme_->resolvedTheme().colors.brand,
                                      design::dimension(design::Dimension::Icon)));
     const auto ui = buildUi();
     connectWorkspace(ui, storagePath);
@@ -76,6 +84,7 @@ MainWindow::MainWindow(QWidget* parent, const QString& storagePath, DiagnosticsS
     connectLifecycle(ui, storagePath);
     connectNavigator(ui);
     initializePins(ui);
+    keepMenuItemsInTheirMenus(*menuBar());
     constructing_ = false;
     showScreen(Screen::Start);
 }
@@ -127,10 +136,10 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         for (int i = 0; i < editors_->count(); ++i) {
             auto* editor = qobject_cast<SqlEditor*>(editors_->widget(i));
             if (editor && editor->isModified()) {
-                const auto answer = ConfirmationDialog::question(
-                    this, tr("Close workspace"), tr("Discard unsaved changes in the workspace?"),
-                    QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
-                if (answer != QMessageBox::Discard) {
+                if (!ConfirmationDialog::confirm(this, tr("Discard changes?"),
+                                                 tr("The changes in the workspace are not saved."),
+                                                 tr("Discard changes"),
+                                                 ConfirmationDialog::Consequence::Destructive)) {
                     updateInstall_ = {};
                     appearanceCloseApproved_ = false;
                     event->ignore();
@@ -263,6 +272,17 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
     });
     connect(objectData, &ObjectDataWorkspace::busyChanged, explorer,
             &ObjectExplorer::setOperationBusy);
+    connect(objectData->results(), &QueryWorkspace::pendingEditsChanged, explorer,
+            [this, explorer](bool pending) {
+                const int index = editors_->indexOf(explorer);
+                if (index < 0)
+                    return;
+                const QString mark = QStringLiteral(" •");
+                auto title = editors_->tabText(index);
+                if (title.endsWith(mark))
+                    title.chop(mark.size());
+                editors_->setTabText(index, pending ? title + mark : title);
+            });
     connect(explorer, &ObjectExplorer::sqlGenerated, this,
             [this](quint64 connection, const QString& sql) {
                 if (openGeneratedSql_)
@@ -364,8 +384,9 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     explorer->setProperty("objectType", kind);
     explorer->setProperty("objectLabel", label);
     explorer->openObject(connection, objectId, label, kind, properties);
-    const auto icon = design::themedIcon(objectKindIcon(kind),
-                                         theme_->resolvedTheme().colors.fgMuted, objectIconSize());
+    const auto icon =
+        design::themedIcon(objectKindIcon(kind), theme_->resolvedTheme().colors.textSubtle,
+                           design::dimension(design::Dimension::Icon));
     const int index = editors_->addTab(explorer, icon, objectTabTitle(objectId, label));
     editors_->setCurrentIndex(index);
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
@@ -391,7 +412,8 @@ void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
     objectData->setInitialFilter(filter);
     explorer->openObject(connection, objectId, label, QStringLiteral("table"));
     const auto icon = design::themedIcon(objectKindIcon(QStringLiteral("table")),
-                                         theme_->resolvedTheme().colors.fgMuted, objectIconSize());
+                                         theme_->resolvedTheme().colors.textSubtle,
+                                         design::dimension(design::Dimension::Icon));
     editors_->setCurrentIndex(editors_->addTab(explorer, icon, objectTabTitle(objectId, label)));
     screens_->setCurrentIndex(static_cast<int>(Screen::Sql));
     explorer->selectPane(5);
@@ -414,6 +436,7 @@ SqlEditor* MainWindow::addEditor() {
     if (!allowDocumentChange())
         return nullptr;
     auto* editor = new SqlEditor;
+    editor->setContextActions(editorContextActions_);
     preferences_->addEditor(editor);
     connect(editor, &SqlEditor::connectionTargetChanged, this, [this, editor] {
         if (workspace_ && editors_->currentWidget() == editor)
@@ -444,11 +467,11 @@ SqlEditor* MainWindow::addEditor() {
             }
         }
     }
-    const int index = editors_->addTab(editor,
-                                       design::themedIcon(design::Icon::Code,
-                                                          theme_->resolvedTheme().colors.fgMuted,
-                                                          objectIconSize()),
-                                       title);
+    const int index = editors_->addTab(
+        editor,
+        design::themedIcon(design::Icon::Code, theme_->resolvedTheme().colors.textSubtle,
+                           design::dimension(design::Dimension::Icon)),
+        title);
     editors_->setCurrentIndex(index);
     if (!constructing_)
         showScreen(Screen::Sql);
@@ -464,20 +487,14 @@ SqlEditor* MainWindow::addEditor() {
                 if (!error.isEmpty()) {
                     if (editor->property("savedSqlOpen").toBool())
                         return;
-                    ConfirmationDialog box(QMessageBox::Warning, tr("Open failed"), error,
-                                           QMessageBox::Ok, this);
-                    box.setTextFormat(Qt::PlainText);
-                    box.exec();
+                    reportError(tr("Could not open the file: %1").arg(error));
                 } else
                     editors_->setTabText(editors_->indexOf(editor), QFileInfo(path).fileName());
             });
     connect(editor, &SqlEditor::fileSaved, this,
             [this, editor](const QString& path, const QString& error) {
                 if (!error.isEmpty()) {
-                    ConfirmationDialog box(QMessageBox::Warning, tr("Save failed"), error,
-                                           QMessageBox::Ok, this);
-                    box.setTextFormat(Qt::PlainText);
-                    box.exec();
+                    reportError(tr("Could not save the file: %1").arg(error));
                 } else {
                     editors_->setTabText(editors_->indexOf(editor),
                                          QFileInfo(path).fileName() +

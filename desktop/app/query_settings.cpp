@@ -1,11 +1,9 @@
 #include "query_settings.h"
 #include "bridge/request_token.h"
-#include "widgets/query_settings_dialog/query_settings_dialog.h"
 #include <QTimer>
 namespace choscordb {
-QuerySettingsController::QuerySettingsController(EngineAdapter* adapter, QWidget* dialogParent,
-                                                 QObject* parent)
-    : QObject(parent), adapter_(adapter), dialogParent_(dialogParent) {
+QuerySettingsController::QuerySettingsController(EngineAdapter* adapter, QObject* parent)
+    : QObject(parent), adapter_(adapter) {
     initialToken_ = nextRequestToken();
     connect(adapter, &EngineAdapter::queryPreferencesReady, this,
             [this](quint64 token, const QueryPreferences& value) {
@@ -39,27 +37,10 @@ QuerySettingsController::QuerySettingsController(EngineAdapter* adapter, QWidget
         else {
             initialToken_ = 0;
             ready_ = true;
-            emit failed(tr("Query settings service is unavailable."));
+            emit failed(tr("Query preferences are not available."));
             emit readyChanged(true);
         }
     });
-}
-void QuerySettingsController::open() {
-    if (!adapter_) {
-        emit failed(tr("Query settings service is unavailable."));
-        return;
-    }
-    if (!dialog_) {
-        dialog_ = new QuerySettingsDialog(adapter_, dialogParent_);
-        dialog_->setAttribute(Qt::WA_DeleteOnClose);
-        connect(dialog_, &QuerySettingsDialog::queryPreferencesSaveSubmitted, this,
-                [this](quint64 token) { saves_.insert(token); });
-        connect(dialog_, &QuerySettingsDialog::queryPreferencesConfirmed, this,
-                &QuerySettingsController::apply);
-    }
-    dialog_->show();
-    dialog_->raise();
-    dialog_->activateWindow();
 }
 void QuerySettingsController::apply(const QueryPreferences& value) {
     if (value.version == preferences_.version && value.pageSize == preferences_.pageSize &&

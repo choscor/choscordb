@@ -3,6 +3,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
@@ -36,9 +37,9 @@ class QuerySettingsWorkspaceTest : public QObject {
         auto* controller = window.findChild<choscordb::QuerySettingsController*>();
         QTRY_COMPARE(controller->preferences().connectionTimeoutSeconds, quint32(27));
         window.findChild<QAction*>("querySettings")->trigger();
-        auto* dialog = window.findChild<QDialog*>("querySettingsDialog");
+        auto* dialog = window.findChild<QDialog*>("preferencesDialog");
         QVERIFY(dialog);
-        auto* apply = dialog->findChild<QPushButton*>("querySettingsApply");
+        auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
         QTRY_VERIFY(apply->isEnabled());
         dialog->findChild<QSpinBox*>("queryPageSize")->setValue(2000);
         apply->click();
@@ -58,13 +59,13 @@ class QuerySettingsWorkspaceTest : public QObject {
         QTRY_VERIFY(run->isEnabled());
         auto* settings = window.findChild<QAction*>("querySettings");
         settings->trigger();
-        auto* dialog = window.findChild<QDialog*>("querySettingsDialog");
-        auto* apply = dialog->findChild<QPushButton*>("querySettingsApply");
+        auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+        auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
         QTRY_VERIFY(apply->isEnabled());
         dialog->findChild<QSpinBox*>("queryTimeoutSeconds")->setValue(2);
         apply->click();
         QTRY_COMPARE(controller->preferences().timeoutSeconds, quint32(2));
-        dialog->hide();
+        QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
         QString failure;
         int executions = 0;
         connect(
@@ -87,12 +88,16 @@ class QuerySettingsWorkspaceTest : public QObject {
         run->trigger();
         QTRY_COMPARE(executions, 1);
         settings->trigger();
+        dialog = window.findChild<QDialog*>("preferencesDialog");
+        QVERIFY(dialog);
+        apply = dialog->findChild<QPushButton*>("preferencesApply");
+        QTRY_VERIFY(apply->isEnabled());
         dialog->findChild<QSpinBox*>("queryTimeoutSeconds")->setValue(0);
         apply->click();
         QTRY_COMPARE(controller->preferences().timeoutSeconds, quint32(0));
         QVERIFY(failure.isEmpty());
         QCOMPARE(executions, 1);
-        dialog->hide();
+        QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
         QTRY_COMPARE_WITH_TIMEOUT(failure, QString("Timeout"), 5000);
         QTRY_VERIFY(run->isEnabled());
         editor->setText("SELECT 7");
@@ -139,16 +144,16 @@ class QuerySettingsWorkspaceTest : public QObject {
             QTRY_COMPARE(grid->model()->rowCount(), 1000);
             QCOMPARE(executions, 1);
             settings->trigger();
-            auto* dialog = window.findChild<QDialog*>("querySettingsDialog");
+            auto* dialog = window.findChild<QDialog*>("preferencesDialog");
             QVERIFY(dialog);
-            auto* apply = dialog->findChild<QPushButton*>("querySettingsApply");
+            auto* apply = dialog->findChild<QPushButton*>("preferencesApply");
             QTRY_VERIFY(apply->isEnabled());
             dialog->findChild<QSpinBox*>("queryPageSize")->setValue(100);
             dialog->findChild<QSpinBox*>("queryTimeoutSeconds")->setValue(7);
             apply->click();
             QTRY_COMPARE(controller->preferences().pageSize, quint32(100));
             QCOMPARE(executions, 1);
-            dialog->hide();
+            QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
             window.findChild<QPushButton*>("nextPage")->click();
             QTRY_COMPARE(grid->model()->rowCount(), 1);
             window.findChild<QPushButton*>("previousPage")->click();
@@ -157,9 +162,13 @@ class QuerySettingsWorkspaceTest : public QObject {
             run->trigger();
             QTRY_COMPARE(executions, 2);
             QTRY_COMPARE(grid->model()->rowCount(), 100);
-            dialog->show();
+            settings->trigger();
+            dialog = window.findChild<QDialog*>("preferencesDialog");
+            QVERIFY(dialog);
+            QTRY_VERIFY(dialog->findChild<QPushButton*>("preferencesApply")->isEnabled());
             QVERIFY(dialog->grab().save("native-query-settings.png"));
             dialog->close();
+            QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
             QTimer answer;
             answer.setInterval(10);
             connect(&answer, &QTimer::timeout, &window, [&] {
@@ -168,7 +177,7 @@ class QuerySettingsWorkspaceTest : public QObject {
                 if (!box)
                     return;
                 for (auto* button : box->buttons())
-                    if (box->buttonRole(button) == QMessageBox::DestructiveRole) {
+                    if (destructiveConfirmation(button)) {
                         answer.stop();
                         button->click();
                         return;

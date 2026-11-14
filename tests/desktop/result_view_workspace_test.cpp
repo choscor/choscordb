@@ -4,6 +4,8 @@
 #include "app/query_workspace.h"
 #include "app/result_filter_bar.h"
 #include "bridge/engine_adapter.h"
+#include "confirmation_checks.h"
+#include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/fonts/fonts.h"
 #include "design_system/menu/embedded_popup.h"
@@ -31,11 +33,23 @@
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QStackedWidget>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QToolTip>
 #include <QtTest>
+namespace {
+QWidget* sqlFilterBar(QTableView* grid) {
+    for (auto* ancestor = grid->parentWidget(); ancestor; ancestor = ancestor->parentWidget())
+        if (qobject_cast<QStackedWidget*>(ancestor))
+            return ancestor->parentWidget()->findChild<QWidget*>("resultFilterBar",
+                                                                 Qt::FindDirectChildrenOnly);
+    return nullptr;
+}
+}
+
 class ResultViewWorkspaceTest : public QObject {
     Q_OBJECT
     static void triggerTableAction(QTableView* grid, const QString& label) {
@@ -57,6 +71,117 @@ class ResultViewWorkspaceTest : public QObject {
     }
 
   private slots:
+    void resultGridRowNumbersAreSubtleAndCentered() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(800, 400);
+        data.show();
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        choscordb::ResultColumn column{};
+        column.name = "id";
+        QVERIFY(model->setPage({column}, {{QString("1")}, {QString("2")}}, 0));
+        QCoreApplication::processEvents();
+        auto* header = grid->verticalHeader();
+        const auto capture = header->grab();
+        const auto image = capture.toImage();
+        const qreal scale = capture.devicePixelRatio();
+        const int top = header->sectionViewportPosition(0);
+        const int bottom = top + header->sectionSize(0);
+        int left = header->width(), right = -1, upper = bottom, lower = top;
+        int darkest = 255;
+        for (int y = top; y < bottom; ++y)
+            for (int x = 0; x < header->width(); ++x) {
+                const int lightness = image.pixelColor(QPoint(x, y) * scale).lightness();
+                if (lightness < 200) {
+                    left = qMin(left, x);
+                    right = qMax(right, x);
+                    upper = qMin(upper, y);
+                    lower = qMax(lower, y);
+                    darkest = qMin(darkest, lightness);
+                }
+            }
+        QVERIFY(right >= left);
+        QVERIFY2(qAbs((left + right) / 2.0 - header->width() / 2.0) <= 1.5,
+                 qPrintable(QString("%1..%2 in %3").arg(left).arg(right).arg(header->width())));
+        QVERIFY(qAbs((upper + lower) / 2.0 - (top + bottom) / 2.0) <= 2.0);
+        const auto colors = choscordb::design::resolvedThemeForWidget(*grid).colors;
+        QVERIFY2(darkest >= colors.textSubtle.lightness() - 8,
+                 qPrintable(QString::number(darkest)));
+        const auto fill = image.pixelColor(QPoint(1, top + 1) * scale);
+        const auto edge = image.pixelColor(QPoint(1, bottom - 1) * scale);
+        QVERIFY2(
+            edge == fill,
+            qPrintable(QString("row number separator %1 on %2").arg(edge.name(), fill.name())));
+    }
+    void documentTabHoverShowsTheDesignTooltipOnTheFirstHover() {
+        choscordb::MainWindow window;
+        window.resize(1000, 700);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        QVERIFY(tabs);
+        tabs->addTab(new QWidget, QStringLiteral("customers"));
+        QApplication::processEvents();
+        auto* bar = tabs->tabBar();
+        bar->setTabToolTip(0, {});
+        const auto point = bar->tabRect(0).center();
+        QHelpEvent help(QEvent::ToolTip, point, bar->mapToGlobal(point));
+        QApplication::sendEvent(bar, &help);
+        QApplication::processEvents();
+        auto* tooltip = window.findChild<QWidget*>("designTooltip");
+        QVERIFY(tooltip && tooltip->isVisible());
+        QCOMPARE(tooltip->accessibleName(), bar->tabText(0));
+        QVERIFY(!QToolTip::isVisible());
+    }
+    void resultFilterButtonsMatchTheField() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(800, 400);
+        data.show();
+        QCoreApplication::processEvents();
+        auto* field = data.findChild<QLineEdit*>("resultFilterSql");
+        QVERIFY(field);
+        for (const auto* name : {"resultFilterApply", "resultFilterClear"}) {
+            auto* button = data.findChild<QPushButton*>(name);
+            QVERIFY(button);
+            QCOMPARE(button->height(), field->height());
+            QCOMPARE(button->geometry().center().y(), field->geometry().center().y());
+        }
+    }
+    void readOnlyMessagesAreAPlainLogWithoutAFieldFrame() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(800, 400);
+        data.show();
+        for (auto* messages : {window.findChild<QPlainTextEdit*>("queryMessages"),
+                               data.findChild<QPlainTextEdit*>("objectDataMessages")}) {
+            QVERIFY(messages);
+            messages->window()->activateWindow();
+            messages->parentWidget()->show();
+            messages->show();
+            messages->resize(300, 120);
+            messages->setFocus(Qt::MouseFocusReason);
+            QCoreApplication::processEvents();
+            const auto capture = messages->grab();
+            const auto image = capture.toImage();
+            const qreal scale = capture.devicePixelRatio();
+            const int middle = messages->height() / 2;
+            const auto colors = choscordb::design::resolvedThemeForWidget(*messages).colors;
+            QCOMPARE(image.pixelColor(QPoint(0, middle) * scale), colors.base);
+            QCOMPARE(image.pixelColor(QPoint(1, middle) * scale), colors.base);
+            QVERIFY(messages->isReadOnly());
+            QVERIFY(messages->textInteractionFlags().testFlag(Qt::TextSelectableByMouse));
+            const auto code = choscordb::design::resolveTypography(
+                choscordb::design::TextStyle::Body, choscordb::design::FontDesign::Monospaced);
+            QCOMPARE(messages->font().family(), code.family());
+            QCOMPARE(messages->font().pixelSize(), code.pixelSize());
+        }
+    }
     void resultHeaderStartsAtCombinedLabelWidthAndRemainsResizable() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
@@ -107,6 +232,25 @@ class ResultViewWorkspaceTest : public QObject {
         const int label = primary.horizontalAdvance(column.name) +
                           secondary.horizontalAdvance("· " + column.databaseType);
         QVERIFY(grid->columnWidth(0) >= label + 24);
+    }
+    void aRerunKeepsTheColumnWidthsThatTheUserSet() {
+        choscordb::MainWindow window;
+        auto* grid = window.findChild<QTableView*>("queryResults");
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(grid->model());
+        choscordb::ResultColumn id{}, name{}, other{};
+        id.name = "id";
+        name.name = "name";
+        other.name = "other";
+        QVERIFY(model->setPage({id, name}, {{qint64(1), QString("a")}}, 0));
+        const int fittedName = grid->columnWidth(1);
+        grid->horizontalHeader()->resizeSection(0, 333);
+        QVERIFY(model->setPage({}, {}, 0));
+        QVERIFY(model->setPage({id, other}, {{qint64(1), QString("b")}}, 0));
+        QCOMPARE(grid->columnWidth(0), 333);
+        QVERIFY(grid->columnWidth(1) != 333);
+        QVERIFY(model->setPage({}, {}, 0));
+        QVERIFY(model->setPage({other, name}, {{QString("c"), QString("d")}}, 0));
+        QCOMPARE(grid->columnWidth(1), fittedName);
     }
     void choosingBooleanCommitsTheCellImmediately() {
         choscordb::MainWindow window;
@@ -192,12 +336,14 @@ class ResultViewWorkspaceTest : public QObject {
         column.name = "value";
         QVERIFY(model->setPage({column}, {{QString("a")}}, 0));
         for (auto* header : {grid->horizontalHeader(), grid->verticalHeader()}) {
+            const QString ownMenu =
+                header == grid->horizontalHeader() ? QStringLiteral("resultHeaderMenu") : QString();
             bool menuSeen = false;
             QTimer closePopup;
             connect(&closePopup, &QTimer::timeout, &explorer, [&] {
                 if (auto* menu =
                         qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup())) {
-                    menuSeen = true;
+                    menuSeen |= ownMenu.isEmpty() || menu->objectName() != ownMenu;
                     menu->close();
                 }
             });
@@ -210,23 +356,19 @@ class ResultViewWorkspaceTest : public QObject {
             QVERIFY(!menuSeen);
         }
     }
-    void onlyObjectDataExposesFilterAndSortControls() {
+    void sqlResultsAndObjectDataExposeTheSameFilterAndSortControls() {
         choscordb::MainWindow window;
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
         choscordb::ObjectDataWorkspace data(sql);
         window.show();
         data.show();
         auto* sqlGrid = window.findChild<QTableView*>("queryResults");
-        QVERIFY(!sqlGrid->parentWidget()->findChild<QWidget*>("resultFilterBar"));
-        QVERIFY(!sqlGrid->horizontalHeader()->sectionsClickable());
-        QVERIFY(!sqlGrid->horizontalHeader()->isSortIndicatorShown());
+        QVERIFY(sqlGrid->horizontalHeader()->sectionsClickable());
         QVERIFY(data.findChild<QTableView*>("objectDataResults")
                     ->horizontalHeader()
                     ->sectionsClickable());
-        for (auto* surface : QList<QWidget*>{&data}) {
-            auto* bar = surface->findChild<QWidget*>("resultFilterBar");
+        for (auto* bar : {sqlFilterBar(sqlGrid), data.findChild<QWidget*>("resultFilterBar")}) {
             QVERIFY(bar);
-            QVERIFY(bar->isVisible());
             QVERIFY(bar->findChild<QLineEdit*>("resultFilterSql"));
             QVERIFY(!bar->findChild<QPushButton*>("resultFilterMode"));
             QVERIFY(!bar->findChild<QComboBox*>("resultFilterColumn"));
@@ -236,9 +378,17 @@ class ResultViewWorkspaceTest : public QObject {
             QVERIFY(!bar->findChild<QListWidget*>("resultFilterConditions"));
             QVERIFY(bar->findChild<QPushButton*>("resultFilterApply"));
             QVERIFY(bar->findChild<QPushButton*>("resultFilterClear"));
+            const auto* toolbarButton =
+                window.findChild<choscordb::design::Button*>("queryResultAddRow");
+            for (const char* name : {"resultFilterApply", "resultFilterClear"}) {
+                const auto* button = bar->findChild<choscordb::design::Button*>(name);
+                QCOMPARE(button->variant(), toolbarButton->variant());
+                QCOMPARE(button->sizeHint().height(),
+                         bar->findChild<QLineEdit*>("resultFilterSql")->sizeHint().height());
+            }
         }
     }
-    void sqlResultHeaderClicksPreserveQueryOrder() {
+    void sqlResultHeaderSortsAndTheFilterBarFiltersTheResult() {
         choscordb::MainWindow window;
         window.show();
         auto* sql = window.findChild<choscordb::QueryWorkspace*>();
@@ -253,15 +403,42 @@ class ResultViewWorkspaceTest : public QObject {
         run->trigger();
         auto* grid = window.findChild<QTableView*>("queryResults");
         QTRY_COMPARE(grid->model()->rowCount(), 3);
-        auto* header = grid->horizontalHeader();
-        QSignalSpy clicks(header, &QHeaderView::sectionClicked);
-        QTest::mouseClick(header->viewport(), Qt::LeftButton, {}, QPoint(10, 5));
-        QCOMPARE(clicks.count(), 0);
-        QVERIFY(!header->isSortIndicatorShown());
         QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("3"));
-        QCOMPARE(grid->model()->index(1, 0).data().toString(), QString("1"));
-        QCOMPARE(grid->model()->index(2, 0).data().toString(), QString("2"));
-        QVERIFY(!grid->parentWidget()->findChild<QWidget*>("resultFilterBar"));
+        auto* header = grid->horizontalHeader();
+        const int x = header->sectionViewportPosition(0) + 10;
+        QTest::mouseClick(header->viewport(), Qt::LeftButton, {}, QPoint(x, 5));
+        QTRY_VERIFY(header->isSortIndicatorShown());
+        QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1"));
+        QCOMPARE(grid->model()->index(2, 0).data().toString(), QString("3"));
+        QStringList headerLabels;
+        QTimer::singleShot(0, header, [&headerLabels] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            if (!menu)
+                return;
+            QAction* descending = nullptr;
+            for (auto* action : menu->actions()) {
+                headerLabels.append(action->isSeparator() ? QString("|") : action->text());
+                if (action->text() == "Sort descending")
+                    descending = action;
+            }
+            menu->close();
+            if (descending)
+                descending->trigger();
+        });
+        const QPoint headerPoint(x, 5);
+        QContextMenuEvent headerMenu(QContextMenuEvent::Mouse, headerPoint,
+                                     header->viewport()->mapToGlobal(headerPoint));
+        QApplication::sendEvent(header->viewport(), &headerMenu);
+        QCOMPARE(headerLabels, (QStringList{"Sort ascending", "Sort descending", "Clear sort", "|",
+                                            "Copy column name"}));
+        QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("3"));
+        auto* bar = sqlFilterBar(grid);
+        QVERIFY(bar && bar->isVisible());
+        bar->findChild<QLineEdit*>("resultFilterSql")->setText("value > 1");
+        QTRY_VERIFY(bar->findChild<QPushButton*>("resultFilterApply")->isEnabled());
+        bar->findChild<QPushButton*>("resultFilterApply")->click();
+        QTRY_COMPARE(grid->model()->rowCount(), 2);
+        QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("3"));
     }
     void sqlFilterValidatesAndRestoresAppliedDraft() {
         choscordb::ResultFilterBar bar;
@@ -336,7 +513,7 @@ class ResultViewWorkspaceTest : public QObject {
         auto* grid = data.findChild<QTableView*>("objectDataResults");
         auto* summary = data.findChild<QLabel*>("objectDataSummary");
         auto* next = data.findChild<QPushButton*>("objectDataNext");
-        auto* filterBar = grid->parentWidget()->findChild<QWidget*>("resultFilterBar");
+        auto* filterBar = sqlFilterBar(grid);
         auto* sqlFilter = filterBar->findChild<QLineEdit*>("resultFilterSql");
         auto* apply = filterBar->findChild<QPushButton*>("resultFilterApply");
         auto* clear = filterBar->findChild<QPushButton*>("resultFilterClear");
@@ -424,17 +601,23 @@ class ResultViewWorkspaceTest : public QObject {
         apply->click();
         auto* summary = data.findChild<QLabel*>("objectDataSummary");
         QTRY_COMPARE(summaryState(summary), choscordb::QueryState::Failed);
-        QVERIFY(summary->toolTip().contains("Previous result view restored"));
-        QVERIFY(summary->toolTip().contains("missing_backend_column"));
+        QVERIFY(!summary->toolTip().contains("missing_backend_column"));
+        QTRY_VERIFY(data.findChild<QPlainTextEdit*>("objectDataMessages")
+                        ->toPlainText()
+                        .contains("missing_backend_column"));
         QCOMPARE(data.footerWidget()->palette().color(QPalette::Window),
-                 choscordb::design::resolvedThemeForWidget(data).colors.dangerSurface);
+                 choscordb::design::composite(
+                     choscordb::design::resolvedThemeForWidget(data).colors.dangerTint,
+                     choscordb::design::resolvedThemeForWidget(data).colors.base));
         QCOMPARE(grid->model()->index(0, 0).data().toString(), QString("2"));
         sqlFilter->setText("id = 1");
         apply->click();
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1"));
         QTRY_VERIFY(queryCompleted(summaryState(summary)));
         QCOMPARE(data.footerWidget()->palette().color(QPalette::Window),
-                 choscordb::design::resolvedThemeForWidget(data).colors.successSurface);
+                 choscordb::design::secondaryBanner(
+                     choscordb::design::resolvedThemeForWidget(data).colors)
+                     .fill);
         clear->click();
         QTRY_COMPARE(grid->model()->rowCount(), 2);
         QVERIFY(sqlFilter->text().isEmpty());
@@ -544,8 +727,8 @@ class ResultViewWorkspaceTest : public QObject {
         connect(&confirm, &QTimer::timeout, &window, [] {
             auto* box =
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
-            if (box && box->windowTitle() == "Confirm SQL execution")
-                if (auto* yes = box->button(QMessageBox::Yes))
+            if (box && box->windowTitle() == "Run statement?")
+                if (auto* yes = confirmationAction(box))
                     yes->click();
         });
         confirm.start(10);
@@ -593,8 +776,8 @@ class ResultViewWorkspaceTest : public QObject {
         connect(&confirm, &QTimer::timeout, &window, [] {
             auto* box =
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
-            if (box && box->windowTitle() == "Confirm SQL execution")
-                if (auto* yes = box->button(QMessageBox::Yes))
+            if (box && box->windowTitle() == "Run statement?")
+                if (auto* yes = confirmationAction(box))
                     yes->click();
         });
         confirm.start(10);

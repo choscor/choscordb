@@ -79,13 +79,14 @@ DiagnosticExportResult DiagnosticsService::exportZip(const QString& destination,
     std::thread watcher;
     if (cancel && !cancel->load()) {
         try {
-            watcher = std::thread([cancel, &token, &finished] {
+            const std::chrono::milliseconds poll(diagnostics_cancel_poll_milliseconds());
+            watcher = std::thread([cancel, &token, &finished, poll] {
                 while (!finished.load()) {
                     if (cancel->load()) {
                         diagnostics_cancel(*token);
                         break;
                     }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    std::this_thread::sleep_for(poll);
                 }
             });
         } catch (...) {

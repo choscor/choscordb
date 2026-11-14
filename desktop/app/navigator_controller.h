@@ -1,5 +1,7 @@
 #pragma once
+#include "bridge/engine_adapter.h"
 #include "models/navigator_model.h"
+#include "widgets/filter_field/filter_field.h"
 #include <QHash>
 #include <QList>
 #include <QModelIndex>
@@ -18,16 +20,14 @@
 class QAction;
 class QMenu;
 class QTreeView;
-class QLineEdit;
 class QSortFilterProxyModel;
 namespace choscordb {
 class EngineAdapter;
 bool showsSidebarChild(const QModelIndex& index);
-inline std::function<void()> coalescedCall(QObject* owner, int intervalMs,
-                                           std::function<void()> call) {
+inline std::function<void()> coalescedCall(QObject* owner, std::function<void()> call) {
     auto* timer = new QTimer(owner);
     timer->setSingleShot(true);
-    timer->setInterval(intervalMs);
+    timer->setInterval(EngineAdapter::signalCoalesceMs());
     auto pending = std::make_shared<bool>(false);
     auto shared = std::make_shared<std::function<void()>>(std::move(call));
     QObject::connect(timer, &QTimer::timeout, owner, [timer, pending, shared] {
@@ -67,7 +67,7 @@ class NavigatorController final : public QObject {
     Q_OBJECT
   public:
     enum class RevealResult { Found, Unavailable, Retry };
-    NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter);
+    NavigatorController(EngineAdapter* engine, QTreeView* tree, FilterField* filter);
     NavigatorModel* model() const { return model_; }
     void addConnection(quint64 connection, const QString& label);
     void renameConnection(quint64 connection, const QString& label);
@@ -126,7 +126,7 @@ class NavigatorController final : public QObject {
     NavigatorModel* model_;
     QTreeView* tree_;
     QSortFilterProxyModel* proxy_;
-    QLineEdit* filter_;
+    FilterField* filter_;
     std::function<QString(quint64)> driverResolver_;
     std::function<std::optional<bool>(const QModelIndex&)> pinStateResolver_;
     quint64 searchGeneration_ = 0;
@@ -146,7 +146,6 @@ class NavigatorController final : public QObject {
     int searchVisited_ = 0;
     bool searchIncomplete_ = false;
     bool searchFinished_ = false;
-    QTimer* filterTimer_ = nullptr;
     struct UserLoad {
         quint64 connection = 0;
         QString name;
@@ -164,7 +163,7 @@ class NavigatorController final : public QObject {
     void userLoad(const QModelIndex& source, void (NavigatorModel::*load)(const QModelIndex&));
     void childrenFailed(quint64 connection, const QString& parent, quint64 token,
                         const QString& error);
-    void restartSearch(bool advance = true);
+    void restartSearch();
     void finishSearch(const QString& notice);
     bool matchesSearchRequest(quint64 connection, const QString& parent, quint64 token) const;
     QList<QuickObjectResult> quickObjectResults_;

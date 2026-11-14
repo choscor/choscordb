@@ -8,11 +8,13 @@
 #include "app/workspace_recovery.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/history_row/history_row.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/menu/menu.h"
+#include "design_system/spinner/spinner.h"
 #include "design_system/theme.h"
 #include "design_system/toast_region/toast_region.h"
 #include "models/navigator_model.h"
@@ -28,6 +30,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QHelpEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -92,10 +95,13 @@ void NavigatorSqlWorkspaceTest::sqlRowActionsLiveInResultContextMenu() {
     for (const auto& name : names) {
         auto* button = window.findChild<QPushButton*>(name);
         QVERIFY(button);
-        QVERIFY(button->isHidden());
+        QVERIFY(button->isVisible());
+        QVERIFY(!button->isEnabled());
+        bool inToolbar = false;
         for (auto* toolbar : window.findChildren<QToolBar*>())
             for (auto* action : toolbar->actions())
-                QVERIFY(toolbar->widgetForAction(action) != button);
+                inToolbar = inToolbar || toolbar->widgetForAction(action) == button;
+        QVERIFY2(inToolbar, qPrintable(name));
     }
     choscordb::ResultColumn column{};
     column.name = "value";
@@ -291,7 +297,7 @@ void NavigatorSqlWorkspaceTest::sqlRowJsonLoadsFullDeferredBinaryAndRejectsOvers
     openJson();
     QTRY_VERIFY(sheet->findChild<QLabel*>("rowJsonStatus")
                     ->text()
-                    .contains("Unable to show complete JSON"));
+                    .contains("Could not show the complete JSON"));
     QVERIFY(text->toPlainText().isEmpty());
     QVERIFY(!copy->isEnabled());
     sheet->reject();
@@ -365,13 +371,13 @@ void NavigatorSqlWorkspaceTest::sqlToolbarInsetsControls() {
     const auto sample =
         controls->mapTo(&window, QPoint(controls->width() - 70, controls->height() / 2));
     const auto image = window.grab().toImage();
-    QCOMPARE(image.pixelColor(sample * image.devicePixelRatio()), colors.surface);
+    QCOMPARE(image.pixelColor(sample * image.devicePixelRatio()), colors.base);
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
     QCOMPARE(toolbar->width(), tabs->width());
     const auto trailing =
         tabs->mapTo(&window, QPoint(tabs->width() - 2,
                                     toolbar->mapTo(tabs, QPoint()).y() + toolbar->height() / 2));
-    QCOMPARE(image.pixelColor(trailing * image.devicePixelRatio()), colors.surface);
+    QCOMPARE(image.pixelColor(trailing * image.devicePixelRatio()), colors.base);
     window.resize(window.width() + 120, window.height());
     QCoreApplication::processEvents();
     QCOMPARE(toolbar->width(), tabs->width());
@@ -408,6 +414,72 @@ void NavigatorSqlWorkspaceTest::tabContextMenuClosesRequestedDocuments_data() {
     QTest::newRow("right") << 3 << QStringList{"first", "second"};
 }
 
+void NavigatorSqlWorkspaceTest::documentTabsCloseOnMiddleClickAndShowTheFullTitle() {
+    QTemporaryDir storage;
+    choscordb::MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    QTRY_VERIFY(window.findChild<choscordb::WorkspaceRecoveryController*>()->isReady());
+    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    for (const auto& name : {"first", "second"}) {
+        window.findChild<QAction*>("newQuery")->trigger();
+        tabs->currentWidget()->setObjectName(name);
+    }
+    QCoreApplication::processEvents();
+    auto* bar = tabs->tabBar();
+    const QString title = QStringLiteral("a_very_long_document_title_that_the_tab_bar_cuts.sql");
+    tabs->setTabText(0, title);
+    const int count = tabs->count();
+    const auto tipPosition = bar->tabRect(0).center();
+    QHelpEvent tip(QEvent::ToolTip, tipPosition, bar->mapToGlobal(tipPosition));
+    QApplication::sendEvent(bar, &tip);
+    QCOMPARE(bar->tabToolTip(0), title);
+    auto* closing = tabs->widget(tabs->count() - 1);
+    QTest::mouseClick(bar, Qt::MiddleButton, Qt::NoModifier, bar->tabRect(count - 1).center());
+    QTRY_COMPARE(tabs->count(), count - 1);
+    QCOMPARE(tabs->indexOf(closing), -1);
+}
+
+void NavigatorSqlWorkspaceTest::objectTabsMarkStagedEditsAndKeepTheMarkVisible() {
+    using namespace choscordb;
+    MainWindow window;
+    window.show();
+    auto* workspace = window.findChild<QueryWorkspace*>();
+    QSignalSpy connected(workspace, &QueryWorkspace::connectionReady);
+    int finished = 0;
+    connect(
+        workspace->adapter(), &EngineAdapter::eventReady, &window,
+        [&](const BridgeEvent& event) {
+            if (event.kind == "query_finished")
+                ++finished;
+        },
+        Qt::DirectConnection);
+    workspace->connectSqlite(":memory:");
+    QTRY_COMPARE(connected.count(), 1);
+    const auto connection = connected.first().first().toULongLong();
+    for (const char* sql : {"CREATE TABLE account(id INTEGER PRIMARY KEY, name TEXT)",
+                            "INSERT INTO account VALUES (1, 'one')"}) {
+        const auto query = workspace->adapter()->execute(connection, sql);
+        QVERIFY(query);
+        workspace->adapter()->fetchPage(*query);
+    }
+    QTRY_COMPARE(finished, 2);
+    emit window.objectContextSelected(connection, R"(["main","account"])", "main.account", "table");
+    auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+    QCOMPARE(tabs->tabBar()->elideMode(), Qt::ElideMiddle);
+    auto* explorer = qobject_cast<ObjectExplorer*>(tabs->currentWidget());
+    QVERIFY(explorer);
+    const int index = tabs->indexOf(explorer);
+    QCOMPARE(tabs->tabText(index), QString("account"));
+    auto* grid = explorer->findChild<QTableView*>("objectDataResults");
+    auto* model = qobject_cast<ResultTableModel*>(grid->model());
+    QTRY_VERIFY(model && model->rowCount() == 1);
+    QTRY_VERIFY(explorer->findChild<QPushButton*>("objectDataAddRow")->isEnabled());
+    QVERIFY(model->setData(model->index(0, 1), QString("staged")));
+    QTRY_COMPARE(tabs->tabText(index), QString("account •"));
+    model->discardEdits();
+    QTRY_COMPARE(tabs->tabText(index), QString("account"));
+}
+
 void NavigatorSqlWorkspaceTest::tabContextMenuClosesRequestedDocuments() {
     QFETCH(int, action);
     QFETCH(QStringList, remaining);
@@ -435,8 +507,8 @@ void NavigatorSqlWorkspaceTest::tabContextMenuClosesRequestedDocuments() {
     QStringList labels;
     for (auto* item : menu->actions())
         labels.append(item->text());
-    QCOMPARE(labels, (QStringList{"Close", "Close Others", "Close All", "Close to the Right", "",
-                                  "Change connection"}));
+    QCOMPARE(labels, (QStringList{"Close", "Close others", "Close all", "Close tabs to the right",
+                                  "", "Change connection"}));
     menu->actions().at(action)->trigger();
     QStringList actual;
     for (int index = 0; index < tabs->count(); ++index)
@@ -513,7 +585,7 @@ void NavigatorSqlWorkspaceTest::tabContextMenuStopsBulkCloseWhenDiscardIsCancell
         auto* box =
             qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
         QVERIFY(box);
-        box->button(QMessageBox::Discard)->click();
+        confirmationAction(box)->click();
     });
     menu->actions().at(2)->trigger();
     QCOMPARE(tabs->count(), 0);
@@ -630,7 +702,7 @@ void NavigatorSqlWorkspaceTest::workspaceTabsUseContentWidth() {
     QVERIFY(addPosition().x() - tabs->tabBar()->tabRect(0).right() <= 6);
     window.resize(1280, 800);
     QCoreApplication::processEvents();
-    const auto stripColor = choscordb::design::resolvedThemeForWidget(*tabs).colors.surfaceRaised;
+    const auto stripColor = choscordb::design::resolvedThemeForWidget(*tabs).colors.base;
     const auto cornerColor = [tabs, addButton] {
         const auto image = tabs->grab().toImage();
         const auto point = addButton->mapTo(tabs, QPoint(1, addButton->height() / 2));
@@ -705,11 +777,11 @@ void NavigatorSqlWorkspaceTest::historySearchAppliesToRefreshedFullSql() {
     auto* adapter = window.findChild<choscordb::QueryWorkspace*>()->adapter();
     QSignalSpy listed(adapter, &choscordb::EngineAdapter::historyListed);
     auto* loading = window.findChild<QWidget*>("sidebarHistorySection")
-                        ->findChild<QLabel*>("sidebarSectionBusy");
+                        ->findChild<choscordb::design::Spinner*>("sidebarSectionBusy");
     QVERIFY(loading && loading->isHidden());
     window.findChild<QPushButton*>("sidebarHistory")->click();
     QVERIFY(!loading->isHidden());
-    QCOMPARE(loading->accessibleName(), QString::fromUtf8("Loading recent history…"));
+    QCOMPARE(loading->accessibleName(), QString::fromUtf8("Loading query history…"));
     QVERIFY(window.findChild<QLabel*>("sidebarHistoryStatus")->isHidden());
     QTRY_VERIFY(!listed.isEmpty());
     QTRY_VERIFY(loading->isHidden());
@@ -746,7 +818,7 @@ void NavigatorSqlWorkspaceTest::historySidebarFormatsSqlAndShowsEntryDetails() {
     window.findChild<QPushButton*>("sidebarHistory")->click();
     QTRY_VERIFY(!listed.isEmpty());
     QTRY_VERIFY(window.findChild<QLabel*>("sidebarHistoryStatus")->text() !=
-                QString::fromUtf8("Loading recent history…"));
+                QString::fromUtf8("Loading query history…"));
     const auto token = listed.last().at(0).toULongLong();
     auto* list = window.findChild<QListWidget*>("sidebarHistoryItems");
     QVERIFY(list);
@@ -811,8 +883,9 @@ void NavigatorSqlWorkspaceTest::historySidebarReusesRecordIdAndKeepsDistinctIden
     auto* list = window.findChild<QListWidget*>("sidebarHistoryItems");
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
     QVERIFY(list && tabs);
-    QTRY_VERIFY(window.findChild<QLabel*>("sidebarHistoryStatus")->text() !=
-                QString::fromUtf8("Loading recent history…"));
+    QTRY_VERIFY(window.findChild<QWidget*>("sidebarHistorySection")
+                    ->findChild<choscordb::design::Spinner*>("sidebarSectionBusy")
+                    ->isHidden());
     choscordb::SavedHistoryEntry first, second;
     first.id = "history-one";
     first.sql = "SELECT 17;";
@@ -826,13 +899,13 @@ void NavigatorSqlWorkspaceTest::historySidebarReusesRecordIdAndKeepsDistinctIden
     auto* search = window.findChild<QLineEdit*>("sidebarHistorySearch");
     QVERIFY(search);
     search->setText("FIRST");
+    QTRY_VERIFY(secondItem->isHidden());
     QVERIFY(!firstItem->isHidden());
-    QVERIFY(secondItem->isHidden());
     search->setText("select 17");
+    QTRY_VERIFY(!secondItem->isHidden());
     QVERIFY(!firstItem->isHidden());
-    QVERIFY(!secondItem->isHidden());
     search->setText("no such query");
-    QVERIFY(firstItem->isHidden());
+    QTRY_VERIFY(firstItem->isHidden());
     QVERIFY(secondItem->isHidden());
     search->clear();
     QVERIFY(!secondItem->isHidden());
@@ -881,6 +954,21 @@ void NavigatorSqlWorkspaceTest::historyNavigationStaysInSidebar() {
     QVERIFY(history->isChecked());
     QCOMPARE(screens->currentWidget()->objectName(), QString("startScreen"));
     QVERIFY(!window.findChild<QPushButton*>("sidebarFullHistory"));
+    window.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+    connections->click();
+    connections->setFocus();
+    QTest::keyClick(connections, Qt::Key_Right);
+    QCOMPARE(panels->currentIndex(), 1);
+    QVERIFY(saved->isChecked() && saved->hasFocus());
+    QTest::keyClick(saved, Qt::Key_Right);
+    QCOMPARE(panels->currentIndex(), 2);
+    QTest::keyClick(history, Qt::Key_Right);
+    QCOMPARE(panels->currentIndex(), 0);
+    QVERIFY(connections->hasFocus());
+    QTest::keyClick(connections, Qt::Key_Left);
+    QCOMPARE(panels->currentIndex(), 2);
+    QVERIFY(history->isChecked() && history->hasFocus());
 }
 
 QTEST_MAIN(NavigatorSqlWorkspaceTest)

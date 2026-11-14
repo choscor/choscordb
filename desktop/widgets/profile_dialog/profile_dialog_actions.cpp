@@ -1,8 +1,11 @@
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
+#include "design_system/text/text.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
@@ -112,41 +115,33 @@ void ProfileDialog::setDraft(const SavedProfile& profile) {
     sshIdentityFile_->setText(value.sshIdentityFile);
     sshSecret_->clear();
     sshSecret_->setModified(false);
-    sshSecret_->setPlaceholderText(value.sshCredentialRef.isEmpty()
-                                       ? (value.sshAuthentication == "public_key"
-                                              ? tr("Optional for an unencrypted key")
-                                              : tr("SSH password"))
-                                       : tr("Saved SSH credential — leave unchanged to keep"));
+    sshSecret_->setPlaceholderText(value.sshCredentialRef.isEmpty() ? QString()
+                                                                    : tr("Saved password"));
     password_->clear();
     password_->setModified(false);
-    password_->setPlaceholderText(value.credentialRef.isEmpty()
-                                      ? tr("Optional — leave blank for passwordless authentication")
-                                      : tr("Saved password — leave unchanged to keep"));
+    password_->setPlaceholderText(value.credentialRef.isEmpty() ? QString() : tr("Saved password"));
     saveCredentials_->setChecked(EngineAdapter::profileHasSavedCredentials(value));
     setSecurityDraft(value);
     filling_ = false;
     dirty_ = false;
+    const auto title = value.id.isEmpty() ? tr("New connection") : tr("Edit connection");
+    heading_->setText(title);
+    setWindowTitle(title);
     updateDriver();
 }
 
 void ProfileDialog::updateDriver() {
     const auto form = EngineAdapter::profileDriverForm(driver_->currentData().toString());
-    user_->setPlaceholderText(form.userOptional ? tr("Optional — anonymous authentication")
-                                                : tr("Database username"));
+    sections_->relabelFormRow(formLayout_, validationFor(user_), tr("Username"),
+                              form.userOptional ? design::FieldNeed::Optional
+                                                : design::FieldNeed::Required);
+    databaseHelp_->setText(form.databaseSelectsServer
+                               ? tr("If empty, the connection opens no database.")
+                               : tr("If empty, the database name is the username."));
     updateTrustControls();
     if (auto* choice = driverChoices_->button(driver_->currentIndex()))
         choice->setChecked(true);
-    database_->setPlaceholderText(form.databaseSelectsServer
-                                      ? tr("Optional — connect to the server")
-                                      : tr("Optional — defaults to the username"));
-    sshEnabled_->setVisible(form.server);
-    qobject_cast<QFormLayout*>(postgresFields_->layout())
-        ->setRowVisible(tlsSecretField_, form.server && current_.tls != "disable" &&
-                                             !current_.tlsClientIdentity.isEmpty());
-    sshFields_->setVisible(form.server && sshEnabled_->isChecked());
-
-    sqliteFields_->setVisible(!form.server);
-    postgresFields_->setVisible(form.server);
+    updateRowVisibility();
 }
 
 void ProfileDialog::saveDraft(const SavedProfile& profile) {

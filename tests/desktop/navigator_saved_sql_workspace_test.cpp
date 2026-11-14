@@ -5,6 +5,7 @@
 #include "design_system/toast_region/toast_region.h"
 #include "navigator_sql_workspace_test.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include <QAction>
 #include <QDir>
 #include <QFile>
 #include <QLineEdit>
@@ -49,17 +50,17 @@ void NavigatorSqlWorkspaceTest::savedPanelFiltersFolderTreeAndReusesEditedTab() 
     auto* nestedItem = matches.at(0)->parent() ? matches.at(0) : matches.at(1);
     QCOMPARE(nestedItem->parent()->text(0), QString("nested"));
     search->setText("NESTED");
-    QVERIFY(selected->isHidden());
+    QTRY_VERIFY(selected->isHidden());
     QVERIFY(!nestedItem->isHidden());
     QVERIFY(!nestedItem->parent()->isHidden());
     nestedItem->parent()->setExpanded(false);
     search->setText(name.toUpper());
-    QVERIFY(nestedItem->parent()->isExpanded());
+    QTRY_VERIFY(nestedItem->parent()->isExpanded());
     QVERIFY(!nestedItem->isHidden());
     QVERIFY(!nestedItem->parent()->isHidden());
     QVERIFY(!selected->isHidden());
     search->setText("no-matching-file");
-    QVERIFY(nestedItem->parent()->isHidden());
+    QTRY_VERIFY(nestedItem->parent()->isHidden());
     search->clear();
     QVERIFY(!selected->isHidden());
     auto* tabs = window.findChild<QTabWidget*>("editorTabs");
@@ -196,6 +197,28 @@ void NavigatorSqlWorkspaceTest::savedPanelRejectsFileReplacedBySymlink() {
     QCOMPARE(tabs->count(), before);
     QVERIFY(QFile::remove(path));
 #endif
+}
+
+void NavigatorSqlWorkspaceTest::editorFileErrorsUseTheSharedErrorFeedback() {
+    choscordb::MainWindow window;
+    window.show();
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* editor = window.findChild<choscordb::SqlEditor*>();
+    QVERIFY(editor);
+    emit editor->fileSaved("/tmp/report.sql", "The disk is full.");
+    choscordb::ConfirmationDialog* error = nullptr;
+    QTRY_VERIFY((error = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog")) &&
+                error->isVisible());
+    QVERIFY(error->text().contains("The disk is full."));
+    QVERIFY(error->text().contains("Could not save"));
+    error->reject();
+    QTRY_VERIFY(!window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog"));
+    emit editor->fileOpened("/tmp/report.sql", "The file is missing.");
+    QTRY_VERIFY((error = window.findChild<choscordb::ConfirmationDialog*>("errorFeedbackDialog")) &&
+                error->isVisible());
+    QVERIFY(error->text().contains("The file is missing."));
+    QVERIFY(error->text().contains("Could not open"));
+    error->reject();
 }
 
 void NavigatorSqlWorkspaceTest::savedPanelUsesTheFolderBesideTheApplicationDatabase() {

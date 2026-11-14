@@ -1,23 +1,23 @@
-#include "design_system/field/field.h"
+#include "design_system/dialog_sections/dialog_sections.h"
 #include "widgets/profile_dialog/profile_dialog.h"
-#include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
-#include <QGridLayout>
 #include <QLabel>
 #include <QLineEdit>
 namespace choscordb {
-void ProfileDialog::createPrivateKeyControls(QFormLayout* form, QGridLayout* grid) {
+void ProfileDialog::createPrivateKeyControls() {
     sshIdentitySource_ = new QComboBox(form_);
     sshIdentitySource_->setObjectName("profileSshIdentitySource");
     sshIdentitySource_->addItem(tr("Key file"), "file");
     sshIdentitySource_->addItem(tr("Paste private key"), "inline");
-    sshIdentitySourceLabel_ = new QLabel(tr("Private key source"), sshFields_);
-    sshIdentitySourceLabel_->setBuddy(sshIdentitySource_);
-    grid->addWidget(sshIdentitySourceLabel_, 4, 0, 1, 2);
-    grid->addWidget(sshIdentitySource_, 5, 0, 1, 2);
+    sections_->addFormRow(formLayout_, tr("Private key source"), sshIdentitySource_);
+    sections_->addFormRow(formLayout_, tr("Private key file"), validated(sshIdentityFile_));
     sshPrivateKey_ = new SshPrivateKeyEditor("profileSshPrivateKey", form_);
-    form->addRow(tr("Private key contents"), sshPrivateKey_);
+    sections_->addFormRow(formLayout_, tr("Private key contents"), sshPrivateKey_);
+    sshPrivateKeyHelp_ =
+        createDescription(tr("Paste a complete private key. Its contents stay hidden."), form_);
+    sshPrivateKeyHelp_->setObjectName("profileSshPrivateKeyHelp");
+    formLayout_->addRow(QString(), sshPrivateKeyHelp_);
     QWidget::setTabOrder(sshAuthentication_, sshIdentitySource_);
     QWidget::setTabOrder(sshIdentitySource_, sshIdentityFile_);
     QWidget::setTabOrder(sshIdentityFile_, sshSecret_);
@@ -44,12 +44,6 @@ void ProfileDialog::updatePrivateKeyControls() {
     sshIdentitySource_->setEnabled(key);
     sshIdentityFile_->setEnabled(key && !inlineKey);
     sshPrivateKey_->setEnabled(inlineKey);
-    sshIdentitySourceLabel_->setVisible(key);
-    sshIdentitySource_->setVisible(key);
-    sshIdentityFileLabel_->setVisible(key && !inlineKey);
-    validationFor(sshIdentityFile_)->setVisible(key && !inlineKey);
-    if (auto* form = qobject_cast<QFormLayout*>(sshPrivateKey_->parentWidget()->layout())) {
-        form->setRowVisible(sshPrivateKey_, inlineKey);
-    }
+    updateRowVisibility();
 }
 }

@@ -47,7 +47,7 @@ void PreviewTest::jsonTextViewSpecimenColorsSyntaxInBothThemes() {
             for (const auto& range : target.layout()->formats())
                 if (position >= range.start && position < range.start + range.length)
                     return range.format.foreground().color();
-            return colors.fg;
+            return colors.textDefault;
         };
         const auto key = inkAt(block, 3);
         const auto punctuation = inkAt(block, 7);
@@ -55,19 +55,20 @@ void PreviewTest::jsonTextViewSpecimenColorsSyntaxInBothThemes() {
         QVERIFY(key != stringValue);
         QVERIFY(key != punctuation);
         QVERIFY(stringValue != punctuation);
-        QVERIFY(contrastRatio(key, colors.surface) >= 4.5);
-        QVERIFY(contrastRatio(stringValue, colors.surface) >= 4.5);
-        QVERIFY(contrastRatio(punctuation, colors.surface) >= 4.5);
+        QVERIFY(contrastRatio(key, colors.base) >= 4.5);
+        QVERIFY(contrastRatio(stringValue, colors.base) >= 4.5);
+        QVERIFY(contrastRatio(punctuation, colors.base) >= 4.5);
         const auto numberBlock = block.next();
         const auto literalBlock = numberBlock.next();
         QVERIFY(numberBlock.isValid() && literalBlock.isValid());
         const auto number = inkAt(numberBlock, 11);
         const auto literal = inkAt(literalBlock, 12);
-        QVERIFY(number != key && number != stringValue && number != punctuation);
-        QVERIFY(literal != key && literal != stringValue && literal != number &&
-                literal != punctuation);
-        QVERIFY(contrastRatio(number, colors.surface) >= 4.5);
-        QVERIFY(contrastRatio(literal, colors.surface) >= 4.5);
+        QCOMPARE(key, colors.codeKey);
+        QCOMPARE(number, colors.codeNumber);
+        QCOMPARE(literal, colors.codeNumber);
+        QVERIFY(number != stringValue && number != punctuation);
+        QVERIFY(contrastRatio(number, colors.base) >= 4.5);
+        QVERIFY(contrastRatio(literal, colors.base) >= 4.5);
         const auto nullBlock = literalBlock.next();
         QVERIFY(nullBlock.isValid());
         QCOMPARE(inkAt(nullBlock, 13), literal);

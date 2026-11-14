@@ -11,6 +11,7 @@
 #include "design_system/right_sheet/right_sheet.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/table/table_style.h"
+#include "design_system/text/text.h"
 #include "widgets/export_dialog/export_dialog.h"
 #include "widgets/profile_dialog/profile_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
@@ -36,6 +37,15 @@
 #include <QVBoxLayout>
 #include <QVariantMap>
 namespace choscordb {
+QLabel* createEditReasonLabel(const char* name, QWidget* parent) {
+    auto* label = new design::Text({}, parent);
+    label->setTextStyle(design::TextStyle::Callout);
+    label->setProperty("designRole", "description");
+    label->setObjectName(name);
+    label->setAccessibleName(QueryWorkspace::tr("Edit status"));
+    label->hide();
+    return label;
+}
 using query_workspace_detail::nextEditRequestToken;
 using query_workspace_detail::text;
 QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
@@ -47,7 +57,6 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     if (auto* delegate = qobject_cast<design::ResultTableDelegate*>(widgets_.grid->itemDelegate()))
         connect(delegate, &design::ResultTableDelegate::linkActivated, this,
                 &QueryWorkspace::activateForeignKey);
-    widgets_.grid->horizontalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     widgets_.grid->verticalHeader()->setContextMenuPolicy(Qt::PreventContextMenu);
     connect(widgets_.grid->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this] {
         ++selectionGeneration_;
@@ -56,15 +65,12 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     });
     setupGridCommands();
     setupResultViewControls();
-    if (!widgets_.objectReadOnly)
-        widgets_.grid->setToolTip(
-            tr("Query results are read only because the source table and key cannot be verified."));
-    querySettings_ = new QuerySettingsController(adapter_, widgets_.dialogParent, this);
+    querySettings_ = new QuerySettingsController(adapter_, this);
     setupCellEditor();
     connect(querySettings_, &QuerySettingsController::readyChanged, this,
             [this](bool) { updateActions(); });
     connect(querySettings_, &QuerySettingsController::failed, this,
-            [this](const QString& error) { message(tr("Query settings: %1").arg(error)); });
+            [this](const QString& error) { message(tr("Query preferences: %1").arg(error)); });
     connect(adapter_, &EngineAdapter::historyWriteFailed, this,
             [this](quint64, const QString& error) { message(tr("History: %1").arg(error)); });
     if (widgets_.exportResult)
@@ -125,6 +131,8 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     };
     connect(widgets_.grid, &QTableView::doubleClicked, this, openDetail);
     connect(widgets_.grid, &QTableView::activated, this, openDetail);
+    connect(model_, &ResultTableModel::pendingEditsChanged, this,
+            &QueryWorkspace::pendingEditsChanged);
     connect(model_, &ResultTableModel::pendingEditsChanged, this, [this](bool) {
         ++editPolicyGeneration_;
         if (!editabilityPlanning_) {
@@ -192,7 +200,8 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         commandError_ = error;
         if (fetching_) {
             busy_ = fetching_ = false;
-            setExecutionState(QueryState::Failed, tr("Failed to load result page: %1").arg(error));
+            setExecutionState(QueryState::Failed,
+                              tr("Could not load the result page: %1").arg(error));
         }
         message(error);
         updateActions();
@@ -323,10 +332,10 @@ bool QueryWorkspace::resolvePendingEdits() {
     ConfirmationDialog box(QMessageBox::Warning, tr("Pending grid changes"),
                            tr("Apply or discard the staged grid changes before continuing."),
                            QMessageBox::NoButton, widgets_.dialogParent);
-    auto* apply = box.addButton(tr("Apply…"), QMessageBox::AcceptRole);
-    auto* discard = box.addButton(tr("Discard"), QMessageBox::DestructiveRole);
-    auto* cancel = box.addButton(QMessageBox::Cancel);
-    box.setDefaultButton(cancel);
+    auto* discard =
+        box.addActionButton(tr("Discard changes"), ConfirmationDialog::Consequence::Destructive);
+    auto* apply = box.addActionButton(tr("Apply changes…"), ConfirmationDialog::Consequence::Safe);
+    box.setDefaultButton(QMessageBox::Cancel);
     const QPointer<QueryWorkspace> self(this);
     box.exec();
     if (!self)
@@ -442,13 +451,12 @@ void QueryWorkspace::disconnectConnection(quint64 connection) {
         tr("Disconnect %1? Any uncommitted transaction will be rolled back.").arg(label);
     if (active)
         notice += tr(" Active query, fetch, or export work will be cancelled.");
-    ConfirmationDialog box(QMessageBox::Warning, tr("Disconnect database session"), notice,
-                           QMessageBox::NoButton, widgets_.dialogParent);
+    ConfirmationDialog box(QMessageBox::Warning, tr("Disconnect from the database"), notice,
+                           QMessageBox::Cancel, widgets_.dialogParent);
     box.setTextFormat(Qt::PlainText);
-    auto* accept = box.addButton(transaction ? tr("Roll back and disconnect") : tr("Disconnect"),
-                                 QMessageBox::DestructiveRole);
-    auto* cancel = box.addButton(QMessageBox::Cancel);
-    box.setDefaultButton(cancel);
+    auto* accept =
+        box.addActionButton(transaction ? tr("Roll back and disconnect") : tr("Disconnect"),
+                            ConfirmationDialog::Consequence::Destructive);
     confirmingDisconnects_.insert(connection);
     box.exec();
     confirmingDisconnects_.remove(connection);
@@ -511,10 +519,6 @@ void QueryWorkspace::manageSavedProfile(const QString& profileId, const QString&
     showProfiles(profileId);
     if (profiles_)
         profiles_->manageProfile(profileId, action);
-}
-void QueryWorkspace::showQuerySettings() {
-    if (!stopping_)
-        querySettings_->open();
 }
 void QueryWorkspace::trackQueryPreferencesSave(quint64 token) {
     querySettings_->trackSave(token);
@@ -622,8 +626,10 @@ void QueryWorkspace::invalidateResult(bool connectionLost) {
     clearViewState();
     if (connectionLost)
         applyExecutionEvent(QueryEvent::Disconnect,
-                            tr("Connection unavailable. %1")
-                                .arg(EngineAdapter::recoveryHint(RecoveryHint::ReconnectManually)));
+                            QString(EngineAdapter::panelPresentation(PanelKind::ObjectDetails,
+                                                                     PanelState::Disconnected)
+                                        .message)
+                                .replace(QLatin1Char('\n'), QLatin1Char(' ')));
     else
         applyExecutionEvent(QueryEvent::Reset, tr("Open Data to read an object."));
     updateActions();
@@ -678,10 +684,10 @@ QString QueryWorkspace::documentTarget(const SqlEditor* editor) const {
     if (const auto live = target ? liveConnectionLabel(*target) : std::nullopt)
         return *live;
     if (editor && !editor->targetLabel().isEmpty())
-        return tr("Disconnected — %1").arg(editor->targetLabel());
+        return tr("Disconnected · %1").arg(editor->targetLabel());
     if (editor && !editor->property("profileId").toString().isEmpty())
-        return tr("Disconnected profile — %1").arg(editor->property("profileId").toString());
-    return tr("Disconnected — choose a SQL target");
+        return tr("Disconnected · %1").arg(editor->property("profileId").toString());
+    return tr("Disconnected. Choose a SQL target.");
 }
 std::optional<quint64> QueryWorkspace::selectedConnection() const {
     if (widgets_.objectReadOnly)
@@ -689,6 +695,11 @@ std::optional<quint64> QueryWorkspace::selectedConnection() const {
     const auto* editor = widgets_.currentEditor();
     return editor ? editor->connectionTarget() : std::nullopt;
 }
+QString QueryWorkspace::readOnlyReason() const {
+    return editReason_.isEmpty() ? EngineAdapter::gridEditNote(GridEditNote::ReadOnly)
+                                 : editReason_;
+}
+
 void QueryWorkspace::updateActions() {
     observeEditTransaction();
     if (invalidatePending_ && !workInFlight()) {
@@ -717,7 +728,7 @@ void QueryWorkspace::updateActions() {
                                 queryAvailable() && !cancelling);
     widgets_.cancel->setText(cancelling
                                  ? EngineAdapter::queryPresentation(QueryState::Cancelling).message
-                                 : tr("Cancel"));
+                                 : tr("Cancel query"));
     if (widgets_.exportResult)
         widgets_.exportResult->setEnabled(displayedResult && query_ && currentPage_ && !inFlight &&
                                           queryAvailable());
@@ -729,21 +740,23 @@ void QueryWorkspace::updateActions() {
     if (widgets_.previousPage)
         widgets_.previousPage->setEnabled(displayedResult && query_ && currentPage_ &&
                                           *currentPage_ > 0 && !inFlight && queryAvailable());
+    if (widgets_.editReason) {
+        widgets_.editReason->setText(readOnlyReason());
+        widgets_.editReason->setVisible(displayedResult && query_ && model_->columnCount() > 0 &&
+                                        !model_->canInsert());
+    }
     if (widgets_.addRow)
         widgets_.addRow->setEnabled(model_->canInsert() && !inFlight && !editabilityPlanning_);
     if (widgets_.addRow)
-        widgets_.addRow->setToolTip(
-            model_->canInsert()
-                ? widgets_.addRow->accessibleName()
-                : (editReason_.isEmpty() ? tr("This result is read only.") : editReason_));
+        widgets_.addRow->setToolTip(model_->canInsert() ? widgets_.addRow->accessibleName()
+                                                        : readOnlyReason());
     const bool canRemoveRows = model_->canDelete() || model_->hasInsertedRows();
     if (widgets_.deleteRows)
         widgets_.deleteRows->setEnabled(canRemoveRows && model_->rowCount() && !inFlight &&
                                         !editabilityPlanning_);
     if (widgets_.deleteRows)
-        widgets_.deleteRows->setToolTip(canRemoveRows || editReason_.isEmpty()
-                                            ? widgets_.deleteRows->accessibleName()
-                                            : editReason_);
+        widgets_.deleteRows->setToolTip(canRemoveRows ? widgets_.deleteRows->accessibleName()
+                                                      : readOnlyReason());
     if (widgets_.restoreRows)
         widgets_.restoreRows->setEnabled(!inFlight && !editabilityPlanning_ &&
                                          model_->hasDeletedRows());
@@ -817,12 +830,10 @@ void QueryWorkspace::execute(RunScope scope) {
         return;
     }
     if (range.confirmation) {
-        ConfirmationDialog box(QMessageBox::Warning, tr("Confirm SQL execution"),
-                               tr("This statement may change or delete data. Execute it?"),
-                               QMessageBox::Yes | QMessageBox::Cancel, widgets_.dialogParent);
-        box.setTextFormat(Qt::PlainText);
-        box.setDefaultButton(QMessageBox::Cancel);
-        if (box.exec() != QMessageBox::Yes)
+        if (!ConfirmationDialog::confirm(widgets_.dialogParent, tr("Run statement?"),
+                                         tr("This statement can change or delete data."),
+                                         tr("Run statement"),
+                                         ConfirmationDialog::Consequence::Destructive))
             return;
     }
     if (!connectionAvailable(*connection) || workInFlight() || widgets_.currentEditor() != editor)
@@ -852,7 +863,7 @@ void QueryWorkspace::execute(RunScope scope) {
     if (title.isEmpty())
         title = tr("Untitled query");
     resultEditor_ = editor;
-    resultOrigin_ = tr("%1 — %2").arg(title, editor->targetLabel());
+    resultOrigin_ = tr("%1 · %2").arg(title, editor->targetLabel());
     widgets_.messages->clear();
     message(tr("SQL result: %1").arg(resultOrigin_));
     clearResult();
@@ -864,7 +875,8 @@ void QueryWorkspace::execute(RunScope scope) {
     executionFinished_ = !query_.has_value();
     cancellationPending_ = false;
     applyExecutionEvent(busy_ ? QueryEvent::Submit : QueryEvent::Fail,
-                        busy_ ? QString{} : tr("Submission failed: %1").arg(commandError_));
+                        busy_ ? QString{}
+                              : tr("Could not submit the query: %1").arg(commandError_));
     if (!busy_ && !commandError_.isEmpty())
         message(commandError_);
     updateActions();

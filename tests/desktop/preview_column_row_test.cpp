@@ -2,6 +2,7 @@
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/theme.h"
 #include "design_system/tree/navigation_tree_view.h"
+#include "ink_checks.h"
 #include "preview_test.h"
 #include "tools/preview/preview_window.h"
 #include <QLabel>
@@ -9,6 +10,13 @@
 #include <QStyleOptionViewItem>
 #include <QTreeView>
 #include <QtTest>
+
+namespace {
+QColor sidebarHoverFor(const QWidget& widget) {
+    const auto colors = choscordb::design::resolvedThemeForWidget(widget).colors;
+    return choscordb::design::composite(colors.tint, colors.elevated);
+}
+}
 
 void PreviewTest::columnRowSpecimenUsesRealDelegateInBothThemes() {
     using namespace choscordb::design;
@@ -123,17 +131,18 @@ void PreviewTest::statusRowSpecimenShowsTrailingIconAndRedFailedRow() {
         const auto pixel = [&](int x, int y) {
             return image.pixelColor(qRound(x * scale), qRound(y * scale));
         };
-        const auto near = [](const QColor& a, const QColor& b) {
+        const auto distance = [](const QColor& a, const QColor& b) {
             return qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) +
-                       qAbs(a.blue() - b.blue()) <
-                   120;
+                   qAbs(a.blue() - b.blue());
         };
+
         const auto iconInk = [&](const QRect& row, const QColor& color) {
             const int size = dimension(Dimension::IconSmall);
             int count = 0;
             for (int y = row.center().y() - size / 2; y <= row.center().y() + size / 2; ++y)
                 for (int x = row.right() - size - spacing(Spacing::Two); x <= row.right(); ++x)
-                    count += near(pixel(x, y), color);
+                    count += choscordb::test::blendedInk(pixel(x, y), color,
+                                                         pixel(row.center().x(), row.top() + 2));
             return count;
         };
         QStringList names;
@@ -144,17 +153,23 @@ void PreviewTest::statusRowSpecimenShowsTrailingIconAndRedFailedRow() {
         const auto loading = tree->visualRect(tree->model()->index(1, 0));
         const auto unavailable = tree->visualRect(tree->model()->index(2, 0));
         const auto plain = tree->visualRect(tree->model()->index(3, 0));
-        QCOMPARE(pixel(failed.center().x(), failed.top() + 2), colors.dangerSurface);
-        QVERIFY(pixel(loading.center().x(), loading.top() + 2) != colors.dangerSurface);
-        QVERIFY(iconInk(failed, colors.danger) > 0);
-        QCOMPARE(iconInk(loading, colors.danger), 0);
-        QVERIFY(iconInk(loading, colors.fgMuted) > 0);
-        QVERIFY(iconInk(unavailable, colors.fgMuted) > 0);
-        QCOMPARE(iconInk(plain, colors.fgMuted), 0);
+        const auto failedFill = pixel(failed.center().x(), failed.top() + 2);
+        const auto expectedFill =
+            composite(colors.dangerTint, pixel(plain.center().x(), plain.top() + 2));
+        QVERIFY2(qAbs(failedFill.red() - expectedFill.red()) <= 1 &&
+                     qAbs(failedFill.green() - expectedFill.green()) <= 1 &&
+                     qAbs(failedFill.blue() - expectedFill.blue()) <= 1,
+                 qPrintable(failedFill.name()));
+        QVERIFY(pixel(loading.center().x(), loading.top() + 2) != colors.dangerTint);
+        QVERIFY(iconInk(failed, colors.textDanger) > 0);
+        QVERIFY(iconInk(loading, colors.textDanger) < iconInk(loading, colors.textSubtle));
+        QVERIFY(iconInk(loading, colors.textSubtle) > 0);
+        QVERIFY(iconInk(unavailable, colors.textSubtle) > 0);
+        QCOMPARE(iconInk(plain, colors.textSubtle), 0);
         int redName = 0;
         for (int y = failed.top(); y <= failed.bottom(); ++y)
             for (int x = failed.left(); x < failed.center().x(); ++x)
-                redName += near(pixel(x, y), colors.danger);
+                redName += distance(pixel(x, y), colors.textDanger) < 120;
         QVERIFY(redName > 0);
     }
 }
@@ -194,8 +209,8 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         const auto treeImage = tree->viewport()->grab().toImage();
         QVERIFY(parentRow.left() > 6);
         QCOMPARE(treeImage.pixelColor(parentRow.left() - 1, parentRow.bottom() - 4),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.sidebarSelection);
-        const auto branchInk = choscordb::design::resolvedThemeForWidget(*tree).colors.fgMuted;
+                 choscordb::design::resolvedThemeForWidget(*tree).colors.tint);
+        const auto branchInk = choscordb::design::resolvedThemeForWidget(*tree).colors.textSubtle;
         bool hasMutedBranch = false;
         for (int y = parentRow.top(); y <= parentRow.bottom(); ++y)
             for (int x = 0; x < parentRow.left(); ++x)
@@ -209,14 +224,13 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         QTest::mouseMove(tree->viewport(), row.center());
         QCoreApplication::processEvents();
         QCOMPARE(tree->viewport()->grab().toImage().pixelColor(row.right() - 8, row.center().y()),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.sidebarHover);
+                 sidebarHoverFor(*tree));
         const auto hoveredImage = tree->viewport()->grab().toImage();
         QVERIFY(hoveredImage.pixelColor(tree->viewport()->width() / 2, row.top()) !=
-                choscordb::design::resolvedThemeForWidget(*tree).colors.sidebarHover);
-        QCOMPARE(hoveredImage.pixelColor(row.right() - 8, row.top() + 1),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.sidebarHover);
-        QCOMPARE(hoveredImage.pixelColor(row.right() - 8, row.bottom() - 1),
-                 choscordb::design::resolvedThemeForWidget(*tree).colors.sidebarHover);
+                sidebarHoverFor(*tree));
+        QCOMPARE(hoveredImage.pixelColor(row.right() - 12, row.top() + 1), sidebarHoverFor(*tree));
+        QCOMPARE(hoveredImage.pixelColor(row.right() - 12, row.bottom() - 1),
+                 sidebarHoverFor(*tree));
         auto* sidebarList = host->findChild<QListWidget*>("previewSidebarList");
         QVERIFY(sidebarList && sidebarList->isVisible());
         QCOMPARE(sidebarList->property("designSurface").toString(), QString("sidebar"));
@@ -226,7 +240,7 @@ void PreviewTest::navigationTreeSpecimenUsesRealTreeInBothThemes() {
         QCoreApplication::processEvents();
         QCOMPARE(sidebarList->viewport()->grab().toImage().pixelColor(listRow.right() - 8,
                                                                       listRow.center().y()),
-                 choscordb::design::resolvedThemeForWidget(*sidebarList).colors.sidebarHover);
+                 sidebarHoverFor(*sidebarList));
     }
     QVERIFY(window.selectSpecimen("navigation-profile-row"));
     for (const auto* name : {"previewLight", "previewDark"}) {
@@ -256,31 +270,35 @@ void PreviewTest::driverBadgeAndConnectionTileUseNeutralTokensInBothThemes() {
         auto* badge = host->findChild<QLabel*>("previewDriverBadge");
         QVERIFY(logo && badge);
         QVERIFY(!logo->pixmap().isNull());
-        QCOMPARE(badge->property("variant").toString(), QString("driver"));
+        QCOMPARE(badge->property("variant").toString(), QString("outline"));
         const auto image = badge->grab().toImage();
         const auto scale = image.devicePixelRatio();
         QCOMPARE(image.pixelColor(qRound(badge->width() / 2 * scale), qRound(2 * scale)),
-                 colors.surfaceRaised);
+                 colors.base);
     }
     QVERIFY(window.selectSpecimen("navigation-profile-row"));
     QCoreApplication::processEvents();
     for (const auto* name : {"previewLight", "previewDark"}) {
         auto* host = window.findChild<QWidget*>(name);
         QVERIFY(host);
-        const auto colors = resolvedThemeForWidget(*host).colors;
         auto* list = host->findChild<QListWidget*>("previewNavigationProfiles");
         QVERIFY(list);
         for (int row = 0; row < list->count(); ++row) {
             const auto rect = list->visualItemRect(list->item(row));
             const auto image = list->viewport()->grab(rect).toImage();
             const auto scale = image.devicePixelRatio();
-            QCOMPARE(image.pixelColor(qRound(14 * scale), qRound(14 * scale)),
-                     colors.surfaceRaised);
+            const int middle = rect.height() / 2;
+            const auto background = image.pixelColor(qRound((spacing(Spacing::One) + 2) * scale),
+                                                     qRound(middle * scale));
+            const int iconLeft = spacing(Spacing::One) + spacing(Spacing::Three);
+            const int iconSize = dimension(Dimension::Icon);
+            QCOMPARE(image.pixelColor(qRound((iconLeft - 2) * scale), qRound(middle * scale)),
+                     background);
             int logoPixels = 0;
-            for (int y = 8; y < 20; ++y)
-                for (int x = 15; x < 27; ++x)
-                    logoPixels += image.pixelColor(qRound(x * scale), qRound(y * scale)) !=
-                                  colors.surfaceRaised;
+            for (int y = middle - iconSize / 2 + 1; y < middle + iconSize / 2; ++y)
+                for (int x = iconLeft; x < iconLeft + iconSize; ++x)
+                    logoPixels +=
+                        image.pixelColor(qRound(x * scale), qRound(y * scale)) != background;
             QVERIFY(logoPixels > 0);
         }
     }

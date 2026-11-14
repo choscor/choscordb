@@ -1,3 +1,4 @@
+#include "app/object_kind_icon.h"
 #include "widgets/editor_completion/editor_completion.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAbstractItemView>
@@ -28,7 +29,7 @@ class EditorCompletionLifecycleTest : public QObject {
   private slots:
     void keywordControlShowsSuggestionAndEscapeDoesNotEdit() {
         choscordb::SqlEditor editor;
-        choscordb::EditorCompletionController controller;
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
         editor.setText("sel");
         editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 3L);
         controller.setEditor(&editor);
@@ -79,7 +80,8 @@ class EditorCompletionLifecycleTest : public QObject {
         choscordb::SqlEditor other(&window);
         layout->addWidget(editor.get());
         layout->addWidget(&other);
-        auto controller = std::make_unique<choscordb::EditorCompletionController>();
+        auto controller =
+            std::make_unique<choscordb::EditorCompletionController>(choscordb::objectKindIcon);
         editor->setText("sel");
         editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 3L);
         controller->setEditor(editor.get());
@@ -142,7 +144,7 @@ class EditorCompletionLifecycleTest : public QObject {
     void emptyAndQuotedContextsSuppressAutomaticSuggestions() {
         QFETCH(QString, sql);
         choscordb::SqlEditor editor;
-        choscordb::EditorCompletionController controller;
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
         editor.setText(sql);
         editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, long(sql.toUtf8().size()));
         controller.setEditor(&editor);

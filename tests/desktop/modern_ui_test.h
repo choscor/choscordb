@@ -8,9 +8,10 @@ class ModernUiTest final : public QObject {
 
   private slots:
     void queryToolbarShowsOnlyRequestedControls();
-    void sidebarHeaderButtonHoverLiftsToSurface();
+    void sidebarHeaderButtonHoverUsesHoverOverlay();
     void applicationMenusExposeHelpAndAbout();
     void menuBarMenusShowNoIcons();
+    void eachWindowCommandHasOneLabel();
     void helpOpensDiagnosticsExportSummary();
     void diagnosticsClearRequiresConfirmation();
     void diagnosticsExportLetsUserChooseZipDestination();
@@ -70,6 +71,14 @@ class ModernUiTest final : public QObject {
     void activeWorkKeepsSqlVisibleAndRejectsPreferences();
     void sqlCompositionKeepsTabsFirstAndPinsResultActions();
     void workspaceHasNoOnboardingActionStrip();
+    void viewMenuHidesAndShowsTheSidebar();
+    void workspaceSplitterKeepsBothPanesVisible();
+    void viewMenuGroupsItsCommandsOnEveryPlatform();
+    void layoutRestoresTheSidebarTabAndVisibility();
+    void layoutRestoresResultColumnWidthsAfterARestart();
+    void sqlEditorContextMenuShowsQueryEditAndSearchCommands();
+    void sidebarListsHaveContextMenus();
+    void sidebarFiltersWaitForTypingAndHaveAClearButton();
     void liveAppearanceReachesAlreadyOpenConnectionPanelAndMenu();
     void minimumWorkspaceKeepsQueryControlsInsideTheWindow();
     void workspaceUsesApprovedButtonGeometryAndIcons();
@@ -78,7 +87,7 @@ class ModernUiTest final : public QObject {
     void navigatorContextActionsSupportKeyboardFocusAndMenus();
     void runControlsStayInToolbarAtBothWidths();
     void inactiveEditorCloseButtonAppearsOnHover();
-    void sidebarSectionTitlesUseUppercaseSectionLabel();
+    void sidebarSectionTitlesUseTheKumoGroupLabel();
     void addSqlTabButtonCreatesAndSelectsEditor();
     void paletteUpdatePreservesCompleteEditorState();
     void appearancePreviewsPersistAndRestoreAcrossRestart();

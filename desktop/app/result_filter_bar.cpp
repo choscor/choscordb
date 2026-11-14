@@ -40,20 +40,19 @@ ResultFilterBar::ResultFilterBar(QWidget* parent) : QWidget(parent) {
         result->setToolTip(label);
         result->setDesignIcon(icon);
         result->setButtonSize(design::ButtonSize::Icon);
-        result->setVariant(design::ButtonVariant::Ghost);
+        result->setVariant(design::ButtonVariant::Outline);
         return result;
     };
     sql_ = new QLineEdit(this);
     sql_->setObjectName("resultFilterSql");
     sql_->setAccessibleName(tr("SQL filter expression"));
-    sql_->setPlaceholderText(tr("SQL condition, e.g. id > 10 AND name LIKE 'A%'"));
-    sql_->setToolTip(tr("SQLite WHERE condition over loaded results; omit WHERE. "
-                        "Example: id IN (1,2) AND name LIKE 'A%'"));
+    sql_->setPlaceholderText(tr("id > 10 AND name LIKE 'A%'"));
+    sql_->setToolTip(tr("A SQLite condition for the loaded results. Do not type WHERE."));
     controls->addWidget(sql_, 1);
     apply_ = button("resultFilterApply", tr("Apply filters"), design::Icon::Search);
     clear_ = button("resultFilterClear", tr("Clear filters"), design::Icon::Close);
-    controls->addWidget(apply_, 0, Qt::AlignTop);
-    controls->addWidget(clear_, 0, Qt::AlignTop);
+    controls->addWidget(apply_);
+    controls->addWidget(clear_);
     root->addLayout(controls);
     error_ = new QLabel(this);
     error_->setObjectName("resultFilterError");

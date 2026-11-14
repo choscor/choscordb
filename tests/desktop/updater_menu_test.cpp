@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 #include "app/updater.h"
 #include "choscordb-bridge/src/lib.rs.h"
+#include "confirmation_checks.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/toast_region/toast_region.h"
 #include <QAction>
@@ -37,7 +38,7 @@ class UpdaterMenuTest : public QObject {
         QVERIFY(install);
         QVERIFY(!install->isEnabled());
         QVERIFY(automatic);
-        QCOMPARE(check->text(), QString("Check for Updates…"));
+        QCOMPARE(check->text(), QString("Check for updates…"));
         QCOMPARE(check->menuRole(), QAction::ApplicationSpecificRole);
         QVERIFY(check->isEnabled());
         QVERIFY(check->icon().isNull());
@@ -61,7 +62,7 @@ class UpdaterMenuTest : public QObject {
         QCOMPARE(legacy.value(QStringLiteral("updates/backgroundConsent")).toBool(), true);
         auto* updates = qobject_cast<QMenu*>(check->parent());
         QVERIFY(updates);
-        QCOMPARE(updates->title(), QString("Updates"));
+        QCOMPARE(updates->title(), QString("&Help"));
         qunsetenv("CHOSCORDB_TEST_UPDATE_DATA_DIR");
         qunsetenv("CHOSCORDB_TEST_UPDATE_LEGACY_INI");
     }
@@ -97,7 +98,7 @@ class UpdaterMenuTest : public QObject {
                 if (auto* dialog = window.findChild<choscordb::ConfirmationDialog*>()) {
                     if (dialog->windowTitle() == QStringLiteral("Install update"))
                         ++prompts;
-                    dialog->done(QMessageBox::No);
+                    dialog->reject();
                 }
             });
             install->trigger();
@@ -124,7 +125,7 @@ class UpdaterMenuTest : public QObject {
         connect(&dismiss, &QTimer::timeout, &window, [&] {
             if (auto* dialog = window.findChild<choscordb::ConfirmationDialog*>()) {
                 ++unexpectedDialogs;
-                dialog->done(QMessageBox::No);
+                dialog->reject();
             }
         });
         dismiss.start();
@@ -183,7 +184,7 @@ class UpdaterMenuTest : public QObject {
         connect(&dismiss, &QTimer::timeout, &window, [&] {
             if (auto* dialog = window.findChild<choscordb::ConfirmationDialog*>()) {
                 ++dialogs;
-                dialog->done(QMessageBox::No);
+                dialog->reject();
             }
         });
         dismiss.start();

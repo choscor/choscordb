@@ -10,6 +10,7 @@
 
 #include <QAction>
 #include <QLabel>
+#include <QLocale>
 #include <QSignalBlocker>
 #include <QTableView>
 #include <QVariantMap>
@@ -20,6 +21,13 @@ namespace choscordb {
 using query_workspace_detail::nextEditRequestToken;
 using query_workspace_detail::text;
 namespace {
+QString rowCountText(quint64 count) {
+    return count == 1 ? QueryWorkspace::tr("1 row") : QueryWorkspace::tr("%1 rows").arg(count);
+}
+QString affectedRowsText(quint64 count) {
+    return count == 1 ? QueryWorkspace::tr("1 row affected")
+                      : QueryWorkspace::tr("%1 rows affected").arg(count);
+}
 Cell cell(const CellDto& value) {
     switch (value.kind) {
     case CellKindDto::Null:
@@ -124,9 +132,11 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
              hasResultPage ? (completedAffectedRows_.isEmpty()
                                   ? QString{}
                                   : completedAffectedRows_ + QStringLiteral(" · ")) +
-                                 tr("%1 rows").arg(e.row_count)
+                                 rowCountText(e.row_count)
                            : completedAffectedRows_,
-             hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});
+             hasResultPage ? tr("%1 in memory")
+                                 .arg(QLocale().formattedDataSize(qint64(model_->residentBytes())))
+                           : QString{}});
         if (filterBar_)
             filterBar_->setBusy(false);
         if (initialFilterPending_) {
@@ -144,8 +154,9 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
                 hasMore_ = false;
                 hasMoreResults_ = false;
                 filterBar_->showValidationError(tr("Referenced row filter could not start."));
-                setExecutionState(QueryState::Failed,
-                                  tr("Referenced row filter failed: %1").arg(commandError_));
+                setExecutionState(
+                    QueryState::Failed,
+                    tr("Could not filter the referenced rows: %1").arg(commandError_));
             }
         } else if (deferredViewRequest_ && !model_->hasPendingEdits()) {
             deferredViewRequest_ = false;
@@ -214,8 +225,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 editDuplicable_.push_back(column.duplicable);
             }
         }
-        if (eventKind.startsWith("edit_query"))
-            widgets_.grid->setToolTip(editReason_);
         configureEditability();
         updateActions();
         return;
@@ -259,9 +268,9 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             quint64 total = 0;
             for (auto count : e.edit_affected_rows)
                 total += count;
-            message(tr("Applied %1 grid changes (%2 rows affected).")
+            message(tr("Applied %1 grid changes (%2).")
                         .arg(e.edit_affected_rows.size())
-                        .arg(total));
+                        .arg(affectedRowsText(total)));
             preserveViewOnRefresh_ = true;
             if (widgets_.objectReadOnly && queryConnection_)
                 openObjectData(*queryConnection_, objectId_, resultOrigin_,
@@ -313,7 +322,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         }
         const auto name = pendingConnections_.take(e.id);
         {
-            const auto label = name.isEmpty() ? tr("Database session %1").arg(e.id) : name;
+            const auto label = name.isEmpty() ? tr("Connection %1").arg(e.id) : name;
             liveConnections_.append({e.id, label});
             if (auto* editor = widgets_.currentEditor(); editor && !editor->hasAssignedTarget()) {
                 editor->setConnectionTarget(e.id, label);
@@ -457,11 +466,11 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             if (filterBar_) {
                 filterBar_->setBusy(false);
                 filterBar_->showValidationError(
-                    tr("Referenced row filter failed: %1").arg(failureDetail));
+                    tr("Could not filter the referenced rows: %1").arg(failureDetail));
             }
-            message(tr("Referenced row filter failed: %1").arg(failureDetail));
+            message(tr("Could not filter the referenced rows: %1").arg(failureDetail));
             setExecutionState(QueryState::Failed,
-                              tr("Referenced row filter failed: %1").arg(failureDetail));
+                              tr("Could not filter the referenced rows: %1").arg(failureDetail));
             updateActions();
             return;
         }
@@ -503,7 +512,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             editTargetToken_ = nextEditRequestToken();
             editQualifiedName_.clear();
             editReason_ = tr("Checking query edit eligibility…");
-            widgets_.grid->setToolTip(editReason_);
             QStringList names;
             for (const auto& column : columns_)
                 names << column.name;
@@ -608,23 +616,25 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         busy_ = false;
         for (const auto& warning : e.warnings)
             message(text(warning));
-        message(e.has_affected_rows ? tr("Completed in %1 ms; %2 rows affected.")
+        message(e.has_affected_rows ? tr("Completed in %1 ms; %2.")
                                           .arg(e.duration_ms)
-                                          .arg(e.affected_rows)
+                                          .arg(affectedRowsText(e.affected_rows))
                                     : tr("Completed in %1 ms.").arg(e.duration_ms));
         completedDurationMs_ = e.duration_ms;
         const bool hasResultPage = currentPage_ && !columns_.empty();
         completedAffectedRows_ =
-            e.has_affected_rows ? tr("%1 rows affected").arg(e.affected_rows) : QString{};
+            e.has_affected_rows ? affectedRowsText(e.affected_rows) : QString{};
         QString rowMetric = completedAffectedRows_;
         if (hasResultPage)
             rowMetric += (rowMetric.isEmpty() ? QString{} : QStringLiteral(" · ")) +
-                         tr("%1 rows").arg(model_->rowCount());
+                         rowCountText(quint64(model_->rowCount()));
         setExecutionState(
             EngineAdapter::queryResultState(hasResultPage, quint64(model_->rowCount())), {},
             {tr("Executed in %1 ms").arg(e.duration_ms),
              hasResultPage ? tr("Page %1").arg(*currentPage_ + 1) : QString{}, rowMetric,
-             hasResultPage ? tr("%1 KiB visible").arg(model_->residentBytes() / 1024) : QString{}});
+             hasResultPage ? tr("%1 in memory")
+                                 .arg(QLocale().formattedDataSize(qint64(model_->residentBytes())))
+                           : QString{}});
         updateActions();
     } else if (eventKind == "query_failed") {
         if (queryConnection_)
@@ -633,7 +643,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             preserveViewOnRefresh_ = false;
             viewRefreshQuery_.reset();
             clearViewState();
-            message(tr("The previous result view was invalidated because refresh failed."));
+            message(
+                tr("Could not refresh the result. The previous result view is no longer valid."));
         }
         cancellationPending_ = false;
         executionFinished_ = true;

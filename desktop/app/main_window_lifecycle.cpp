@@ -14,17 +14,21 @@
 #include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/history_row/history_row.h"
+#include "design_system/menu/menu.h"
 #include "design_system/text/text.h"
 #include "design_system/theme_manager.h"
 #include "design_system/toast_region/toast_region.h"
+#include "widgets/filter_field/filter_field.h"
 #include "widgets/history_dock/history_dock.h"
 #include "widgets/screen_state/screen_state.h"
 #include "widgets/search_panel/search_panel.h"
 #include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
+#include <QClipboard>
 #include <QDateTime>
 #include <QDockWidget>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -224,16 +228,19 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
             presentPanel(historyStatus, PanelKind::History,
                          {.loaded = true, .hasRows = anyMatch, .filtered = !query.blank()});
     };
-    connect(historySearch, &QLineEdit::textChanged, this, filterHistory);
+    connect(historySearch, &FilterField::filterChanged, this, filterHistory);
     auto refreshRecentHistory = [this, historyStatus, historyItems, historySection] {
         if (!workspace_)
             return;
         historyItems->clear();
         historyStatus->hide();
         sidebarHistoryToken_ = nextRequestToken();
-        if (!workspace_->adapter()->listHistory(50, 0, sidebarHistoryToken_))
+        if (!workspace_->adapter()->listHistory(EngineAdapter::recentHistoryRows(), 0,
+                                                sidebarHistoryToken_))
             return;
-        historySection->setBusy(true, tr("Loading recent history…"));
+        historySection->setBusy(
+            true,
+            EngineAdapter::panelPresentation(PanelKind::History, PanelState::Loading).message);
     };
     connect(sidebarPanels, &QStackedWidget::currentChanged, this,
             [refreshRecentHistory](int index) {
@@ -296,11 +303,32 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
     };
     connect(historyItems, &QListWidget::itemClicked, this, openHistoryItem);
     connect(historyItems, &QListWidget::itemActivated, this, openHistoryItem);
+    historyItems->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(historyItems, &QWidget::customContextMenuRequested, this,
+            [historyItems, openHistoryItem](const QPoint& point) {
+                auto* item = historyItems->itemAt(point);
+                if (!item)
+                    return;
+                const auto entryData = item->data(Qt::UserRole);
+                const auto sql = entryData.value<SavedHistoryEntry>().sql;
+                QMenu menu(historyItems);
+                menu.setObjectName("sidebarHistoryMenu");
+                connect(menu.addAction(tr("Open in a new query")), &QAction::triggered,
+                        historyItems, [item, openHistoryItem] { openHistoryItem(item); });
+                connect(menu.addAction(tr("Copy SQL")), &QAction::triggered, historyItems,
+                        [sql] { QGuiApplication::clipboard()->setText(sql); });
+                design::execContextMenu(menu, historyItems->viewport()->mapToGlobal(point));
+            });
     connect(preferences_, &EditorPreferencesController::historyPolicyConfirmed, history_,
             &HistoryDock::applyConfirmedPolicy);
     history_->hide();
-    appearance_ =
-        new AppearanceController(theme_, workspace_->adapter(), this, navigator, splitter);
+    appearance_ = new AppearanceController(theme_, workspace_->adapter(), this, navigator, splitter,
+                                           {findChild<QAction*>("toggleSidebar"),
+                                            sidebarPanels,
+                                            {findChild<QAbstractButton*>("sidebarConnections"),
+                                             findChild<QAbstractButton*>("sidebarSaved"),
+                                             findChild<QAbstractButton*>("sidebarHistory")}},
+                                           resultColumnWidths_);
     preferences_->setAppearanceController(appearance_);
     connect(resetLayout, &QAction::triggered, appearance_, &AppearanceController::resetLayout);
     connect(appearance_, &AppearanceController::warningChanged, this,
@@ -408,14 +436,15 @@ void MainWindow::connectLifecycle(const Ui& ui, const QString& storagePath) {
                         return;
                     }
                     ConfirmationDialog box(QMessageBox::Warning, tr("History could not be flushed"),
-                                           error, QMessageBox::NoButton, this);
+                                           error, QMessageBox::Cancel, this);
                     box.setTextFormat(Qt::PlainText);
-                    auto* retry =
-                        retryable ? box.addButton(tr("Retry"), QMessageBox::AcceptRole) : nullptr;
-                    auto* discard =
-                        box.addButton(tr("Close without history"), QMessageBox::DestructiveRole);
-                    auto* cancel = box.addButton(QMessageBox::Cancel);
-                    box.setDefaultButton(cancel);
+                    auto* discard = box.addActionButton(
+                        tr("Close without history"), ConfirmationDialog::Consequence::Destructive);
+                    auto* retry = retryable
+                                      ? box.addActionButton(tr("Retry"),
+                                                            ConfirmationDialog::Consequence::Safe)
+                                      : nullptr;
+                    box.setDefaultButton(QMessageBox::Cancel);
                     box.exec();
                     if (retry && box.clickedButton() == retry) {
                         setEnabled(false);

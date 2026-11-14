@@ -1,8 +1,12 @@
 #include "app/main_window.h"
+#include "app/object_data_workspace.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
+#include "confirmation_checks.h"
+#include "design_system/button/button.h"
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include "design_system/menu/embedded_popup.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/theme_manager.h"
 #include "models/result_table_model.h"
 #include "screen_state_checks.h"
@@ -18,9 +22,11 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTimer>
+#include <QToolBar>
 #include <QtTest>
 #include <memory>
 
@@ -56,6 +62,64 @@ class QuickFilterWorkspaceTest : public QObject {
                });
     }
   private slots:
+    void objectDataToolbarButtonsAreSmallLikeRefresh() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectDataWorkspace data(sql);
+        data.resize(800, 400);
+        data.show();
+        QCoreApplication::processEvents();
+        auto* toolbar = data.findChild<QWidget*>("objectDataToolbar");
+        QVERIFY(toolbar);
+        const auto buttons = toolbar->findChildren<choscordb::design::Button*>();
+        QVERIFY(!buttons.isEmpty());
+        for (auto* button : buttons) {
+            QCOMPARE(button->height(),
+                     choscordb::design::dimension(choscordb::design::Dimension::ControlSmall));
+            QCOMPARE(button->width(), button->height());
+        }
+    }
+    void queryToolbarButtonsAreSmall() {
+        choscordb::MainWindow window;
+        window.resize(1200, 800);
+        window.show();
+        QCoreApplication::processEvents();
+        auto* toolbar = window.findChild<QToolBar*>("queryToolbar");
+        QVERIFY(toolbar);
+        const int height = choscordb::design::dimension(choscordb::design::Dimension::ControlSmall);
+        const auto buttons = toolbar->findChildren<choscordb::design::Button*>();
+        QVERIFY(buttons.size() >= 8);
+        for (auto* button : buttons) {
+            if (button->isHidden())
+                continue;
+            QVERIFY2(
+                button->height() == height,
+                qPrintable(QString("%1 is %2").arg(button->objectName()).arg(button->height())));
+        }
+    }
+    void explorerDataButtonsMatchRefreshAndCenterOnTheTabs() {
+        choscordb::MainWindow window;
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        choscordb::ObjectExplorer explorer(sql->adapter());
+        explorer.resize(1000, 600);
+        auto* data = new choscordb::ObjectDataWorkspace(sql);
+        explorer.installDataWidget(data);
+        explorer.restoreObject(1, R"(["main","records"])", "records");
+        explorer.selectPane(5);
+        explorer.show();
+        QCoreApplication::processEvents();
+        auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
+        auto* toolbar = explorer.findChild<QWidget*>("objectDataToolbar");
+        auto* refresh = explorer.findChild<QPushButton*>("objectRefresh");
+        QVERIFY(tabs && toolbar && refresh);
+        for (auto* button : toolbar->findChildren<choscordb::design::Button*>()) {
+            if (button->isHidden())
+                continue;
+            QCOMPARE(button->height(), refresh->height());
+            QCOMPARE(button->mapTo(&explorer, button->rect().center()).y(),
+                     tabs->mapTo(&explorer, tabs->rect().center()).y());
+        }
+    }
     void init() {
         window_ = std::make_unique<choscordb::MainWindow>();
         window_->show();
@@ -101,7 +165,7 @@ class QuickFilterWorkspaceTest : public QObject {
                [this, selected](QMenu* menu) {
                    auto* quick = quickMenu(menu);
                    QVERIFY(quick);
-                   QCOMPARE(quick->title(), QString("Quick Filter"));
+                   QCOMPARE(quick->title(), QString("Quick filter"));
                    QStringList labels;
                    for (auto* action : quick->actions())
                        labels << action->text();
@@ -171,7 +235,10 @@ class QuickFilterWorkspaceTest : public QObject {
         auto* sqlGrid = window_->findChild<QTableView*>("queryResults");
         auto* saved = grid_;
         grid_ = sqlGrid;
-        menuAt(QPoint(10, 10), [](QMenu* menu) { QVERIFY(!quickMenu(menu)); });
+        menuAt(QPoint(10, 10), [](QMenu* menu) {
+            auto* quick = quickMenu(menu);
+            QVERIFY(quick && quick->menuAction()->isEnabled());
+        });
         grid_ = saved;
         choose(2, 1, 0);
         QTRY_COMPARE(filter_->text(), QString("\"name\" IS NULL"));
@@ -240,7 +307,7 @@ class QuickFilterWorkspaceTest : public QObject {
                 return;
             }
             for (auto* button : box->findChildren<QPushButton*>())
-                if (button->text() == "Discard") {
+                if (button->text() == "Discard changes") {
                     button->click();
                     return;
                 }
@@ -291,6 +358,16 @@ class QuickFilterWorkspaceTest : public QObject {
         QVERIFY(filter_->text().isEmpty());
         QVERIFY(!object_->findChild<QPushButton*>("resultFilterApply")->isEnabled());
     }
+    void filterBarButtonsMatchTheFilterField() {
+        auto* refresh = object_->findChild<choscordb::design::Button*>("objectRefresh");
+        QVERIFY(refresh);
+        for (const auto* name : {"resultFilterApply", "resultFilterClear"}) {
+            auto* button = object_->findChild<choscordb::design::Button*>(name);
+            QVERIFY2(button, name);
+            QCOMPARE(button->variant(), refresh->variant());
+            QCOMPARE(button->sizeHint().height(), filter_->sizeHint().height());
+        }
+    }
     void replacingResultBeforeActivationKeepsNewResultUnfiltered() {
         auto* workspace = object_->findChild<choscordb::QueryWorkspace*>();
         const auto connection = object_->property("objectConnection").toULongLong();
@@ -339,7 +416,7 @@ class QuickFilterWorkspaceTest : public QObject {
             delete workspace.data();
             removed = true;
             for (auto* button : box->findChildren<QPushButton*>())
-                if (button->text() == "Discard") {
+                if (button->text() == "Discard changes") {
                     button->click();
                     return;
                 }
@@ -366,7 +443,7 @@ class QuickFilterWorkspaceTest : public QObject {
                 box && box->windowTitle() == "Pending grid changes") {
                 pendingShown = true;
                 for (auto* button : box->findChildren<QPushButton*>())
-                    if (button->text() == "Apply…") {
+                    if (button->text() == "Apply changes…") {
                         button->click();
                         return;
                     }

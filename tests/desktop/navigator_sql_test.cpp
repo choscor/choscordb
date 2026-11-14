@@ -15,7 +15,7 @@ class NavigatorSqlTest : public QObject {
         using namespace choscordb;
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return QStringLiteral("mysql"); });
         auto* model = controller.model();
@@ -49,7 +49,7 @@ class NavigatorSqlTest : public QObject {
         using namespace choscordb;
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
         auto* model = controller.model();
@@ -96,7 +96,7 @@ class NavigatorSqlTest : public QObject {
         using namespace choscordb;
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64 id) {
             return id == 9 ? "postgres" : id == 10 ? "mysql" : "sqlite";
@@ -177,7 +177,7 @@ class NavigatorSqlTest : public QObject {
         using namespace choscordb;
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return "postgres"; });
         auto* model = controller.model();
@@ -218,7 +218,7 @@ class NavigatorSqlTest : public QObject {
         using namespace choscordb;
         EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         NavigatorController controller(&engine, &tree, &filter);
         controller.setDriverResolver([](quint64) { return "postgres"; });
         auto* model = controller.model();
@@ -258,7 +258,7 @@ class NavigatorSqlTest : public QObject {
     void metadataContinuationMenuRequestsTheNextBoundedPage() {
         choscordb::EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         choscordb::NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &choscordb::NavigatorModel::childrenRequested, &engine,
@@ -288,7 +288,7 @@ class NavigatorSqlTest : public QObject {
     void disconnectTargetsTheNodeAndRejectsAStaleMenu() {
         choscordb::EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         choscordb::NavigatorController controller(&engine, &tree, &filter);
         controller.addConnection(9, "First");
         controller.addConnection(10, "Second");
@@ -335,7 +335,7 @@ class NavigatorSqlTest : public QObject {
     void menuUsesLoadedColumnsAndRejectsRefreshAndRemoval() {
         choscordb::EngineAdapter engine;
         QTreeView tree;
-        QLineEdit filter;
+        choscordb::FilterField filter;
         choscordb::NavigatorController controller(&engine, &tree, &filter);
         auto* model = controller.model();
         QObject::disconnect(model, &choscordb::NavigatorModel::childrenRequested, &engine,
@@ -386,3 +386,4 @@ class NavigatorSqlTest : public QObject {
 };
 QTEST_MAIN(NavigatorSqlTest)
 #include "navigator_sql_test.moc"
+#include "widgets/filter_field/filter_field.h"

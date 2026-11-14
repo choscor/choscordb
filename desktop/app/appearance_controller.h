@@ -1,10 +1,16 @@
 #pragma once
+#include "app/result_column_widths.h"
 #include "bridge/engine_adapter.h"
+#include <QList>
 #include <QObject>
+#include <memory>
 #include <optional>
 
+class QAbstractButton;
+class QAction;
 class QDockWidget;
 class QMainWindow;
+class QStackedWidget;
 class QSplitter;
 class QTimer;
 
@@ -12,11 +18,17 @@ namespace choscordb {
 namespace design {
 class ThemeManager;
 }
+struct SidebarLayout {
+    QAction* visible;
+    QStackedWidget* panels;
+    QList<QAbstractButton*> tabs;
+};
 class AppearanceController final : public QObject {
     Q_OBJECT
   public:
     AppearanceController(design::ThemeManager* theme, EngineAdapter* adapter, QMainWindow* window,
-                         QDockWidget* navigator, QSplitter* workspace);
+                         QDockWidget* navigator, QSplitter* workspace, SidebarLayout sidebar,
+                         std::shared_ptr<ResultColumnWidths> columnWidths);
     [[nodiscard]] AppearanceLayout persisted() const { return persisted_; }
     [[nodiscard]] AppearanceLayout current() const;
     [[nodiscard]] bool isReady() const { return loaded_; }
@@ -32,6 +44,7 @@ class AppearanceController final : public QObject {
     void resetLayout();
     void retry();
     [[nodiscard]] bool flush();
+    void scheduleSave();
   signals:
     void warningChanged(const QString& warning);
     void saveFinished(bool success, const QString& message);
@@ -47,13 +60,14 @@ class AppearanceController final : public QObject {
   private:
     enum class Request { None, Load, Save, Reset, AutomaticSave };
     void apply(const AppearanceLayout& value, bool includeLayout);
-    void scheduleSave();
     void submitSave(Request request, std::optional<AppearanceLayout> layout = std::nullopt);
     design::ThemeManager* theme_;
     EngineAdapter* adapter_;
     QMainWindow* window_;
     QDockWidget* navigator_;
     QSplitter* workspace_;
+    SidebarLayout sidebar_;
+    std::shared_ptr<ResultColumnWidths> columnWidths_;
     QTimer* saveTimer_;
     AppearanceLayout persisted_;
     quint64 token_ = 0;

@@ -76,29 +76,19 @@ class SelectedConnectionProxy final : public QSortFilterProxyModel {
     TextFilter filter_;
 };
 }
-NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree, QLineEdit* filter)
+NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
+                                         FilterField* filter)
     : QObject(tree), model_(new NavigatorModel(this)), tree_(tree),
       proxy_(new SelectedConnectionProxy(this)), filter_(filter) {
     auto* proxy = proxy_;
     proxy->setSourceModel(model_);
     proxy->setRecursiveFilteringEnabled(true);
     tree->setModel(proxy);
-    filterTimer_ = new QTimer(this);
-    filterTimer_->setSingleShot(true);
-    connect(filterTimer_, &QTimer::timeout, this, [this] {
-        static_cast<SelectedConnectionProxy*>(proxy_)->setText(filter_->text());
-        advanceSearch(searchGeneration_);
+    connect(filter, &FilterField::filterChanged, this, [this](const QString& query) {
+        static_cast<SelectedConnectionProxy*>(proxy_)->setText(query);
+        restartSearch();
     });
-    connect(filter, &QLineEdit::textChanged, this, [this](const QString& query) {
-        if (query.trimmed().isEmpty()) {
-            filterTimer_->stop();
-            static_cast<SelectedConnectionProxy*>(proxy_)->setText(query);
-        } else {
-            filterTimer_->start(150);
-        }
-        restartSearch(false);
-    });
-    const auto restartLater = coalescedCall(this, 200, [this] {
+    const auto restartLater = coalescedCall(this, [this] {
         const auto generation = searchGeneration_;
         QTimer::singleShot(0, this, [this, generation] { advanceSearch(generation); });
     });
@@ -128,7 +118,7 @@ NavigatorController::NavigatorController(EngineAdapter* engine, QTreeView* tree,
     };
     connect(model_, &NavigatorModel::completionChanged, this,
             [this, rescanQuickObjects,
-             rescanLater = coalescedCall(this, 200, rescanQuickObjects)](quint64 connection) {
+             rescanLater = coalescedCall(this, rescanQuickObjects)](quint64 connection) {
                 if (connection != quickObjectConnection_)
                     return;
                 if (std::exchange(quickObjectAwaiting_, false))
@@ -491,7 +481,8 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     if (!menu || !sourceIndex.isValid() || sourceIndex.model() != model_)
         return;
     const QPersistentModelIndex index(sourceIndex);
-    if (index.data(NavigatorModel::RetryRole).toInt() == int(RowRetry::Refresh)) {
+    const bool retryShown = index.data(NavigatorModel::RetryRole).toInt() == int(RowRetry::Refresh);
+    if (retryShown) {
         connect(addRetryAction(menu), &QAction::triggered, this, [this, index] {
             if (index.isValid())
                 userLoad(index, &NavigatorModel::refresh);
@@ -550,11 +541,13 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                 });
         menu->addSeparator();
     }
-    auto* refresh = menu->addAction(tr("Refresh"));
-    connect(refresh, &QAction::triggered, this, [this, index] {
-        if (index.isValid())
-            userLoad(index, &NavigatorModel::refresh);
-    });
+    if (!retryShown) {
+        auto* refresh = menu->addAction(tr("Refresh"));
+        connect(refresh, &QAction::triggered, this, [this, index] {
+            if (index.isValid())
+                userLoad(index, &NavigatorModel::refresh);
+        });
+    }
     auto* copy = menu->addAction(tr("Copy qualified name"));
     copy->setEnabled(!index.data(NavigatorModel::QualifiedNameRole).toString().isEmpty());
     connect(copy, &QAction::triggered, this, [index] {
@@ -596,8 +589,9 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
         }
         return action;
     };
-    auto* drop = addObjectAction(tr("Drop"), "dropObject", false);
-    auto* rename = addObjectAction(tr("Rename"), "renameObject", true);
+    auto* rename = addObjectAction(tr("Rename…"), "renameObject", true);
+    menu->addSeparator();
+    auto* drop = addObjectAction(tr("Drop…"), "dropObject", false);
     const auto dispatch = [this, index, connection, objectId, shortName, objectKind, parentObjectId,
                            qualifiedName, subtype](const QString& action) {
         if (!index.isValid() || index.model() != model_ ||

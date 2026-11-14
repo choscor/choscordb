@@ -184,8 +184,7 @@ class PinningSidebarTest final : public QObject {
         QCOMPARE(empty->text(), expected);
         QCOMPARE(empty->property("state").toString(), QStringLiteral("error"));
         auto* toast = choscordb::windowToast(&window);
-        QVERIFY(toast && !toast->isHidden());
-        QVERIFY2(toast->text().contains(expected), qPrintable(toast->text()));
+        QVERIFY(!toast || !toast->text().contains(expected));
     }
 
     void pinnedSectionIsHiddenWithoutPins() {
@@ -298,7 +297,7 @@ class PinningSidebarTest final : public QObject {
                 QCOMPARE(section->geometry().top() - (connectionSection->geometry().bottom() + 1),
                          16);
                 QCOMPARE(pinGap, 2);
-                QCOMPARE(caption->height(), caption->sizeHint().height());
+                QTRY_COMPARE(caption->height(), caption->sizeHint().height());
                 QCOMPARE(objectSection->geometry().top() - (section->geometry().bottom() + 1), 16);
             }
         }
@@ -328,7 +327,7 @@ class PinningSidebarTest final : public QObject {
         scroll->setFixedWidth(200);
         scroll->setFixedHeight(220);
         QTRY_VERIFY(empty->isVisible() && empty->width() > 0 && empty->width() < 200);
-        QVERIFY(empty->text().contains("No database selected"));
+        QVERIFY(empty->text().contains("No connection selected"));
         QVERIFY(empty->height() >= empty->heightForWidth(empty->width()));
     }
 

@@ -8,7 +8,9 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
+#include "design_system/field/field.h"
 #include "design_system/metrics/metrics.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include <QDesktopServices>
 #include <QFileDialog>
@@ -16,6 +18,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTabWidget>
@@ -126,21 +129,21 @@ class ExportTask final : public QObject {
 
 QString summaryText(const DiagnosticSummary& summary) {
     QString text = QObject::tr(
-        "The standard ZIP covers the last 7 days of local diagnostics: typed errors, "
+        "The diagnostics bundle covers the last 7 days of local diagnostics: typed errors, "
         "lifecycle and activity counts, timing buckets, UI stalls, and memory trends. "
-        "Memory growth does not prove a leak. Review the ZIP before attaching it manually "
-        "to a support conversation.");
+        "Memory growth does not prove a leak. Review the diagnostics bundle before you attach it "
+        "to a support report.");
     const bool snapshotUnavailable =
         summary.unavailableCategories.contains(QStringLiteral("diagnostic_snapshot"));
     if (snapshotUnavailable)
         text += QObject::tr("\nThe size and contents are temporarily unavailable while "
                             "diagnostic storage is busy.");
     else
-        text += QObject::tr("\nEstimated bundle size: %1 KiB.")
-                    .arg((summary.estimatedBytes + 1023) / 1024);
+        text += QObject::tr("\nEstimated bundle size: %1.")
+                    .arg(QLocale().formattedDataSize(qint64(summary.estimatedBytes)));
     if (!summary.hasHistory && !snapshotUnavailable)
-        text += QObject::tr("\nNo diagnostic history is available yet; the ZIP will contain "
-                            "a manifest describing this.");
+        text += QObject::tr("\nNo diagnostic history is available yet. The diagnostics bundle "
+                            "contains only a manifest that tells this.");
     else if (!snapshotUnavailable) {
         text += QObject::tr("\nCoverage: %1 to %2 UTC.")
                     .arg(summary.fromUtc.toUTC().toString(Qt::ISODate),
@@ -179,7 +182,7 @@ void MainWindow::connectDiagnostics() {
                 diagnostics_->setOpenTabs(editors_->count());
         });
     auto* tabCount = new QTimer(this);
-    tabCount->setInterval(1000);
+    tabCount->setInterval(EngineAdapter::tabCountSampleMs());
     connect(tabCount, &QTimer::timeout, this, [this] {
         if (diagnostics_)
             diagnostics_->setOpenTabs(editors_ ? editors_->count() : 0);
@@ -198,7 +201,7 @@ void MainWindow::disableDiagnostics() {
     diagnostics_ = nullptr;
     if (auto* dialog = findChild<DialogShell*>("diagnosticsExportDialog")) {
         if (auto* summary = dialog->findChild<QLabel*>("diagnosticsSummary"))
-            summary->setText(tr("Local diagnostics are unavailable in this session."));
+            summary->setText(tr("Local diagnostics are not available."));
         for (const auto* name : {"diagnosticsDestination", "diagnosticsBrowse",
                                  "diagnosticsShowFolder", "diagnosticsClear", "diagnosticsSave"}) {
             if (auto* control = dialog->findChild<QWidget*>(name))
@@ -217,72 +220,63 @@ void MainWindow::showDiagnosticsExport() {
     }
     dialog = new DialogShell(this);
     dialog->setObjectName("diagnosticsExportDialog");
-    dialog->setWindowTitle(tr("Export Diagnostics"));
+    dialog->setWindowTitle(tr("Export diagnostics"));
     dialog->setAppModal();
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     auto* sections = dialog->createSections();
-    auto* heading = new design::Text(tr("Export Diagnostics"), sections);
+    auto* heading = new design::Text(dialog->windowTitle(), sections);
     heading->setTextStyle(design::TextStyle::Headline);
     sections->headerLayout()->addWidget(heading);
     auto* dismiss = sections->addDismissButton(tr("Close diagnostics export"));
     dismiss->setObjectName("diagnosticsDismiss");
     connect(dismiss, &QPushButton::clicked, dialog, &QDialog::reject);
-    sections->bodyLayout()->setSpacing(design::spacing(design::Spacing::Two));
-    auto* summary = dialog->createDescription(
-        diagnostics_ ? tr("Reading local diagnostics…")
-                     : tr("Local diagnostics are unavailable in this session."),
-        sections);
+    auto* summary =
+        dialog->createDescription(diagnostics_ ? tr("Reading local diagnostics…")
+                                               : tr("Local diagnostics are not available."),
+                                  sections);
     summary->setObjectName("diagnosticsSummary");
     sections->bodyLayout()->addWidget(summary);
-    auto* destinationRow = new QHBoxLayout;
-    auto* destinationLabel = new QLabel(tr("ZIP destination:"), sections);
-    auto* destination = new QLineEdit(sections);
+    auto* destinationRow = new QWidget(sections);
+    auto* destinationLayout = new QHBoxLayout(destinationRow);
+    destinationLayout->setContentsMargins(0, 0, 0, 0);
+    destinationLayout->setSpacing(design::spacing(design::Spacing::Two));
+    auto* destination = new QLineEdit(destinationRow);
     destination->setObjectName("diagnosticsDestination");
-    destination->setAccessibleName(tr("Diagnostic ZIP destination"));
+    destination->setAccessibleName(tr("Diagnostics bundle destination"));
     destination->setEnabled(diagnostics_ != nullptr);
-    destinationLabel->setBuddy(destination);
-    destinationRow->addWidget(destinationLabel);
-    destinationRow->addWidget(destination, 1);
-    auto* browse = new design::Button(tr("Browse…"), sections);
+    auto* destinationValidation = new design::FieldValidation(destination, destinationRow);
+    destinationLayout->addWidget(destinationValidation, 1);
+    auto* browse = new design::Button(tr("Browse…"), destinationRow);
     browse->setObjectName("diagnosticsBrowse");
-    browse->setAccessibleName(tr("Choose diagnostic ZIP destination"));
+    browse->setAccessibleName(tr("Choose diagnostics bundle destination"));
     browse->setVariant(design::ButtonVariant::Outline);
     browse->setEnabled(diagnostics_ != nullptr);
-    destinationRow->addWidget(browse);
-    sections->bodyLayout()->addLayout(destinationRow);
-    auto* folder = new design::Button(tr("Show Diagnostics Folder"), sections);
-    folder->setObjectName("diagnosticsShowFolder");
-    folder->setAccessibleName(tr("Show diagnostics folder"));
-    folder->setVariant(design::ButtonVariant::Outline);
-    folder->setEnabled(diagnostics_ != nullptr);
-    sections->footerLayout()->addWidget(folder);
-    auto* clear = new design::Button(tr("Clear Local Diagnostics"), sections);
+    destinationLayout->addWidget(browse);
+    auto* form = sections->addForm();
+    sections->addFormRow(form, tr("Destination"), destinationRow);
+    auto* clear = sections->addAction(design::DialogActionRole::DestructiveUtility,
+                                      tr("Clear local diagnostics…"));
     clear->setObjectName("diagnosticsClear");
-    clear->setAccessibleName(tr("Clear local diagnostics"));
-    clear->setVariant(design::ButtonVariant::Outline);
     clear->setEnabled(false);
-    sections->footerLayout()->addWidget(clear);
-    auto* save = new design::Button(tr("Save ZIP…"), sections);
-    save->setObjectName("diagnosticsSave");
-    save->setAccessibleName(tr("Save diagnostic ZIP"));
-    save->setEnabled(false);
-    sections->footerLayout()->addWidget(save);
-    auto* close = new design::Button(tr("Cancel"), sections);
+    auto* folder =
+        sections->addAction(design::DialogActionRole::Utility, tr("Show diagnostics folder"));
+    folder->setObjectName("diagnosticsShowFolder");
+    folder->setEnabled(diagnostics_ != nullptr);
+    auto* close = sections->addAction(design::DialogActionRole::Dismiss, tr("Cancel"));
     close->setObjectName("diagnosticsCancel");
-    close->setAccessibleName(tr("Cancel diagnostics export"));
-    close->setVariant(design::ButtonVariant::Outline);
-    sections->footerLayout()->addWidget(close);
-    auto* status = dialog->createInlineStatus(sections);
+    auto* save =
+        sections->addAction(design::DialogActionRole::Primary, tr("Save diagnostics bundle"));
+    save->setObjectName("diagnosticsSave");
+    save->setEnabled(false);
+    auto* status = sections->addStatusLine();
     status->setObjectName("diagnosticsStatus");
-    sections->bodyLayout()->addWidget(status);
     const auto previewReady = std::make_shared<bool>(false);
     connect(destination, &QLineEdit::textChanged, dialog,
-            [this, save, previewReady](const QString& text) {
-                save->setEnabled(diagnostics_ && *previewReady && !text.trimmed().isEmpty());
-            });
+            [destinationValidation] { destinationValidation->setError({}); });
     connect(browse, &QPushButton::clicked, dialog, [destination, dialog] {
-        const auto path = QFileDialog::getSaveFileName(
-            dialog, tr("Save Diagnostic ZIP"), destination->text(), tr("ZIP files (*.zip)"));
+        const auto path =
+            QFileDialog::getSaveFileName(dialog, tr("Save diagnostics bundle"), destination->text(),
+                                         tr("Diagnostics bundles (*.zip)"));
         if (!path.isEmpty())
             destination->setText(path);
     });
@@ -290,58 +284,64 @@ void MainWindow::showDiagnosticsExport() {
     connect(folder, &QPushButton::clicked, dialog, [this, status] {
         if (!diagnostics_ ||
             !QDesktopServices::openUrl(QUrl::fromLocalFile(diagnostics_->folderPath())))
-            status->setText(tr("The diagnostics folder could not be opened."));
+            status->showError(tr("Could not open the diagnostics folder."));
     });
     connect(
         clear, &QPushButton::clicked, dialog,
-        [this, dialog, summary, status, clear, save, destination, previewReady] {
+        [this, dialog, summary, status, clear, save, previewReady] {
             auto* confirmation = new ConfirmationDialog(
-                QMessageBox::Question, tr("Clear Local Diagnostics"),
-                tr("Delete only local diagnostic records? Saved profiles, SQL history, recovery "
+                QMessageBox::Warning, tr("Clear local diagnostics"),
+                tr("Delete only local diagnostic records? Saved connections, SQL history, recovery "
                    "data, credentials, and preferences remain available. Capture resumes "
                    "immediately."),
-                QMessageBox::Yes | QMessageBox::Cancel, dialog);
+                QMessageBox::Cancel, dialog);
             confirmation->setObjectName("diagnosticsClearConfirmation");
-            confirmation->setDefaultButton(QMessageBox::Cancel);
+            auto* accept = confirmation->addActionButton(
+                tr("Clear diagnostics"), ConfirmationDialog::Consequence::Destructive);
             confirmation->setAttribute(Qt::WA_DeleteOnClose);
-            connect(confirmation, &QDialog::finished, dialog,
-                    [this, dialog, summary, status, clear, save, destination,
-                     previewReady](int result) {
-                        if (result != QMessageBox::Yes || !diagnostics_)
-                            return;
-                        clear->setEnabled(false);
-                        save->setEnabled(false);
-                        *previewReady = false;
-                        status->setText(tr("Clearing local diagnostics…"));
-                        auto* task = new BackgroundTask<ClearOutcome>(this);
-                        const QPointer<DialogShell> guard(dialog);
-                        auto service = std::make_shared<DiagnosticsWorker>(diagnostics_->backend());
-                        task->start(
-                            [service = std::move(service)] { return service->clearThenPreview(); },
-                            [this, guard, summary, status, clear, save, destination,
-                             previewReady](const ClearOutcome& outcome) {
-                                if (!guard || !diagnostics_)
-                                    return;
-                                *previewReady = true;
-                                clear->setEnabled(true);
-                                save->setEnabled(!destination->text().trimmed().isEmpty());
-                                if (!outcome.success) {
-                                    status->setText(
-                                        tr("Could not clear diagnostics: %1").arg(outcome.error));
-                                    return;
-                                }
-                                summary->setText(summaryText(outcome.summary));
-                                status->setText(
-                                    tr("Local diagnostics cleared. Capture has resumed."));
-                            });
-                    });
+            connect(
+                confirmation, &QDialog::finished, dialog,
+                [this, dialog, confirmation, accept, summary, status, clear, save, previewReady] {
+                    if (confirmation->clickedButton() != accept || !diagnostics_)
+                        return;
+                    clear->setEnabled(false);
+                    save->setEnabled(false);
+                    *previewReady = false;
+                    status->showProgress(tr("Clearing local diagnostics…"));
+                    auto* task = new BackgroundTask<ClearOutcome>(this);
+                    const QPointer<DialogShell> guard(dialog);
+                    auto service = std::make_shared<DiagnosticsWorker>(diagnostics_->backend());
+                    task->start(
+                        [service = std::move(service)] { return service->clearThenPreview(); },
+                        [this, guard, summary, status, clear, save,
+                         previewReady](const ClearOutcome& outcome) {
+                            if (!guard || !diagnostics_)
+                                return;
+                            *previewReady = true;
+                            clear->setEnabled(true);
+                            save->setEnabled(true);
+                            if (!outcome.success) {
+                                status->showError(
+                                    tr("Could not clear diagnostics: %1").arg(outcome.error));
+                                return;
+                            }
+                            summary->setText(summaryText(outcome.summary));
+                            status->showSuccess(
+                                tr("Local diagnostics cleared. Capture has resumed."));
+                        });
+                });
             confirmation->open();
         });
     connect(
         save, &QPushButton::clicked, dialog,
-        [this, dialog, destination, browse, folder, clear, save, status] {
+        [this, dialog, destination, destinationValidation, browse, folder, clear, save, status] {
             if (!diagnostics_)
                 return;
+            if (destination->text().trimmed().isEmpty()) {
+                destinationValidation->setError(tr("Choose a destination."));
+                destination->setFocus();
+                return;
+            }
             const auto chosen = destination->text().toUtf8();
             const QString path =
                 fromRust(diagnostics_export_destination(bridge_detail::utf8View(chosen)));
@@ -359,18 +359,16 @@ void MainWindow::showDiagnosticsExport() {
                         return;
                     save->setEnabled(true);
                     if (!result.error.empty()) {
-                        status->setText(
-                            tr("Could not check destination: %1").arg(fromRust(result.error)));
+                        status->showError(
+                            tr("Could not check the destination: %1").arg(fromRust(result.error)));
                         return;
                     }
-                    if (result.exists) {
-                        const auto answer = ConfirmationDialog::question(
-                            this, tr("Replace Diagnostic ZIP"),
-                            tr("Replace the existing ZIP at the chosen destination?"),
-                            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-                        if (answer != QMessageBox::Yes)
-                            return;
-                    }
+                    if (result.exists &&
+                        !ConfirmationDialog::confirm(
+                            this, tr("Replace diagnostics bundle"),
+                            tr("Replace the existing file at the chosen destination?"),
+                            tr("Replace"), ConfirmationDialog::Consequence::Destructive))
+                        return;
                     if (!guard || !guard->isVisible() || !diagnostics_)
                         return;
                     save->setEnabled(false);
@@ -378,7 +376,7 @@ void MainWindow::showDiagnosticsExport() {
                     browse->setEnabled(false);
                     folder->setEnabled(false);
                     clear->setEnabled(false);
-                    status->setText(tr("Creating diagnostic ZIP…"));
+                    status->showProgress(tr("Creating diagnostics bundle…"));
                     auto* task = new ExportTask(this);
                     connect(dialog, &QDialog::finished, task, [task] { task->cancel(); });
                     const QPointer<DialogShell> dialogGuard(dialog);
@@ -395,37 +393,38 @@ void MainWindow::showDiagnosticsExport() {
                             clear->setEnabled(true);
                             save->setEnabled(true);
                             if (result.success)
-                                status->setText(QObject::tr("Saved to %1. Inspect the ZIP, then "
-                                                            "attach it manually to your support "
-                                                            "conversation.")
-                                                    .arg(path));
+                                dialogGuard->closeWithSuccess(
+                                    tr("Diagnostics bundle saved"),
+                                    tr("Saved to %1. Inspect the bundle, then attach it to your "
+                                       "support conversation.")
+                                        .arg(path));
                             else if (result.cancelled)
-                                status->setText(QObject::tr("Diagnostic export cancelled."));
+                                status->showInfo(tr("Diagnostics export cancelled."));
                             else
-                                status->setText(
-                                    QObject::tr("Diagnostic export failed: %1").arg(result.error));
+                                status->showError(
+                                    tr("Could not export diagnostics: %1").arg(result.error));
                         });
                 });
         });
-    dialog->resize(design::dialogInitialSize(design::DialogSize::Export));
+    dialog->resize(design::dialogInitialSize(design::DialogSize::Form));
     dialog->open();
     if (diagnostics_) {
         auto* task = new BackgroundTask<DiagnosticSummary>(this);
         const QPointer<DialogShell> guard(dialog);
         auto service = std::make_shared<DiagnosticsWorker>(diagnostics_->backend());
-        task->start([service = std::move(service)] { return service->preview(); },
-                    [this, guard, summary, clear, save, destination,
-                     previewReady](const DiagnosticSummary& result) {
-                        if (!guard || !diagnostics_)
-                            return;
-                        auto text = summaryText(result);
-                        if (!diagnostics_->warning().isEmpty())
-                            text += tr("\nWarning: %1").arg(diagnostics_->warning());
-                        summary->setText(text);
-                        *previewReady = true;
-                        clear->setEnabled(true);
-                        save->setEnabled(!destination->text().trimmed().isEmpty());
-                    });
+        task->start(
+            [service = std::move(service)] { return service->preview(); },
+            [this, guard, summary, clear, save, previewReady](const DiagnosticSummary& result) {
+                if (!guard || !diagnostics_)
+                    return;
+                auto text = summaryText(result);
+                if (!diagnostics_->warning().isEmpty())
+                    text += tr("\nWarning: %1").arg(diagnostics_->warning());
+                summary->setText(text);
+                *previewReady = true;
+                clear->setEnabled(true);
+                save->setEnabled(true);
+            });
     }
 }
 

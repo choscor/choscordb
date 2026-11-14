@@ -12,17 +12,15 @@ bool QueryWorkspace::confirmShutdown() {
     if (!transaction && !active)
         return true;
     ConfirmationDialog box(
-        QMessageBox::Warning, tr("Close database sessions"),
+        QMessageBox::Warning, tr("Close connections"),
         transaction
             ? tr("Uncommitted transactions will be rolled back and active work cancelled.")
             : tr("Active database work will be cancelled and any uncommitted changes rolled back."),
-        QMessageBox::NoButton, widgets_.dialogParent);
+        QMessageBox::Cancel, widgets_.dialogParent);
     box.setTextFormat(Qt::PlainText);
     auto* close =
-        box.addButton(transaction ? tr("Roll back and close") : tr("Cancel work and close"),
-                      QMessageBox::DestructiveRole);
-    auto* cancel = box.addButton(QMessageBox::Cancel);
-    box.setDefaultButton(cancel);
+        box.addActionButton(transaction ? tr("Roll back and close") : tr("Cancel work and close"),
+                            ConfirmationDialog::Consequence::Destructive);
     box.exec();
     return box.clickedButton() == close;
 }

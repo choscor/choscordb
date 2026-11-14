@@ -42,7 +42,9 @@ class HistoryTest : public QObject {
         QCOMPARE(QString::fromLatin1(footer->metaObject()->className()),
                  QString("choscordb::design::StatusLine"));
         QCOMPARE(footer->palette().color(QPalette::Window),
-                 choscordb::design::resolvedThemeForWidget(*footer).colors.successSurface);
+                 choscordb::design::secondaryBanner(
+                     choscordb::design::resolvedThemeForWidget(*footer).colors)
+                     .fill);
         const int tableTop = table->mapTo(&history, QPoint{}).y();
         int previousRight = -1;
         for (const auto* name : {"historyManage", "clearHistory", "openHistoryQuery"}) {
@@ -70,7 +72,7 @@ class HistoryTest : public QObject {
         auto* range = history.findChild<QLabel*>("historyRange");
         auto* status = history.findChild<QLabel*>("historyStatus");
         QVERIFY(range && status);
-        QCOMPARE(footer->font().pixelSize(), 14);
+        QCOMPARE(footer->font().pixelSize(), 13);
         QCOMPARE(range->font().pixelSize(), footer->font().pixelSize());
         QCOMPARE(status->font().pixelSize(), footer->font().pixelSize());
         QVERIFY(footer->isAncestorOf(range));
@@ -91,7 +93,9 @@ class HistoryTest : public QObject {
         auto* footer = history.findChild<QWidget*>("historyFooter");
         auto* status = history.findChild<QLabel*>("historyStatus");
         QTRY_COMPARE(footer->palette().color(QPalette::Window),
-                     choscordb::design::resolvedThemeForWidget(history).colors.dangerSurface);
+                     choscordb::design::composite(
+                         choscordb::design::resolvedThemeForWidget(history).colors.dangerTint,
+                         choscordb::design::resolvedThemeForWidget(history).colors.base));
         QVERIFY(!status->accessibleName().isEmpty());
         QVERIFY(footer->toolTip().contains("Workspace is closed."));
         QVERIFY(!status->wordWrap());
@@ -113,9 +117,7 @@ class HistoryTest : public QObject {
         QVERIFY(placeholder->text().contains("Workspace is closed."));
         QCOMPARE(placeholder->property("state").toString(), QString("error"));
         auto* toast = choscordb::windowToast(&history);
-        QVERIFY(toast && !toast->isHidden());
-        QVERIFY2(toast->text().contains("Could not load query history: "),
-                 qPrintable(toast->text()));
+        QVERIFY(!toast || toast->isHidden());
     }
     void queryRowsUseFullWidthAndFullTextPreviewIsExplicit() {
         choscordb::EngineAdapter adapter;
@@ -183,7 +185,7 @@ class HistoryTest : public QObject {
         QVERIFY(open->isEnabled());
         auto* search = history.findChild<QLineEdit*>("historySearch");
         QVERIFY(search);
-        QCOMPARE(search->placeholderText(), QString("Filter this page"));
+        QCOMPARE(search->placeholderText(), QString("Filter this page…"));
         search->setFocus();
         QTest::keyClicks(search, "beta");
         QVERIFY(table->isRowHidden(0));

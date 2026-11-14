@@ -1,6 +1,9 @@
 #include "bridge/engine_adapter.h"
+#include "confirmation_checks.h"
+#include "design_system/button/button.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
+#include "design_system/spinner/spinner.h"
 #include "design_system/toast_region/toast_region.h"
 #include "dialog_sections_checks.h"
 #include "widgets/profile_dialog/profile_dialog.h"
@@ -30,13 +33,20 @@
 #include <QVBoxLayout>
 #include <QtTest>
 
-void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
+void WorkspaceTest::connectionOperationsShowProgressInTheStatusLine() {
     WorkspaceFixture f;
     f.newConnection.trigger();
     auto* dialog = f.parent.findChild<choscordb::ProfileDialog*>("profileDialog");
     QVERIFY(dialog);
-    auto* progress = f.parent.findChild<QDialog*>("profileProgressDialog");
-    QVERIFY2(progress, "Loading profiles should use a dedicated progress modal");
+    QVERIFY(!f.parent.findChild<QDialog*>("profileProgressDialog"));
+    auto* statusLine = dialog->findChild<QWidget*>("profileStatusLine");
+    auto* statusText = dialog->findChild<QLabel*>("profileStatus");
+    auto* spinner = statusLine->findChild<choscordb::design::Spinner*>();
+    QVERIFY(statusLine && statusText && spinner);
+    const auto busyWith = [&](const QString& message) {
+        return statusLine->isVisible() && spinner->isVisible() && statusText->text() == message &&
+               !dialog->findChild<QPushButton*>("profileTest")->isEnabled();
+    };
     QTRY_VERIFY(dialog->findChild<QPushButton*>("profileTest")->isEnabled());
     auto* name = dialog->findChild<QLineEdit*>("profileName");
     name->setText("Test profile");
@@ -45,11 +55,11 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     auto* pathValidation = dynamic_cast<choscordb::design::FieldValidation*>(path->parentWidget());
     QVERIFY(pathValidation);
     QVERIFY(pathValidation->error().contains("database file path"));
-    QVERIFY(!progress->isVisible());
+    QVERIFY(!spinner->isVisible());
     path->setText("file:example.db?mode=banana");
     dialog->findChild<QPushButton*>("profileTest")->click();
     QVERIFY(pathValidation->error().contains("SQLite file URI"));
-    QVERIFY(!progress->isVisible());
+    QVERIFY(!spinner->isVisible());
     path->setText("file:example.db?mode=ro");
     name->setText(QString(1025, QChar('n')));
     dialog->findChild<QPushButton*>("profileTest")->click();
@@ -60,50 +70,72 @@ void WorkspaceTest::connectionOperationsShowDedicatedProgressModal() {
     path->setText(":memory:");
     QVERIFY(pathValidation->error().isEmpty());
     dialog->findChild<QPushButton*>("profileTest")->click();
-    QVERIFY(progress->isVisible());
-    QVERIFY(progress->isModal() || progress->property("embeddedModal").toBool());
-    auto* progressSections = progress->findChild<choscordb::design::DialogSections*>();
-    QVERIFY(progressSections);
-    QCOMPARE(headerHeadline(*progress), QString("Profiles"));
-    QCOMPARE(sectionedSpacing(*progress), compactSectionedSpacing());
-    QVERIFY(!progressSections->footerLayout()->parentWidget()->isVisible());
-    QVERIFY(!progressSections->findChild<QWidget*>("dialogSectionsFooterSeparator")->isVisible());
-    QVERIFY(progressSections->bodyLayout()->parentWidget()->isAncestorOf(
-        progress->findChild<QWidget*>("profileProgressBar")));
-    QCOMPARE(progress->findChild<QLabel*>("profileProgressMessage")->text(),
-             QString("Testing the connection…"));
-    QTRY_VERIFY(!progress->isVisible());
-    QVERIFY(!dialog->findChild<QWidget*>("profileStatusLine")->isVisible());
+    QVERIFY(busyWith("Testing the connection…"));
+    QTRY_VERIFY(!spinner->isVisible());
+    QVERIFY(!statusLine->isVisible());
     auto* feedback =
         f.parent.findChild<choscordb::ToastRegion*>("toastRegion", Qt::FindDirectChildrenOnly);
     QVERIFY(feedback && feedback->isVisible());
     QCOMPARE(feedback->parentWidget(), &f.parent);
     QCOMPARE(feedback->property("variant").toString(), QString("success"));
-    QCOMPARE(feedback->geometry().right(), f.parent.width() - 17);
-    QCOMPARE(feedback->geometry().bottom(), f.parent.height() - 17);
+    QCOMPARE(feedback->geometry().right(), f.parent.width() - 33);
+    QCOMPARE(feedback->geometry().bottom(), f.parent.height() - 33);
     QVERIFY(feedback->text().contains("Connection test succeeded."));
     feedback->findChild<QAbstractButton*>("toastDismiss")->click();
     QTRY_VERIFY(feedback->isHidden());
     auto* save = dialog->findChild<QPushButton*>("profileSave");
     save->click();
-    QVERIFY(progress->isVisible());
-    QCOMPARE(progress->findChild<QLabel*>("profileProgressMessage")->text(),
-             QString("Saving profile…"));
+    QVERIFY(busyWith("Saving connection…"));
     QTRY_VERIFY(save->isEnabled());
-    QTRY_VERIFY(!progress->isVisible());
-    QVERIFY(feedback->text().contains("Profile saved."));
+    QTRY_VERIFY(!spinner->isVisible());
+    QVERIFY(feedback->text().contains("Connection saved."));
     QVERIFY(!dialog->findChild<QWidget*>("profileStatusLine")->isVisible());
     QTest::mouseClick(feedback->findChild<QAbstractButton*>("toastDismiss"), Qt::LeftButton);
     QTRY_VERIFY(!feedback->isVisible());
 
     path->setText(QDir::temp().filePath("choscordb-missing-dir/missing/db.sqlite"));
     dialog->findChild<QPushButton*>("profileTest")->click();
-    QTRY_VERIFY(!progress->isVisible());
+    QTRY_VERIFY(!spinner->isVisible());
     QTRY_VERIFY(dialog->findChild<QWidget*>("profileStatusLine")->isVisible());
     QVERIFY(!dialog->findChild<QLabel*>("profileStatus")->text().isEmpty());
     QVERIFY(dialog->findChild<QLabel*>("profileStatus")->text() !=
             QString("Connection test succeeded."));
     QVERIFY(!feedback->isVisible());
+}
+
+void WorkspaceTest::connectionDraftUsesTheSharedDiscardPrompt() {
+    choscordb::EngineAdapter adapter;
+    choscordb::ProfileDialog dialog(&adapter);
+    dialog.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+    const QString expected("The changes in this dialog are not saved.");
+    auto* name = dialog.findChild<QLineEdit*>("profileName");
+    QTRY_VERIFY(name->isEnabled());
+    QTest::keyClicks(name, "Draft");
+    {
+        const auto prompt = confirmNextPrompt();
+        dialog.findChild<QPushButton*>("profileNew")->click();
+        QCOMPARE(*prompt, QString("Discard changes?"));
+        QCOMPARE(prompt.text(), expected);
+    }
+    QVERIFY(name->text().isEmpty());
+    QTest::keyClicks(name, "Draft");
+    int prompts = 0;
+    QTimer watch;
+    QObject::connect(&watch, &QTimer::timeout, &watch, [&prompts] {
+        for (auto* widget : QApplication::allWidgets())
+            if (auto* box = qobject_cast<QMessageBox*>(widget); box && box->isVisible()) {
+                ++prompts;
+                if (auto* action = confirmationAction(box))
+                    action->click();
+                else
+                    box->reject();
+            }
+    });
+    watch.start(5);
+    dialog.findChild<QPushButton*>("profileCancel")->click();
+    QTRY_VERIFY(!dialog.isVisible());
+    QCOMPARE(prompts, 1);
 }
 
 void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
@@ -126,23 +158,25 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     auto* database = dialog.findChild<QLineEdit*>("profileDatabase");
     auto* user = dialog.findChild<QLineEdit*>("profileUser");
     auto* password = dialog.findChild<QLineEdit*>("profilePassword");
-    const auto serverY = [&dialog](QWidget* widget) {
-        return widget->mapTo(&dialog, QPoint(0, widget->height() / 2)).y();
-    };
-    QVERIFY(qAbs(serverY(host) - serverY(port)) <= 4);
-    QVERIFY(qAbs(serverY(host) - serverY(database)) <= 4);
-    QVERIFY(qAbs(serverY(user) - serverY(password)) <= 4);
-    QVERIFY(port->width() < host->width());
-    QVERIFY(port->width() < database->width());
-    for (const auto& expected : QList<QPair<QString, QWidget*>>{{"&Host", host},
-                                                                {"P&ort", port},
-                                                                {"Data&base", database},
-                                                                {"&Username", user},
-                                                                {"&Password", password}}) {
-        bool hasBuddy = false;
+    const QList<QPair<QString, QWidget*>> rows{{"Host", host},
+                                               {"Port", port},
+                                               {"Database (optional)", database},
+                                               {"Username", user},
+                                               {"Password (optional)", password}};
+    int previousTop = -1;
+    for (const auto& [text, field] : rows) {
+        QLabel* caption = nullptr;
         for (auto* label : dialog.findChildren<QLabel*>())
-            hasBuddy |= label->text() == expected.first && label->buddy() == expected.second;
-        QVERIFY(hasBuddy);
+            if (label->buddy() && (label->buddy() == field || label->buddy()->isAncestorOf(field)))
+                caption = label;
+        QVERIFY2(caption, qPrintable(text));
+        QCOMPARE(caption->text().remove(QLatin1Char('&')), text);
+        QVERIFY(caption->mapTo(&dialog, QPoint()).x() + caption->width() <=
+                field->mapTo(&dialog, QPoint()).x());
+        QCOMPARE(field->mapTo(&dialog, QPoint()).x(), host->mapTo(&dialog, QPoint()).x());
+        const int top = field->mapTo(&dialog, QPoint()).y();
+        QVERIFY2(top > previousTop, qPrintable(text));
+        previousTop = top;
     }
     QCOMPARE(scroll->geometry().right(), sections->bodyLayout()->parentWidget()->rect().right());
     dialog.findChild<QCheckBox*>("profileSshEnabled")->setChecked(true);
@@ -158,7 +192,7 @@ void WorkspaceTest::connectionSshFormShowsOnlyBasicSettings() {
     QVERIFY(scroll->verticalScrollBar()->maximum() > 0);
     QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
     QVERIFY(sections->headerLayout()->parentWidget()->isVisible());
-    QVERIFY(sections->footerLayout()->parentWidget()->isVisible());
+    QVERIFY(sections->findChild<QWidget*>("dialogSectionsFooter")->isVisible());
 }
 
 void WorkspaceTest::connectionFormHasNoTlsSettings() {
@@ -321,28 +355,25 @@ void WorkspaceTest::connectionSshFormKeepsBasicFields() {
     authentication->setCurrentIndex(authentication->findData("public_key"));
     dialog.show();
     QCoreApplication::processEvents();
-    const auto y = [&dialog](QWidget* widget) { return widget->mapTo(&dialog, QPoint()).y(); };
-    QVERIFY(qAbs(y(host) - y(port)) <= 2);
-    QVERIFY(qAbs(y(host) - y(user)) <= 2);
-    QVERIFY(port->width() < host->width());
-    QVERIFY(port->width() < user->width());
-    QVERIFY(qAbs(y(source) - y(file)) <= 2);
-    QVERIFY(qAbs(y(authentication) - y(secret)) <= 2);
-    QVERIFY(secret->mapTo(&dialog, QPoint()).x() >=
-            authentication->mapTo(&dialog, QPoint(authentication->width(), 0)).x());
-    QVERIFY(y(host) < y(authentication));
-    QVERIFY(y(authentication) < y(source));
-    for (const auto& expected : QList<QPair<QString, QWidget*>>{{"SSH host", host},
-                                                                {"SSH port", port},
-                                                                {"SSH username", user},
-                                                                {"Authentication", authentication},
-                                                                {"Private key source", source},
-                                                                {"SSH private key file", file},
-                                                                {"SSH passphrase", secret}}) {
-        bool hasBuddy = false;
+    int previousTop = -1;
+    for (const auto& [text, field] :
+         QList<QPair<QString, QWidget*>>{{"SSH host", host},
+                                         {"SSH port", port},
+                                         {"SSH username", user},
+                                         {"Authentication", authentication},
+                                         {"Private key source", source},
+                                         {"Private key file", file},
+                                         {"Key passphrase (optional)", secret}}) {
+        QLabel* caption = nullptr;
         for (auto* label : dialog.findChildren<QLabel*>())
-            hasBuddy |= label->text() == expected.first && label->buddy() == expected.second;
-        QVERIFY2(hasBuddy, qPrintable(expected.first));
+            if (label->buddy() && (label->buddy() == field || label->buddy()->isAncestorOf(field)))
+                caption = label;
+        QVERIFY2(caption, qPrintable(text));
+        QCOMPARE(caption->text().remove(QLatin1Char('&')), text);
+        QCOMPARE(field->mapTo(&dialog, QPoint()).x(), host->mapTo(&dialog, QPoint()).x());
+        const int top = field->mapTo(&dialog, QPoint()).y();
+        QVERIFY2(top > previousTop, qPrintable(text));
+        previousTop = top;
     }
     QVERIFY(source->isVisibleTo(&dialog));
     QVERIFY(file->isVisibleTo(&dialog));
@@ -351,10 +382,10 @@ void WorkspaceTest::connectionSshFormKeepsBasicFields() {
     QVERIFY(!source->isVisibleTo(&dialog));
     QVERIFY(!file->isVisibleTo(&dialog));
     QVERIFY(secret->isVisibleTo(&dialog));
-    QVERIFY(qAbs(y(authentication) - y(secret)) <= 2);
     bool hasPasswordLabel = false;
     for (auto* label : dialog.findChildren<QLabel*>())
-        hasPasswordLabel |= label->text() == "SSH password" && label->buddy() == secret;
+        hasPasswordLabel |= label->text().remove(QLatin1Char('&')) == "SSH password" &&
+                            label->buddy() && label->buddy()->isAncestorOf(secret);
     QVERIFY(hasPasswordLabel);
     authentication->setCurrentIndex(authentication->findData("agent"));
     QVERIFY(!source->isVisibleTo(&dialog));
@@ -475,10 +506,18 @@ void WorkspaceTest::mysqlConnectionFormExplainsOptionalDatabaseAndPreservesLiter
     QTRY_VERIFY(save->isEnabled());
     auto* driver = dialog->findChild<QComboBox*>("profileDriver");
     auto* database = dialog->findChild<QLineEdit*>("profileDatabase");
+    auto* databaseHelp = dialog->findChild<QLabel*>("profileDatabaseHelp");
+    QVERIFY(databaseHelp);
     driver->setCurrentIndex(1);
-    QVERIFY(database->placeholderText().contains("username"));
+    QVERIFY(databaseHelp->isVisibleTo(dialog));
+    QCOMPARE(databaseHelp->text(), QString("If empty, the database name is the username."));
+    QVERIFY(database->placeholderText().isEmpty());
     driver->setCurrentIndex(2);
-    QVERIFY(database->placeholderText().contains("Optional"));
+    QCOMPARE(databaseHelp->text(), QString("If empty, the connection opens no database."));
+    QVERIFY(database->placeholderText().isEmpty());
+    driver->setCurrentIndex(0);
+    QVERIFY(!databaseHelp->isVisibleTo(dialog));
+    driver->setCurrentIndex(2);
     dialog->findChild<QLineEdit*>("profileName")->setText("MySQL server");
     dialog->findChild<QLineEdit*>("profileHost")->setText("[::1]");
     dialog->findChild<QLineEdit*>("profileUser")->setText(" operator ");
@@ -632,4 +671,97 @@ void WorkspaceTest::connectionForwardingControlsAreHidden() {
     for (const char* name : {"profileSshRemoteHost", "profileSshLocalHost"})
         QVERIFY2(!dialog.findChild<QLineEdit*>(name), name);
     QVERIFY(!dialog.findChild<QSpinBox*>("profileSshRemotePort"));
+}
+
+void WorkspaceTest::switchingToAServerDriverKeepsEveryFieldInsideTheScrolledForm() {
+    choscordb::EngineAdapter adapter;
+    choscordb::ProfileDialog dialog(&adapter);
+    dialog.show();
+    QTRY_VERIFY(dialog.findChild<QPushButton*>("profileDriverSqlite")->isEnabled());
+    dialog.findChild<QPushButton*>("profileDriverSqlite")->click();
+    QCoreApplication::processEvents();
+    dialog.findChild<QPushButton*>("profileDriverPostgres")->click();
+    QTRY_VERIFY(dialog.findChild<QWidget*>("profileHost")->isVisible());
+    QCoreApplication::processEvents();
+    auto* scroll = dialog.findChild<QScrollArea*>("profileFormScroll");
+    QVERIFY(scroll);
+    auto* form = scroll->widget();
+    for (const auto* name : {"profileHost", "profileDatabase", "profileUser", "profilePassword"}) {
+        auto* field = dialog.findChild<QWidget*>(name);
+        QVERIFY2(field && field->isVisible(), name);
+        const QRect inForm(field->mapTo(form, QPoint()), field->size());
+        QVERIFY2(form->rect().contains(inForm), qPrintable(QString("%1 bottom %2 > form %3")
+                                                               .arg(name)
+                                                               .arg(inForm.bottom())
+                                                               .arg(form->height())));
+    }
+}
+
+void WorkspaceTest::scrolledConnectionFormEndsAtItsLastVisibleRow() {
+    choscordb::EngineAdapter adapter;
+    choscordb::ProfileDialog dialog(&adapter);
+    dialog.resize(dialog.width(), 520);
+    dialog.show();
+    QTRY_VERIFY(dialog.findChild<QPushButton*>("profileDriverPostgres")->isEnabled());
+    dialog.findChild<QPushButton*>("profileDriverPostgres")->click();
+    QTRY_VERIFY(dialog.findChild<QWidget*>("profileHost")->isVisible());
+    auto* ssh = dialog.findChild<QCheckBox*>("profileSshEnabled");
+    ssh->click();
+    QTRY_VERIFY(dialog.findChild<QWidget*>("profileSshHost")->isVisible());
+    auto* scroll = dialog.findChild<QScrollArea*>("profileFormScroll");
+    QVERIFY(scroll);
+    scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+    QCoreApplication::processEvents();
+    ssh->click();
+    QTRY_VERIFY(!dialog.findChild<QWidget*>("profileSshHost")->isVisible());
+    QCoreApplication::processEvents();
+    auto* form = scroll->widget();
+    int lastBottom = 0;
+    for (auto* child : form->findChildren<QWidget*>(Qt::FindDirectChildrenOnly)) {
+        if (child->isVisibleTo(form))
+            lastBottom = qMax(lastBottom, child->geometry().bottom() + 1);
+    }
+    QVERIFY2(scroll->verticalScrollBar()->maximum() > 0, "form must scroll at this height");
+    QCOMPARE(form->height(), lastBottom + form->layout()->contentsMargins().bottom());
+    auto* body = scroll->parentWidget();
+    QCOMPARE(scroll->y(), 0);
+    QCOMPARE(scroll->geometry().bottom() + 1, body->height());
+    const auto padding = form->layout()->contentsMargins();
+    QVERIFY(padding.top() > 0 && padding.bottom() > 0);
+}
+
+void WorkspaceTest::connectionFormDrawsOnTheDialogSurface() {
+    choscordb::EngineAdapter adapter;
+    choscordb::ProfileDialog dialog(&adapter);
+    dialog.findChild<QPushButton*>("profileDriverPostgres")->click();
+    dialog.show();
+    QCoreApplication::processEvents();
+    auto* scroll = dialog.findChild<QScrollArea*>("profileFormScroll");
+    QVERIFY(scroll);
+    QVERIFY(!scroll->viewport()->autoFillBackground());
+    QVERIFY(!scroll->widget()->testAttribute(Qt::WA_StyledBackground));
+    QVERIFY(!scroll->widget()->autoFillBackground());
+}
+
+void WorkspaceTest::driverChoicesAreSquareLogoButtonsWithTheNameOnHover() {
+    choscordb::EngineAdapter adapter;
+    choscordb::ProfileDialog dialog(&adapter);
+    dialog.show();
+    QCoreApplication::processEvents();
+    int previousRight = -1;
+    for (const auto& [object, name] :
+         {std::pair{"profileDriverPostgres", "PostgreSQL"},
+          std::pair{"profileDriverMysql", "MySQL"}, std::pair{"profileDriverMariadb", "MariaDB"},
+          std::pair{"profileDriverSqlite", "SQLite"}}) {
+        auto* button = dialog.findChild<choscordb::design::Button*>(object);
+        QVERIFY2(button && button->isVisible(), object);
+        QVERIFY(button->text().isEmpty());
+        QCOMPARE(button->toolTip(), QString(name));
+        QCOMPARE(button->accessibleName(), QString(name));
+        QCOMPARE(button->width(), button->height());
+        QVERIFY(button->height() >
+                choscordb::design::dimension(choscordb::design::Dimension::Logo));
+        QVERIFY(button->geometry().left() > previousRight);
+        previousRight = button->geometry().right();
+    }
 }

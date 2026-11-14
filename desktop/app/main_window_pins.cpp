@@ -265,31 +265,22 @@ void MainWindow::initializePins(const Ui& ui) {
                 if (updated)
                     savePinsAsync(std::move(*updated), tr("Could not save pins: %1"));
             });
-    connect(ui.pinnedList, &QTreeView::clicked, this, [this](const QModelIndex& index) {
-        if (pinnedModel_->isPinnedRoot(index))
+    const auto openPinnedRow = [this](const QModelIndex& index) {
+        if (!index.isValid())
+            return;
+        if (pinnedModel_->isPinnedRoot(index)) {
             activatePin(pinnedModel_->pinKey(index));
-    });
-    connect(ui.pinnedList, &QTreeView::activated, this, [this](const QModelIndex& index) {
-        if (pinnedModel_->isPinnedRoot(index))
-            activatePin(pinnedModel_->pinKey(index));
-        else {
-            const auto source = pinnedModel_->sourceIndex(index);
-            if (source.data(NavigatorModel::KindRole).toString() == QStringLiteral("load_more"))
-                navigatorController_->model()->requestNextPage(source);
+            return;
         }
-    });
-    connect(ui.pinnedList->selectionModel(), &QItemSelectionModel::currentChanged, this,
-            [this](const QModelIndex& current, const QModelIndex& previous) {
-                if (pinnedModel_->isPinnedRoot(current) || !current.isValid())
-                    return;
-                if (!allowDocumentChange()) {
-                    const QSignalBlocker blocker(pinnedList_->selectionModel());
-                    pinnedList_->selectionModel()->setCurrentIndex(
-                        previous, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-                    return;
-                }
-                activateNavigatorObject(pinnedModel_->sourceIndex(current));
-            });
+        const auto source = pinnedModel_->sourceIndex(index);
+        if (source.data(NavigatorModel::KindRole).toString() == QStringLiteral("load_more"))
+            navigatorController_->model()->requestNextPage(source);
+        else if (allowDocumentChange())
+            activateNavigatorObject(source);
+    };
+    connect(ui.pinnedList, &QTreeView::clicked, this, openPinnedRow);
+    connect(ui.pinnedList, &QTreeView::activated, this, openPinnedRow);
+    new main_window_detail::ReturnActivatesRow(ui.pinnedList);
     connect(ui.pinnedList, &QWidget::customContextMenuRequested, this, [this](const QPoint& point) {
         auto index = pinnedList_->indexAt(point);
         auto menuPoint = point;
@@ -306,10 +297,12 @@ void MainWindow::initializePins(const Ui& ui) {
             return;
         }
         const auto key = pinnedModel_->pinKey(index);
+        const auto resolved = pinnedModel_->sourceIndex(index);
         auto* menu = new QMenu(pinnedList_);
         menu->setObjectName("pinnedMenu");
         menu->setAttribute(Qt::WA_DeleteOnClose);
-        if (index.data(NavigatorModel::RetryRole).toInt() == int(RowRetry::Refresh)) {
+        if (!resolved.isValid() &&
+            index.data(NavigatorModel::RetryRole).toInt() == int(RowRetry::Refresh)) {
             connect(NavigatorController::addRetryAction(menu), &QAction::triggered, this,
                     [this, key] {
                         for (int row = 0; row < pinnedModel_->rowCount(); ++row) {
@@ -330,6 +323,12 @@ void MainWindow::initializePins(const Ui& ui) {
             if (auto updated = PinStore::withoutPin(pins_, key))
                 savePinsAsync(std::move(*updated), tr("Could not save pins: %1"));
         });
+        if (resolved.isValid()) {
+            menu->addSeparator();
+            navigatorController_->populateContextMenu(menu, resolved);
+            if (auto* navigatorUnpin = menu->findChild<QAction*>("unpinObject"))
+                menu->removeAction(navigatorUnpin);
+        }
         design::popupContextMenu(*menu, pinnedList_->viewport()->mapToGlobal(menuPoint));
     });
     connect(workspace_->adapter(), &EngineAdapter::profilesReady, this,
@@ -341,7 +340,7 @@ void MainWindow::initializePins(const Ui& ui) {
             [this](quint64, const QString& profileId, const QString&) {
                 if (auto updated = PinStore::withoutProfile(pins_, profileId))
                     savePinsAsync(std::move(*updated),
-                                  tr("Could not remove deleted profile's pins: %1"));
+                                  tr("Could not remove the pins of the deleted connection: %1"));
             });
     connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64) {
         QTimer::singleShot(0, this, [this] {
@@ -556,7 +555,7 @@ void MainWindow::tryExpandPendingPins() {
                              pinExpansionRebinding_.remove(key));
             continue;
         }
-        QTimer::singleShot(50, this, [this, key, generation] {
+        QTimer::singleShot(EngineAdapter::pinRevealRetryMs(), this, [this, key, generation] {
             if (pendingExpansionKeys_.contains(key) &&
                 pinExpansionGenerations_.value(key) == generation)
                 tryExpandPendingPins();
@@ -681,7 +680,7 @@ void MainWindow::tryRevealPendingPin() {
                                 ToastVariant::Danger);
         return;
     }
-    QTimer::singleShot(50, this, [this, key] {
+    QTimer::singleShot(EngineAdapter::pinRevealRetryMs(), this, [this, key] {
         if (pendingPinKey_ == key)
             tryRevealPendingPin();
     });

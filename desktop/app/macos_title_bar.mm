@@ -20,7 +20,7 @@ void MainWindow::updateNativeTitleBar() {
     if (!window) {
         return;
     }
-    const auto color = theme_->resolvedTheme().colors.bg;
+    const auto color = theme_->resolvedTheme().colors.canvas;
     window.styleMask &= ~NSWindowStyleMaskFullSizeContentView;
     window.titleVisibility = NSWindowTitleVisible;
     window.titlebarAppearsTransparent = YES;

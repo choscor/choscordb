@@ -167,7 +167,7 @@ void NavigatorController::advanceQuickObjectSearch(quint64 generation) {
         quickObjectStatus_.clear();
     emit quickObjectSearchChanged();
 }
-void NavigatorController::restartSearch(bool advance) {
+void NavigatorController::restartSearch() {
     ++searchGeneration_;
     searchRequests_ = 0;
     searchPending_ = false;
@@ -179,8 +179,7 @@ void NavigatorController::restartSearch(bool advance) {
     }
     emit searchNoticeChanged({});
     emit searchBusyChanged(true);
-    if (advance)
-        advanceSearch(searchGeneration_);
+    advanceSearch(searchGeneration_);
 }
 void NavigatorController::searchRequestFinished(bool accepted, bool failed, const QString& error) {
     if (!accepted)

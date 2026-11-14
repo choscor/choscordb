@@ -43,10 +43,11 @@ class ResultColumnHeader final : public QHeaderView {
         const int icon =
             model()->headerData(logicalIndex, Qt::Horizontal, ResultTableModel::HeaderKeyRole)
                     .toBool()
-                ? keyAdvance()
+                ? iconAdvance()
                 : 0;
         size.setWidth(
-            2 * inset() + icon + fontMetrics().horizontalAdvance(name) +
+            2 * inset() + icon + (sectionsClickable() ? iconAdvance() : 0) +
+            fontMetrics().horizontalAdvance(name) +
             (type.isEmpty()
                  ? 0
                  : QFontMetrics(secondaryFont()).horizontalAdvance(QStringLiteral(" · ") + type)));
@@ -70,14 +71,12 @@ class ResultColumnHeader final : public QHeaderView {
                 .toBool();
         QStyleOptionHeader option;
         initStyleOption(&option);
+        initStyleOptionForIndex(&option, logicalIndex);
         option.rect = rect;
-        option.section = logicalIndex;
         option.text.clear();
-        option.sortIndicator =
-            isSortIndicatorShown() && sortIndicatorSection() == logicalIndex
-                ? (sortIndicatorOrder() == Qt::AscendingOrder ? QStyleOptionHeader::SortUp
-                                                              : QStyleOptionHeader::SortDown)
-                : QStyleOptionHeader::None;
+        option.icon = {};
+        const bool sorted = isSortIndicatorShown() && sortIndicatorSection() == logicalIndex;
+        option.sortIndicator = QStyleOptionHeader::None;
         style()->drawControl(QStyle::CE_Header, &option, painter, this);
         painter->save();
         painter->setClipRect(rect.adjusted(1, 0, -1, 0));
@@ -91,10 +90,25 @@ class ResultColumnHeader final : public QHeaderView {
             }
             keyIcon_->paint(painter,
                             QRect(x, rect.center().y() - iconSize / 2, iconSize, iconSize));
-            x += keyAdvance();
+            x += iconAdvance();
+        }
+        const int markSize = design::dimension(design::Dimension::IconSmall);
+        if (sorted) {
+            if (!sortIcon_ || sortIconColor_ != text.rgba() ||
+                sortIconOrder_ != sortIndicatorOrder()) {
+                sortIcon_ = design::themedIcon(sortIndicatorOrder() == Qt::AscendingOrder
+                                                   ? design::Icon::ArrowUp
+                                                   : design::Icon::ArrowDown,
+                                               text, markSize);
+                sortIconColor_ = text.rgba();
+                sortIconOrder_ = sortIndicatorOrder();
+            }
+            sortIcon_->paint(painter, QRect(rect.right() + 1 - inset() - markSize,
+                                            rect.center().y() - markSize / 2, markSize, markSize));
         }
         painter->setPen(text);
-        const int available = std::max(0, rect.left() + rect.width() - x - inset());
+        const int available =
+            std::max(0, rect.left() + rect.width() - x - inset() - (sorted ? iconAdvance() : 0));
         const QString label = type.isEmpty() ? name : name + QStringLiteral(" · ") + type;
         const QFont& small = secondaryFont();
         auto& elided = elided_[logicalIndex];
@@ -152,7 +166,7 @@ class ResultColumnHeader final : public QHeaderView {
         QString shown;
     };
     static int inset() { return design::spacing(design::Spacing::Three); }
-    static int keyAdvance() {
+    static int iconAdvance() {
         return design::dimension(design::Dimension::IconSmall) +
                design::spacing(design::Spacing::OneHalf);
     }
@@ -164,11 +178,15 @@ class ResultColumnHeader final : public QHeaderView {
     void clearPaintCache() {
         secondaryFont_.reset();
         keyIcon_.reset();
+        sortIcon_.reset();
         elided_.clear();
     }
     mutable std::optional<QFont> secondaryFont_;
     mutable std::optional<QIcon> keyIcon_;
     mutable QRgb keyIconColor_ = 0;
     mutable QHash<int, ElidedLabel> elided_;
+    mutable std::optional<QIcon> sortIcon_;
+    mutable QRgb sortIconColor_ = 0;
+    mutable Qt::SortOrder sortIconOrder_ = Qt::AscendingOrder;
 };
 }

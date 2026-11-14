@@ -40,7 +40,10 @@ SqlEditor::SqlEditor(QWidget* parent) : QsciScintilla(parent) {
     setIndentationWidth(4);
     setTabWidth(4);
     setIndentationsUseTabs(false);
-    setFolding(QsciScintilla::BoxedTreeFoldStyle);
+    setFolding(QsciScintilla::PlainFoldStyle);
+    setCaretLineVisible(true);
+    SendScintilla(SCI_SETSCROLLWIDTH, 1);
+    SendScintilla(SCI_SETSCROLLWIDTHTRACKING, true);
     auto* lexer = new QsciLexerSQL(this);
     setLexer(lexer);
     setEditorFont(font);
@@ -55,7 +58,16 @@ SqlEditor::SqlEditor(QWidget* parent) : QsciScintilla(parent) {
 bool SqlEditor::viewportEvent(QEvent* event) {
     if (event->type() == QEvent::ContextMenu) {
         auto* context = static_cast<QContextMenuEvent*>(event);
-        if (auto* menu = createStandardContextMenu()) {
+        if (!contextActions_.isEmpty()) {
+            QMenu menu(this);
+            for (auto* action : contextActions_) {
+                if (action)
+                    menu.addAction(action);
+                else
+                    menu.addSeparator();
+            }
+            design::execContextMenu(menu, context->globalPos());
+        } else if (auto* menu = createStandardContextMenu()) {
             design::execContextMenu(*menu, context->globalPos());
             delete menu;
         }
@@ -212,6 +224,7 @@ void SqlEditor::applyPalette() {
     setMarginsForegroundColor(foreground);
     setFoldMarginColors(base, base);
     setCaretForegroundColor(foreground);
+    setCaretLineBackgroundColor(colors.elevated);
     setSelectionBackgroundColor(palette().color(QPalette::Highlight));
     setSelectionForegroundColor(palette().color(QPalette::HighlightedText));
     setMatchedBraceBackgroundColor(palette().color(QPalette::Highlight));

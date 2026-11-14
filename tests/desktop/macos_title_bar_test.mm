@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         NSColor* color = [native.backgroundColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
-        const QColor expected(mode == choscordb::design::ThemeMode::Dark ? "#171d20" : "#f6f7f8");
+        const QColor expected(mode == choscordb::design::ThemeMode::Dark ? "#030303" : "#fbfbfb");
         if (qAbs(color.redComponent - expected.redF()) > 0.005 ||
             qAbs(color.greenComponent - expected.greenF()) > 0.005 ||
             qAbs(color.blueComponent - expected.blueF()) > 0.005 ||
