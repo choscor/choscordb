@@ -126,7 +126,7 @@ The Rust engine owns all application behavior that is not presentation:
 - Persisted encodings, for example IDs, context strings, file names and storage locations.
 
 The bridge gives these values to C++ as typed DTOs.
-For example, Rust selects the SQL text that `Run current` or `Run all` sends to the database.
+For example, Rust selects the SQL text that `Run` or `Run all` sends to the database.
 C++ sends the run scope as the typed `ExecutionScope` enum and does not find statements itself.
 The bridge always runs SQL editor text with auto-commit.
 Do not repeat a Rust rule in C++ or in the bridge.

@@ -230,6 +230,7 @@ The Linux packager verifies pinned SHA-256 hashes of `linuxdeploy` and its Qt ad
 4. Do the clean-machine checks below.
 
 The packager refuses missing pinned Qt or QScintilla notices.
+It also refuses an install without the Inter, Phosphor and database logo notices.
 A Cargo package without license files has an `spdx-only` record with its license and repository URL.
 The inventory supports a separate review of dependency redistribution terms.
 

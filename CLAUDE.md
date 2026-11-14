@@ -9,7 +9,6 @@ Write this file in ASD-STE100 Simplified Technical English, as `docs/style-guide
 - `crates/`: the Rust engine, the drivers, storage and the CXX bridge.
 - `desktop/`: the desktop frontend, the design system and the bridge adapter.
 - `docs/`: developer documentation. Start at `docs/README.md`.
-- `user-guide/`: documentation for the users of ChoscorDB.
 - `scripts/`: quality gates (`scripts/ci/`), release tools and fixtures.
 - `tests/`: C++ tests and the performance harness.
 - `examples/`: sample databases.
@@ -162,13 +161,15 @@ For the vocabulary and the component map, read `docs/design-system.md` and `desk
   - For menus, use `design::popupContextMenu` or `execContextMenu`.
 - For icons, obey these rules:
   - Use `design::Icon` roles. Do not use Qt standard icons. Do not show icons in menu bar menus.
-  - Use unchanged Lucide files from the release that `SOURCE-LUCIDE.json` pins.
+  - Use unchanged Phosphor files from the release that `SOURCE-PHOSPHOR.json` pins.
   - Record the sha256 of each icon file.
   - Do not edit or draw an icon. Do not add raster icons.
   - Only the app mark and the database logos can be other files.
   - Record each logo in `SOURCE-DATABASE-LOGOS.json`.
   - A logo has a square `viewBox`, no `width` or `height`, and its brand colors.
   - Show icons only at `Dimension::IconSmall` or `Dimension::Icon` through `design::themedIcon`.
+  - Exception: a database logo on a driver choice uses `Dimension::Logo`.
+  - Exception: the status icon of a confirmation uses `Dimension::IconLarge`.
 
 ## Driver consistency
 
@@ -226,7 +227,7 @@ The work for each paint, keystroke or signal must not increase with the quantity
 ## Documentation
 
 - Put developer documentation in `docs/`.
-- Put documentation for the users of ChoscorDB in `user-guide/`.
+- Put the feature list for the users of ChoscorDB in the root `README.md`. Keep it short.
 - Update the owning page in the same change. `docs/README.md` gives the owning page for each code path.
 - If a change needs no update, add `Docs: none needed, <reason>` to the PR body or a commit message.
 - Write in ASD-STE100 Simplified Technical English. Obey `docs/style-guide.md`.

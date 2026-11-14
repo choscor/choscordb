@@ -12,7 +12,7 @@
 
 <!-- List commands or manual checks you actually ran and their results. Name relevant checks not run and why. Do not call offscreen CTest a visual, accessibility, or installer check. -->
 
-Docs: <!-- Name the updated docs/ or user-guide/ page, or write "none needed, <reason>". -->
+Docs: <!-- Name the updated docs/ page or README.md, or write "none needed, <reason>". -->
 
 ## Review notes
 

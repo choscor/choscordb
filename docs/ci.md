@@ -30,9 +30,10 @@ To run one stage, give its name, for example `python3 scripts/ci/quality.py ui-p
 | --- | --- |
 | `cpp-format` | `clang-format --dry-run --Werror` on the C, C++ and Objective-C++ files in `desktop/` and `tests/`. Needs LLVM 23. |
 | `cpp-size` | Each of these files has 1,000 lines or fewer. |
+| `qt-test-policy` | A C++ test does not use `waitForReadyRead` (`scripts/ci/qt_test_policy.py`). |
 | `cpp-ownership` | The Rust and C++ ownership boundary. |
-| `qss-lint` | Qt stylesheet rules (`scripts/ci/qss_policy.py`). |
-| `ui-policy` | Visual constants, stylesheets, icons and ad-hoc empty or failed labels in screen code (`scripts/ci/ui_policy.py`). |
+| `qss-lint` | Qt stylesheet rules (`scripts/ci/qss_policy.py`). An `::item` rule of a list, tree or table view with padding must also set a border or a background. Qt 6.8 ignores the padding of a table item without one. |
+| `ui-policy` | Visual constants, stylesheets, icons and ad-hoc empty or failed labels in screen code. Also mnemonics outside menu bar titles, em dash separators, generic `Success` toast titles, error text that starts with `Failed to`, that has `Unable to`, or that has `failed.` or `failed:`, the terms that `docs/style-guide.md` does not permit, placeholders that give an instruction, search placeholders without a final `…`, `metrics.h` and `fonts.h` enum values with no caller outside their definition files, a member read from `value<T>()` of a temporary `QVariant`, a header other than a `tools/` header in a `CHOSCORDB_DEVELOPMENT_PREVIEW` block, and stock buttons or literal sizes in the gallery (`scripts/ci/ui_policy.py`). |
 | `ui-consistency` | The census of UI control construction sites (`scripts/ci/ui_consistency.py`). |
 | `perf-policy` | Code patterns that become slow with large data (`scripts/ci/perf_policy.py`). |
 | `source-inventory` | Dead or copied native code (`scripts/ci/source_inventory.py`). |
@@ -41,7 +42,7 @@ To run one stage, give its name, for example `python3 scripts/ci/quality.py ui-p
 | `python-lint` | `ruff check` on `scripts` and `examples`. |
 | `python-format` | `ruff format --check` on `scripts` and `examples`. |
 | `actionlint` | The workflow files. Needs actionlint 1.7.7. |
-| `python-tests` | The `test_*.py` suites in `scripts/ci` and `scripts/release`. |
+| `python-tests` | The `test_*.py` suites in `scripts/ci`, `scripts/design` and `scripts/release`. |
 | `rust-format` | `cargo fmt --all -- --check`. |
 | `rust-check` | `cargo check` on all workspace targets and features. |
 | `rust-clippy` | `cargo clippy` on all targets and features, with warnings as errors. |
@@ -95,7 +96,17 @@ It rejects these items:
 - Qt standard icons.
 - `designRole`, `variant`, `state` or `designSurface` values that the design system does not style.
 - Literal icon sizes. Icons use `Dimension::IconSmall` or `Dimension::Icon` only.
-- Icon files that are not recorded upstream Lucide files or recorded brand logos.
+- Icon files that are not recorded upstream Phosphor files or recorded brand logos.
+- Icon license or provenance files other than the Phosphor and database logo records.
+
+These rules apply to all desktop C++ code, the design system included:
+
+- A `setDuration` call with a literal. Use `motionSpec`.
+- A dialog decision outside the dialog contract: `ConfirmationDialog::question`, `QMessageBox::Yes`, `QMessageBox::No`, `QMessageBox::Discard`, `QMessageBox::DestructiveRole` or `footerLayout`.
+  Use `ConfirmationDialog::confirm`, `addActionButton` or `DialogSections::addAction`.
+- A `tr()` label in title case, for example `Close Others`.
+  A label has no sentence punctuation.
+  A proper name such as `JSON Lines` is permitted.
 
 The icon rules accept no marker.
 Read [Design system](design-system.md) for the icon rules.
@@ -189,6 +200,12 @@ A file with exactly 1,000 lines passes.
 The gate scans the files on disk, so it also checks new files that Git does not track.
 CTest also runs this gate as the `cpp-source-size` test.
 
+### qt-test-policy
+
+`qt-test-policy` scans the C++ files in `tests/`.
+It rejects `waitForReadyRead`, because the call can return before the process writes a full line.
+Use `QTRY_VERIFY(process.canReadLine())` and then read the line.
+
 There is no exception list.
 If a file becomes too large, split it by responsibility.
 Do not split it into numbered parts.
@@ -214,9 +231,9 @@ Exit code 1 means that TLC found a violation or rejected a trace.
 
 ### docs-policy
 
-`docs-policy` checks the Markdown pages in `docs/`, `user-guide/` and the root `README.md`, `CONTRIBUTING.md` and `CLAUDE.md`:
+`docs-policy` checks the Markdown pages in `docs/` and the root `README.md`, `CONTRIBUTING.md` and `CLAUDE.md`:
 
-- Relative links, `#anchor` targets and `docs/` or `user-guide/` paths must resolve.
+- Relative links, `#anchor` targets and `docs/` paths must resolve.
 - Each glob in the map of `docs/README.md` must match a file.
 - A sentence in a list item has 20 words or fewer.
 - Other sentences have 25 words or fewer.

@@ -29,6 +29,19 @@ No tool in this repository checks words against that dictionary.
 - Use simple verb tenses: present, past and future.
 - Keep articles ("a", "an", "the") where English needs them.
 
+### Messages
+
+- Start an error sentence with "Could not".
+  An example is "Could not open the file."
+  Do not write "Unable to" or "<operation> failed: <detail>".
+  `ui_policy.py` rejects these forms in `tr()` text.
+- A short outcome headline names the operation and its result, for example `Export failed` or `Connection saved`.
+  Use this form only for a status line headline or a toast title.
+- A tooltip that names a control or an item is a short label with no period, for example `Refresh`.
+- A tooltip that explains a state is a full sentence with a period.
+  An example is why a control is disabled.
+  `ui_policy.py` rejects a tooltip that has a sentence but no final period.
+
 ### Paragraphs and lists
 
 - Give each paragraph one topic.
@@ -50,7 +63,7 @@ The reason is necessary.
 | --- | --- | --- |
 | ChoscorDB | The application. | the app, the tool |
 | connection profile | The saved settings that open a database connection. | connection, profile, data source |
-| connection | An open link to one database server or file. The UI label `New SQLite session…` is the only use of "session". | link |
+| connection | An open link to one database server or file. In UI text, "connection" also names a connection profile. Do not use "profile" or "session" alone in UI text. | link |
 | driver | The engine adapter for one database type (SQLite, PostgreSQL, MySQL). | plugin, backend |
 | navigator | The tree of connection profiles and database objects at the side of the window. | explorer, sidebar |
 | database object | A schema, table, view, column, index or other object in the navigator. | entity, item |

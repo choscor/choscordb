@@ -1,7 +1,7 @@
 # ChoscorDB developer documentation
 
 This directory holds the documentation for developers and maintainers of ChoscorDB.
-The guide for people who use ChoscorDB is in [user-guide/](../user-guide/README.md).
+The root [README.md](../README.md) lists the features for people who use ChoscorDB.
 Write all pages in Simplified Technical English, as the [style guide](style-guide.md) tells you.
 
 ## Pages
@@ -13,6 +13,7 @@ Write all pages in Simplified Technical English, as the [style guide](style-guid
 | [ci.md](ci.md) | Quality gates and how to run them. |
 | [architecture.md](architecture.md) | Crate map, Rust and C++ ownership, the ownership gate. |
 | [design-system.md](design-system.md) | Visual tokens, components and icon rules. |
+| [audit-ui.md](audit-ui.md) | UI audit of 2026-11-13: inventory, state matrix and findings. |
 | [testing.md](testing.md) | Database fixtures and the performance harness. |
 | [release-macos.md](release-macos.md) | macOS package, signature, notarization and update feed. |
 | [release-windows-linux.md](release-windows-linux.md) | Windows and Linux packages and update feeds. |
@@ -38,27 +39,26 @@ Each line maps a code path to its owning pages.
 Each path must match at least one tracked file.
 
 ```docs-map
-crates/driver-*/** -> user-guide/connections.md
+crates/driver-*/** -> README.md
 crates/core/** -> docs/architecture.md
 crates/bridge/** -> docs/architecture.md
-crates/diagnostics/** -> user-guide/diagnostics.md
-crates/export/** -> user-guide/results.md
+crates/diagnostics/** -> README.md
+crates/export/** -> README.md
 desktop/design_system/** -> docs/design-system.md
 desktop/resources/icons/** -> docs/design-system.md
-desktop/widgets/sql_editor/** -> user-guide/sql-editor.md
-desktop/widgets/editor_completion/** -> user-guide/sql-editor.md
-desktop/widgets/search_panel/** -> user-guide/sql-editor.md
-desktop/widgets/preferences_dialog/** -> user-guide/sql-editor.md
-desktop/widgets/query_settings_dialog/** -> user-guide/sql-editor.md
-desktop/widgets/profile_dialog/** -> user-guide/connections.md
-desktop/widgets/export_dialog/** -> user-guide/results.md
-desktop/widgets/value_detail_dialog/** -> user-guide/results.md
-desktop/app/result_* -> user-guide/results.md
-desktop/app/navigator_* -> user-guide/navigator.md
-desktop/app/object_explorer* -> user-guide/navigator.md
-desktop/widgets/history_dock/** -> user-guide/history-recovery.md
-desktop/app/workspace_recovery* -> user-guide/history-recovery.md
-desktop/app/diagnostics_* -> user-guide/diagnostics.md
+desktop/widgets/sql_editor/** -> README.md
+desktop/widgets/editor_completion/** -> README.md
+desktop/widgets/search_panel/** -> README.md
+desktop/widgets/preferences_dialog/** -> README.md
+desktop/widgets/profile_dialog/** -> README.md
+desktop/widgets/export_dialog/** -> README.md
+desktop/widgets/value_detail_dialog/** -> README.md
+desktop/app/result_* -> README.md
+desktop/app/navigator_* -> README.md
+desktop/app/object_explorer* -> README.md
+desktop/widgets/history_dock/** -> README.md
+desktop/app/workspace_recovery* -> README.md
+desktop/app/diagnostics_* -> README.md
 scripts/ci/** -> docs/ci.md
 specs/** -> docs/architecture.md
 .github/workflows/** -> docs/ci.md

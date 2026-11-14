@@ -4,21 +4,23 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 
 ## Features
 
-- Save connection profiles with credentials in the system credential store, and SSH tunnel and TLS options.
-- Write SQL in an editor with completion, search and query settings.
-- Read large results page by page in the result grid, and edit table rows.
-- Copy rows, and export results to CSV, JSON, JSON Lines or SQL `INSERT` statements.
-- Browse schemas, tables, views and columns in the navigator, and find objects with quick search.
-- Run queries again from the history, and get unsaved SQL editor text back after an unexpected stop.
-
-## Supported databases
-
-ChoscorDB supports SQLite, PostgreSQL and MySQL.
+- Connect to SQLite, PostgreSQL, MySQL and MariaDB.
+- Keep passwords in the credential store of the operating system. Connect through an SSH tunnel or TLS.
+- Write SQL with completion, search and replace, and run options.
+- Read large results page by page. Filter, sort and edit table rows.
+- Copy rows, or export results to CSV, JSON, JSON Lines or SQL `INSERT` statements.
+- Browse schemas, tables, views, indexes and keys. See the DDL and an ERD of each table.
+- Pin objects, and find objects, tabs and SQL text with quick search.
+- Save queries, run queries again from the history, and recover unsaved SQL after a crash.
+- Update the app from a signed update feed. Use the Light or Dark theme.
 
 ## Download
 
-Get ChoscorDB from [GitHub Releases](https://github.com/choscor/choscordb/releases). The macOS DMG is signed and notarized. The Windows and Linux packages are unsigned, so your system can show a security warning.
-The [installation guide](user-guide/install.md) gives the steps.
+Get ChoscorDB from [GitHub Releases](https://github.com/choscor/choscordb/releases).
+
+- macOS 26 or later on Apple silicon: open the signed and notarized `.dmg` file and drag ChoscorDB to `Applications`.
+- Windows x64: start the `-setup.exe` installer. It is not signed, so SmartScreen can show a warning.
+- Linux x86_64: make the `.AppImage` file executable with `chmod +x`, then start it. It is not signed.
 
 ## Build from source
 
@@ -32,7 +34,6 @@ python3 scripts/ci/quality.py native-build
 
 ## Documentation
 
-- [User guide](user-guide/README.md): install and use ChoscorDB.
 - [Developer documentation](docs/README.md): build, test, architecture and release.
 
 ## Contributing

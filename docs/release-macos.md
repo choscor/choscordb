@@ -190,7 +190,7 @@ The output directory contains these files:
 The source archive includes these directories:
 
 ```text
-.github cmake crates desktop docs scripts tests user-guide
+.github cmake crates desktop docs scripts tests
 ```
 
 The source candidate has the label of a working-tree snapshot.
@@ -201,9 +201,9 @@ The release signature metadata contains no private key.
 
 ### Licenses and notices
 
-The bundle contains the license and source files for the Geist font, the Lucide icons and the database logos.
+The bundle contains the license and source files for the Inter font, the Phosphor icons and the database logos.
 `LICENSE-DEVICON` covers the MySQL logo from devicon under the MIT license.
-It is installed next to `LICENSE-LUCIDE`.
+It is installed next to `LICENSE-PHOSPHOR`.
 The icons ship as SVG files only.
 
 `scripts/release/cargo_licenses.py` collects the license files of each Rust dependency.

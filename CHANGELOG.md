@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- ChoscorDB now uses the Cloudflare Kumo design: blue brand controls, the Inter font, Phosphor icons and larger controls, rows and table cells, in Light and Dark.
 - Query, panel, export and connection-test status now come from one set of state machines in the engine. Each screen shows the same busy, empty and failure states, and each failure message ends with a recovery hint.
 - A query that fails because its connection closes now stays red and shows the error, also after the disconnect.
 - Saved SQL, query history and the object explorer now show a placeholder and a notification when they cannot load, and a separate message when a filter matches nothing.
