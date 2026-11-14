@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.2.0]
 
 - ChoscorDB now uses the Cloudflare Kumo design: blue brand controls, the Inter font, Phosphor icons and larger controls, rows and table cells, in Light and Dark.
 - Query, panel, export and connection-test status now come from one set of state machines in the engine. Each screen shows the same busy, empty and failure states, and each failure message ends with a recovery hint.
