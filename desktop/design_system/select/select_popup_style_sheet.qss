@@ -1,5 +1,5 @@
 QFrame#designComboPopup {
-  background: @surface;
+  background: @kumo-control;
   border: 0;
-  border-radius: @radius-md;
+  border-radius: @radius-lg;
 }

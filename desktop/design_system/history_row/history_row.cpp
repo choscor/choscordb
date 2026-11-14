@@ -1,4 +1,5 @@
 #include "design_system/history_row/history_row.h"
+#include "design_system/field/focus_indicator.h"
 
 #include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
@@ -10,12 +11,12 @@
 namespace choscordb::design {
 StatusTint historyStatusTint(const Colors& colors, QStringView status) {
     if (status == u"completed")
-        return {colors.success, colors.successSurface};
+        return {colors.textSuccess, colors.successTint};
     if (status == u"failed" || status == u"disconnected")
-        return {colors.danger, colors.dangerSurface};
+        return {colors.textDanger, colors.dangerTint};
     if (status == u"cancelled")
-        return {colors.warning, colors.warningSurface};
-    return {colors.fgMuted, colors.surfaceRaised};
+        return {colors.textWarning, colors.warningTint};
+    return {colors.textSubtle, colors.elevated};
 }
 
 namespace {
@@ -34,10 +35,7 @@ QString statusLabel(const QString& status) {
 
 QSize RecentHistoryRowDelegate::sizeHint(const QStyleOptionViewItem& option,
                                          const QModelIndex&) const {
-    const int height = typographySpec(TextStyle::Callout, FontDesign::Monospaced).lineHeight +
-                       2 * typographySpec(TextStyle::Callout).lineHeight + spacing(Spacing::Two) +
-                       spacing(Spacing::Half);
-    return {option.rect.width(), height};
+    return {option.rect.width(), 2 * dimension(Dimension::Row)};
 }
 
 void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
@@ -45,69 +43,71 @@ void RecentHistoryRowDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     if (!option.widget)
         return;
     const auto colors = resolvedThemeForWidget(*option.widget).colors;
-    const auto bounds = option.rect.adjusted(1, 1, -1, -1);
+    const auto bounds = option.rect.adjusted(spacing(Spacing::One), 0, -spacing(Spacing::One), 0);
     const bool selected = option.state & QStyle::State_Selected;
     const bool hovered = option.state & QStyle::State_MouseOver;
-    const int inset = spacing(Spacing::Two);
-    const int lineGap = spacing(Spacing::Half);
-    const int textWidth = qMax(0, bounds.width() - 2 * inset);
+    const bool enabled = option.state & QStyle::State_Enabled;
+    const int inset = spacing(Spacing::Three);
+    const int row = dimension(Dimension::Row);
+    const QRect firstLine(bounds.left() + inset, bounds.top(), bounds.width() - 2 * inset, row);
+    const QRect secondLine(firstLine.left(), bounds.top() + row - spacing(Spacing::One),
+                           firstLine.width(), row);
+    const auto ink = enabled ? colors.textDefault : colors.textInactive;
+    const auto muted = enabled ? colors.textSubtle : colors.textInactive;
 
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
-    painter->setPen(selected ? colors.border : Qt::transparent);
-    painter->setBrush(selected || hovered ? colors.surface : colors.surfaceRaised);
-    painter->drawRoundedRect(bounds, radius(Radius::Medium), radius(Radius::Medium));
+    const qreal gap = layoutMetrics().navigationHighlightGap;
+    const auto highlight = QRectF(bounds).adjusted(0, gap / 2, 0, -gap / 2);
+    if (selected || hovered) {
+        const auto base = selected ? colors.tint : colors.elevated;
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(hovered ? composite(colors.tint, base) : base);
+        painter->drawRoundedRect(highlight, radius(Radius::Large), radius(Radius::Large));
+    }
+
+    const QFont detailFont = resolveTypography(TextStyle::Callout);
+    const QFontMetrics detailMetrics(detailFont);
+    const QFont badgeFont = resolveTypography(TextStyle::Caption);
+    const QFontMetrics badgeMetrics(badgeFont);
+    const QString status = statusLabel(index.data(StatusRole).toString());
+    const int badgeWidth = badgeMetrics.horizontalAdvance(status) + 2 * spacing(Spacing::Two);
+    const int badgeHeight = dimension(Dimension::Badge);
+    const QRect badge(firstLine.right() - badgeWidth + 1,
+                      firstLine.center().y() - badgeHeight / 2 + 1, badgeWidth, badgeHeight);
+    const auto tint = historyStatusTint(colors, index.data(StatusRole).toString());
+    painter->setFont(badgeFont);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(enabled ? tint.surface : colors.elevated);
+    painter->drawRoundedRect(badge, badgeHeight / 2.0, badgeHeight / 2.0);
+    painter->setPen(enabled ? tint.ink : colors.textInactive);
+    painter->drawText(badge, Qt::AlignCenter, status);
 
     const QFont sqlFont = resolveTypography(TextStyle::Callout, FontDesign::Monospaced);
     const QFontMetrics sqlMetrics(sqlFont);
     auto sql = index.data(SqlRole).toString();
     sql.replace(QLatin1Char('\n'), QLatin1Char(' '));
+    const int sqlWidth = qMax(0, badge.left() - inset - firstLine.left());
     painter->setFont(sqlFont);
-    painter->setPen(colors.fg);
-    const int firstY = bounds.top() + spacing(Spacing::One);
-    const int sqlLineHeight = sqlMetrics.lineSpacing();
-    const auto shown = sqlMetrics.elidedText(sql, Qt::ElideRight, textWidth);
-    painter->drawText(QRect(bounds.left() + inset, firstY, textWidth, sqlLineHeight),
-                      Qt::AlignLeft | Qt::AlignVCenter, shown);
-
-    const QFont detailFont = resolveTypography(TextStyle::Callout);
-    const QFontMetrics detailMetrics(detailFont);
-    painter->setFont(detailFont);
-    const int dateY = bounds.bottom() - spacing(Spacing::One) - detailMetrics.height();
-    const int connectionY = dateY - detailMetrics.height() - lineGap;
-    const QString status = statusLabel(index.data(StatusRole).toString());
-    const int badgeWidth = detailMetrics.horizontalAdvance(status) + 2 * inset;
-    const int badgeLeft = bounds.right() - inset - badgeWidth;
-    const QRect badge(badgeLeft, dateY - lineGap, badgeWidth, detailMetrics.height() + 2 * lineGap);
-    const auto tint = historyStatusTint(colors, index.data(StatusRole).toString());
-    painter->setPen(Qt::NoPen);
-    painter->setBrush(tint.surface);
-    painter->drawRoundedRect(badge, radius(Radius::Small), radius(Radius::Small));
-    painter->setPen(tint.ink);
-    painter->drawText(badge, Qt::AlignCenter, status);
+    painter->setPen(ink);
+    painter->drawText(QRect(firstLine.left(), firstLine.top(), sqlWidth, row),
+                      Qt::AlignLeft | Qt::AlignVCenter,
+                      sqlMetrics.elidedText(sql, Qt::ElideRight, sqlWidth));
 
     const int iconSize = dimension(Dimension::IconSmall);
-    const int metadataLeft = bounds.left() + inset;
-    themedIcon(driverIcon(index.data(DriverRole).toString()), colors.fgMuted, iconSize)
-        .paint(painter, QRect(metadataLeft, connectionY, iconSize, iconSize));
-    const int connectionLeft = metadataLeft + iconSize + lineGap;
-    const auto when = index.data(WhenRole).toString();
-    const int connectionWidth = qMax(0, bounds.right() - inset - connectionLeft);
-    painter->setPen(colors.fgMuted);
-    painter->drawText(QRect(connectionLeft, connectionY, connectionWidth, detailMetrics.height()),
+    themedIcon(driverIcon(index.data(DriverRole).toString()), muted, iconSize)
+        .paint(painter, QRect(secondLine.left(), secondLine.center().y() - iconSize / 2 + 1,
+                              iconSize, iconSize));
+    const int metadataLeft = secondLine.left() + iconSize + spacing(Spacing::OneHalf);
+    const int metadataWidth = qMax(0, secondLine.right() - metadataLeft);
+    const auto metadata =
+        tr("%1 · %2").arg(index.data(ConnectionRole).toString(), index.data(WhenRole).toString());
+    painter->setFont(detailFont);
+    painter->setPen(selected && enabled ? colors.textDefault : muted);
+    painter->drawText(QRect(metadataLeft, secondLine.top(), metadataWidth, row),
                       Qt::AlignLeft | Qt::AlignVCenter,
-                      detailMetrics.elidedText(index.data(ConnectionRole).toString(),
-                                               Qt::ElideRight, connectionWidth));
-    const int dateWidth = qMax(0, badgeLeft - lineGap - metadataLeft);
-    painter->drawText(QRect(metadataLeft, dateY, dateWidth, detailMetrics.height()),
-                      Qt::AlignLeft | Qt::AlignVCenter,
-                      detailMetrics.elidedText(when, Qt::ElideRight, dateWidth));
-    if (option.state & QStyle::State_HasFocus) {
-        painter->setPen(QPen(colors.ring, focusSpec().borderWidth));
-        painter->setBrush(Qt::NoBrush);
-        painter->drawRoundedRect(bounds.adjusted(1, 1, -1, -1), radius(Radius::Medium),
-                                 radius(Radius::Medium));
-    }
+                      detailMetrics.elidedText(metadata, Qt::ElideRight, metadataWidth));
+    paintRowFocusRing(*painter, option, option.widget, highlight, radius(Radius::Large));
     painter->restore();
 }
 }

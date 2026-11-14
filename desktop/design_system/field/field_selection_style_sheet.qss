@@ -1,4 +1,4 @@
 QLineEdit, QPlainTextEdit, QTextEdit {
-  selection-background-color: @primary;
-  selection-color: @primary-fg;
+  selection-background-color: @kumo-tint;
+  selection-color: @text-kumo-default;
 }

@@ -1,22 +1,28 @@
 QLabel[state="completed"], QLabel[state="success"], QLabel[state="loaded"],
 QLabel[state="ready"], QLabel[state="restored"] {
-  color: @success;
+  color: @text-kumo-success;
 }
 
 QLabel[state="warning"] {
-  color: @warning;
+  color: @text-kumo-warning;
 }
 
 QLabel[state="failed"], QLabel[state="error"] {
-  color: @danger;
+  color: @text-kumo-danger;
 }
 
 QLabel[designRole="heading"] {
   font-size: @font-headline;
   font-weight: @font-headline-weight;
-  color: @fg;
+  color: @text-kumo-default;
 }
 
 QLabel[designRole="description"] {
-  color: @fg-muted;
+  color: @text-kumo-subtle;
+}
+
+QLabel[designRole="formLabel"] {
+  font-size: @font-body;
+  font-weight: 500;
+  color: @text-kumo-default;
 }

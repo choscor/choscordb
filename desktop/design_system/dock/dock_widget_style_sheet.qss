@@ -1,7 +1,7 @@
 QDockWidget, QWidget#dockTitleBar {
-  background: @surface;
-  color: @fg;
+  background: @kumo-base;
+  color: @text-kumo-default;
 }
 QLabel {
-  color: @fg;
+  color: @text-kumo-default;
 }

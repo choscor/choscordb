@@ -1,38 +1,38 @@
 QMenu {
-  min-width: 243px;
   margin: @shadow-margin;
-  background: @surface;
-  color: @fg;
-  border: 1px solid @border;
+  background: @kumo-control;
+  color: @text-kumo-default;
+  border: 1px solid @kumo-line;
   border-radius: @radius-lg;
-  padding: 5px;
+  padding: @space-1-5;
+  font-size: @font-body;
 }
 
 QMenu::item {
-  min-width: 209px;
-  min-height: 17px;
-  padding: 6px 24px 6px 10px;
-  border-radius: @radius-sm;
-  font-size: @font-callout;
-  font-weight: @font-callout-weight;
+  min-width: @menu-item-width;
+  height: @menu-row-height;
+  padding: 0 @space-6 0 @space-2;
+  border-radius: @radius-md;
+  font-size: @font-body;
+  font-weight: @font-body-weight;
 }
 
 QMenu::item:selected {
-  background: @surface-raised;
-  color: @fg;
+  background: @kumo-tint;
+  color: @text-kumo-default;
 }
 
 QMenu::item:disabled {
-  color: @fg-disabled;
+  color: @text-kumo-inactive;
 }
 
 QMenu::separator {
   height: 1px;
-  background: @border;
-  margin: 4px 0;
+  background: @kumo-hairline;
+  margin: @space-1 0;
 }
 
 QMenu::indicator {
-  width: 16px;
-  height: 16px;
+  width: @icon-size;
+  height: @icon-size;
 }

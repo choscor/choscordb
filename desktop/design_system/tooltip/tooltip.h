@@ -1,10 +1,11 @@
 #pragma once
 
-#include <QPointer>
 class QWidget;
 class QEvent;
+class QRect;
+class QString;
 
 namespace choscordb::design::detail {
-bool handleTooltipEvent(QWidget* widget, QEvent* event, QPointer<QWidget>& tooltip,
-                        QPointer<QWidget>& owner);
+void showTooltip(QWidget* owner, const QRect& anchor, const QString& text);
+bool handleTooltipEvent(QWidget* widget, QEvent* event);
 }

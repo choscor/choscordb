@@ -8,12 +8,15 @@ QTabWidget[designTabVariant="pane"]::tab-bar {
 }
 
 QTabBar {
-  background: @surface-raised;
+  background: @kumo-recessed;
   border: 0;
   border-radius: @radius-lg;
+  font-size: @font-body;
+  font-weight: 500;
 }
 
 QTabBar[designTabVariant="document"] {
+  background: @kumo-base;
   border-radius: 0;
 }
 
@@ -22,10 +25,9 @@ QTabBar::tab {
   max-height: @pane-tab-height;
   border: 1px solid transparent;
   border-radius: @radius-md;
-  padding: 0 @space-2;
+  padding: 0 @space-2-5;
   margin: @space-half 0;
-  font-size: @font-callout;
-  color: @fg-muted;
+  color: @text-kumo-subtle;
   background: transparent;
 }
 
@@ -38,9 +40,9 @@ QTabBar::tab:last, QTabBar::tab:only-one {
 }
 
 QTabBar::tab:selected {
-  background: @surface;
-  border-color: @border;
-  color: @fg;
+  background: @kumo-base;
+  border-color: @kumo-line;
+  color: @text-kumo-default;
 }
 
 QTabBar[designTabVariant="document"]::tab {
@@ -48,26 +50,25 @@ QTabBar[designTabVariant="document"]::tab {
   max-width: @document-tab-width;
   min-height: @document-tab-height;
   max-height: @document-tab-height;
+  border: 0;
+  border-bottom: @focus-width solid transparent;
   border-radius: 0;
-  border-left: 0;
-  border-bottom: 0;
-  border-top: 2px solid transparent;
-  border-right: 1px solid @border;
-  padding: 0 12px 0 8px;
+  padding: 0 @space-3 0 @space-2;
   margin: 0;
 }
 
 QTabBar[designTabVariant="document"]::tab:selected {
-  border-top-color: @surface;
-  border-top-left-radius: @radius-md;
-  border-top-right-radius: @radius-md;
-  font-weight: bold;
+  border-bottom-color: @kumo-brand;
+}
+
+QTabBar[designTabVariant="document"]::tab:hover {
+  background: @kumo-tint;
 }
 
 QTabBar::tab:hover {
-  color: @fg;
+  color: @text-kumo-default;
 }
 
 QTabBar::tab:disabled {
-  color: @fg-disabled;
+  color: @text-kumo-inactive;
 }

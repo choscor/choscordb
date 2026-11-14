@@ -9,23 +9,22 @@
 
 namespace choscordb::design {
 DocumentTabBar::DocumentTabBar(QWidget* parent) : QTabBar(parent) {
-    setFont(resolveTypography(TextStyle::Callout));
+    auto font = resolveTypography(TextStyle::Body);
+    font.setWeight(QFont::Medium);
+    setFont(font);
 }
 
 namespace {
 void drawDocumentTabLabel(const QStyleOptionTab& tab, QPainter* painter, const QTabBar& bar,
                           int index) {
     painter->save();
-    auto font = painter->font();
-    font.setBold(tab.state.testFlag(QStyle::State_Selected));
-    painter->setFont(font);
     const auto colors = resolvedThemeForWidget(bar).colors;
-    painter->setPen(!tab.state.testFlag(QStyle::State_Enabled) ? colors.fgDisabled
+    painter->setPen(!tab.state.testFlag(QStyle::State_Enabled) ? colors.textInactive
                     : tab.state.testFlag(QStyle::State_Selected) ||
                             tab.state.testFlag(QStyle::State_MouseOver)
-                        ? colors.fg
-                        : colors.fgMuted);
-    const int iconSize = dimension(Dimension::IconSmall);
+                        ? colors.textDefault
+                        : colors.textSubtle);
+    const int iconSize = dimension(Dimension::Icon);
     int left = tab.rect.left() + spacing(Spacing::Two);
     if (const auto* leading = bar.tabButton(index, QTabBar::LeftSide))
         left += leading->width() + spacing(Spacing::One);
@@ -42,8 +41,16 @@ void drawDocumentTabLabel(const QStyleOptionTab& tab, QPainter* painter, const Q
     const int textWidth = qMax(0, tab.rect.right() - rightInset - left + 1);
     const auto metrics = painter->fontMetrics();
     const int baseline = tab.rect.top() + (tab.rect.height() + metrics.capHeight()) / 2;
-    painter->drawText(QPoint(left, baseline),
-                      metrics.elidedText(tab.text, bar.elideMode(), textWidth));
+    const QString unsavedMark = QStringLiteral(" \u2022");
+    const bool unsaved = tab.text.endsWith(unsavedMark);
+    const int markWidth = unsaved ? metrics.horizontalAdvance(unsavedMark) : 0;
+    const auto title = metrics.elidedText(unsaved ? tab.text.chopped(unsavedMark.size()) : tab.text,
+                                          bar.elideMode(), qMax(0, textWidth - markWidth));
+    painter->drawText(QPoint(left, baseline), title);
+    if (unsaved) {
+        painter->setPen(colors.brand);
+        painter->drawText(QPoint(left + metrics.horizontalAdvance(title), baseline), unsavedMark);
+    }
     painter->restore();
 }
 }
@@ -86,9 +93,10 @@ void DocumentTabBar::paintEvent(QPaintEvent* event) {
     if (keyboardFocus_ && hasFocus() && currentIndex() >= 0) {
         painter.save();
         painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(resolvedThemeForWidget(*this).colors.ring, focusSpec().ringWidth));
+        const qreal ring = focusSpec().ringWidth;
+        painter.setPen(QPen(resolvedThemeForWidget(*this).colors.brand, ring));
         painter.setBrush(Qt::NoBrush);
-        const auto bounds = QRectF(tabRect(currentIndex())).adjusted(3, 3, -3, -3);
+        const auto bounds = QRectF(tabRect(currentIndex())).adjusted(ring, ring, -ring, -ring);
         painter.drawRoundedRect(bounds, radius(Radius::Small), radius(Radius::Small));
         painter.restore();
     }

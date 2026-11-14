@@ -6,7 +6,6 @@
 #include <QPainter>
 #include <QTabBar>
 #include <QTabWidget>
-#include <QTimer>
 #include <QWidget>
 
 namespace choscordb::design {
@@ -21,7 +20,7 @@ class TabEndCap final : public QWidget {
   protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
-        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.surfaceRaised);
+        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.base);
     }
 
   private:
@@ -45,8 +44,8 @@ class TabAddCorner final : public QWidget {
                                Qt::TopRightCorner);
         tabs_->installEventFilter(this);
         tabs_->tabBar()->installEventFilter(this);
-        connect(tabs_->tabBar(), &QTabBar::currentChanged, this, [this] { schedulePosition(); });
-        schedulePosition();
+        connect(tabs_->tabBar(), &QTabBar::currentChanged, this, [this] { position(); });
+        position();
     }
 
     Button* addButton() const { return addButton_; }
@@ -54,39 +53,32 @@ class TabAddCorner final : public QWidget {
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
         if ((watched == tabs_ || watched == tabs_->tabBar()) &&
-            (event->type() == QEvent::Resize || event->type() == QEvent::LayoutRequest ||
-             event->type() == QEvent::Show))
-            schedulePosition();
+            (event->type() == QEvent::Resize || event->type() == QEvent::Move ||
+             event->type() == QEvent::LayoutRequest || event->type() == QEvent::Show))
+            position();
         return QWidget::eventFilter(watched, event);
     }
 
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
-        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.surfaceRaised);
+        painter.fillRect(rect(), resolvedThemeForWidget(*this).colors.base);
     }
 
   private:
-    void schedulePosition() {
-        if (positionPending_)
-            return;
-        positionPending_ = true;
-        QTimer::singleShot(0, this, [this] {
-            positionPending_ = false;
-            const auto* bar = tabs_->tabBar();
-            const bool overflow = bar->sizeHint().width() > bar->width();
-            const int tabEnd = tabs_->count() ? bar->tabRect(tabs_->count() - 1).right() + 1 : 0;
-            const int x = overflow ? bar->width() : qMin(tabEnd, bar->width());
-            const int y = bar->mapTo(tabs_, QPoint(0, 0)).y();
-            const int height = tabs_->count() ? bar->tabRect(0).height() : addButton_->height();
-            setGeometry(x, y, addButton_->width() + leftPadding_, height);
-            addButton_->move(leftPadding_, (height - addButton_->height()) / 2);
-            raise();
-        });
+    void position() {
+        const auto* bar = tabs_->tabBar();
+        const bool overflow = bar->sizeHint().width() > bar->width();
+        const int tabEnd = tabs_->count() ? bar->tabRect(tabs_->count() - 1).right() + 1 : 0;
+        const int x = overflow ? bar->width() : qMin(tabEnd, bar->width());
+        const int y = bar->mapTo(tabs_, QPoint(0, 0)).y();
+        const int height = tabs_->count() ? bar->tabRect(0).height() : addButton_->height();
+        setGeometry(x, y, addButton_->width() + leftPadding_, height);
+        addButton_->move(leftPadding_, (height - addButton_->height()) / 2);
+        raise();
     }
 
     QTabWidget* tabs_;
     Button* addButton_;
     const int leftPadding_ = spacing(Spacing::One);
-    bool positionPending_ = false;
 };
 }

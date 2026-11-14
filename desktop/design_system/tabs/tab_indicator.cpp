@@ -1,4 +1,5 @@
 #include "design_system/tabs/tab_indicator.h"
+#include "design_system/icons.h"
 #include "design_system/theme.h"
 #include <QPainter>
 #include <QStyleOption>
@@ -14,13 +15,24 @@ bool drawTabIndicator(QStyle::PrimitiveElement element, const QStyleOption* opti
     if (element == QStyle::PE_IndicatorTabClose) {
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing);
-        const auto color = widget ? resolvedThemeForWidget(*widget).colors.fg
-                                  : option->palette.color(QPalette::ButtonText);
-        painter->setOpacity(option->state.testFlag(QStyle::State_Enabled) ? 0.7 : 0.35);
-        painter->translate(QRectF(option->rect).center());
-        painter->setPen(QPen(color, 1.5, Qt::SolidLine, Qt::RoundCap));
-        painter->drawLine(QPointF(-3, -3), QPointF(3, 3));
-        painter->drawLine(QPointF(-3, 3), QPointF(3, -3));
+        const auto colors = widget ? resolvedThemeForWidget(*widget).colors
+                                   : resolveColors(ResolvedAppearance::Light);
+        const bool enabled = option->state.testFlag(QStyle::State_Enabled);
+        const bool pressed = enabled && option->state.testFlag(QStyle::State_Sunken);
+        const bool hover = enabled && option->state.testFlag(QStyle::State_Raised);
+        const auto rounding = radius(Radius::Small);
+        if (pressed || hover) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(colors.tint);
+            painter->drawRoundedRect(QRectF(option->rect), rounding, rounding);
+        }
+        const auto color = !enabled           ? colors.textInactive
+                           : hover || pressed ? colors.textDefault
+                                              : colors.textSubtle;
+        const int icon = dimension(Dimension::IconSmall);
+        const auto mark = QRect(QPoint(), QSize(icon, icon));
+        themedIcon(Icon::Close, color, icon)
+            .paint(painter, mark.translated(option->rect.center() - mark.center()));
         painter->restore();
         return true;
     }

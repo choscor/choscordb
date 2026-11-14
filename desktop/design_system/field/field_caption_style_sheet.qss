@@ -1,3 +1,7 @@
 QLabel, QCheckBox, QRadioButton, QGroupBox {
-  color: @fg;
+  color: @text-kumo-default;
+}
+
+QLabel:disabled, QCheckBox:disabled, QRadioButton:disabled, QGroupBox:disabled {
+  color: @text-kumo-inactive;
 }

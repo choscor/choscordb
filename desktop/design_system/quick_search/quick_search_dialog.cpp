@@ -2,7 +2,9 @@
 
 #include "design_system/fonts/fonts.h"
 #include "design_system/icons.h"
+#include "design_system/kbd/key_hints.h"
 #include "design_system/metrics/metrics.h"
+#include "design_system/spinner/spinner.h"
 #include "design_system/style/style_resource.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
@@ -30,9 +32,9 @@ QuickSearchResultRow::QuickSearchResultRow(const QuickSearchResult& result, QWid
     setAccessibleName(QStringLiteral("%1. %2. %3").arg(result.type, result.title, result.context));
 
     auto* layout = new QHBoxLayout(this);
-    layout->setContentsMargins(spacing(Spacing::Two), spacing(Spacing::One), spacing(Spacing::Two),
-                               spacing(Spacing::One));
-    layout->setSpacing(spacing(Spacing::Two));
+    layout->setContentsMargins(spacing(Spacing::Two), spacing(Spacing::OneHalf),
+                               spacing(Spacing::Two), spacing(Spacing::OneHalf));
+    layout->setSpacing(spacing(Spacing::Three));
 
     iconLabel_ = new QLabel(this);
     iconLabel_->setObjectName("quickSearchResultIcon");
@@ -40,29 +42,26 @@ QuickSearchResultRow::QuickSearchResultRow(const QuickSearchResult& result, QWid
     iconLabel_->setAccessibleName(result.type);
     layout->addWidget(iconLabel_, 0, Qt::AlignVCenter);
 
-    auto* text = new QVBoxLayout;
+    auto* text = new QHBoxLayout;
     text->setContentsMargins(0, 0, 0, 0);
-    text->setSpacing(0);
+    text->setSpacing(spacing(Spacing::Two));
     titleLabel_ = new QLabel(result.title, this);
     titleLabel_->setObjectName("quickSearchResultTitle");
     titleLabel_->setTextFormat(Qt::PlainText);
     titleLabel_->setFont(resolveTypography(TextStyle::Body));
-    titleLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     text->addWidget(titleLabel_);
+    separatorLabel_ = new QLabel(QStringLiteral("\u00b7"), this);
+    separatorLabel_->setObjectName("quickSearchResultSeparator");
+    separatorLabel_->setFont(resolveTypography(TextStyle::Body));
+    separatorLabel_->setVisible(!result.context.isEmpty());
+    text->addWidget(separatorLabel_);
     detailLabel_ = new QLabel(result.context, this);
     detailLabel_->setObjectName("quickSearchResultDetail");
     detailLabel_->setTextFormat(Qt::PlainText);
     detailLabel_->setFont(resolveTypography(TextStyle::Callout));
     detailLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    text->addWidget(detailLabel_);
+    text->addWidget(detailLabel_, 1);
     layout->addLayout(text, 1);
-    refreshAppearance();
-}
-
-void QuickSearchResultRow::setSelected(bool selected) {
-    if (selected_ == selected)
-        return;
-    selected_ = selected;
     refreshAppearance();
 }
 
@@ -84,13 +83,14 @@ void QuickSearchResultRow::refreshAppearance() {
     refreshing_ = true;
     const auto colors = resolvedThemeForWidget(*this).colors;
     auto titlePalette = titleLabel_->palette();
-    titlePalette.setColor(QPalette::WindowText, selected_ ? colors.fg : colors.fg);
+    titlePalette.setColor(QPalette::WindowText, colors.textDefault);
     titleLabel_->setPalette(titlePalette);
-    auto detailPalette = detailLabel_->palette();
-    detailPalette.setColor(QPalette::WindowText, selected_ ? colors.fg : colors.fgMuted);
-    detailLabel_->setPalette(detailPalette);
+    auto subtlePalette = detailLabel_->palette();
+    subtlePalette.setColor(QPalette::WindowText, colors.textSubtle);
+    detailLabel_->setPalette(subtlePalette);
+    separatorLabel_->setPalette(subtlePalette);
     const int size = dimension(Dimension::IconSmall);
-    iconLabel_->setPixmap(themedIcon(iconRole_, colors.fgMuted, size).pixmap(size, size));
+    iconLabel_->setPixmap(themedIcon(iconRole_, colors.textSubtle, size).pixmap(size, size));
     refreshing_ = false;
 }
 
@@ -103,21 +103,31 @@ QuickSearchDialog::QuickSearchDialog(QWidget* parent)
         setPalette(parent->palette());
     setProperty("appDialog", true);
     setObjectName("quickSearchDialog");
-    setAccessibleName(tr("Quick switch"));
+    setAccessibleName(tr("Quick search"));
     setMaximumWidth(dimension(Dimension::QuickSearchWidth));
 
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(spacing(Spacing::Four), spacing(Spacing::Four),
-                               spacing(Spacing::Four), spacing(Spacing::Four));
-    layout->setSpacing(spacing(Spacing::Two));
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
 
-    input_ = new QLineEdit(this);
+    auto* header = new QWidget(this);
+    header->setObjectName("quickSearchHeader");
+    auto* headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(spacing(Spacing::Four), spacing(Spacing::Three),
+                                     spacing(Spacing::Four), spacing(Spacing::Three));
+    headerLayout->setSpacing(spacing(Spacing::Three));
+    searchIcon_ = new QLabel(header);
+    searchIcon_->setObjectName("quickSearchIcon");
+    searchIcon_->setFixedSize(dimension(Dimension::IconSmall), dimension(Dimension::IconSmall));
+    headerLayout->addWidget(searchIcon_);
+    input_ = new QLineEdit(header);
     input_->setObjectName("quickSearchInput");
     input_->setAccessibleName(tr("Search destinations"));
     input_->setPlaceholderText(tr("Search screens, tabs, objects, and SQL…"));
     input_->setMaxLength(128);
     input_->installEventFilter(this);
-    layout->addWidget(input_);
+    headerLayout->addWidget(input_, 1);
+    layout->addWidget(header);
 
     list_ = new QListWidget(this);
     list_->setObjectName("quickSearchResults");
@@ -126,18 +136,43 @@ QuickSearchDialog::QuickSearchDialog(QWidget* parent)
     list_->setUniformItemSizes(true);
     list_->setFocusPolicy(Qt::TabFocus);
     list_->installEventFilter(this);
-    list_->setFixedHeight(8 * dimension(Dimension::QuickSearchRow));
+    list_->setFixedHeight(8 * dimension(Dimension::MenuRow) + 2 * spacing(Spacing::Two) + 1);
     layout->addWidget(list_);
     placeholder_ = createPanelStateText({}, this);
     placeholder_->setObjectName("quickSearchPlaceholder");
     layout->addWidget(placeholder_);
 
-    status_ = new QLabel(this);
+    auto* footer = new QWidget(this);
+    footer->setObjectName("quickSearchFooter");
+    auto* footerLayout = new QVBoxLayout(footer);
+    footerLayout->setContentsMargins(spacing(Spacing::Four), spacing(Spacing::Three),
+                                     spacing(Spacing::Four), spacing(Spacing::Three));
+    footerLayout->setSpacing(spacing(Spacing::Two));
+
+    status_ = new QLabel(footer);
     status_->setObjectName("quickSearchStatus");
     status_->setAccessibleName(tr("Quick search status"));
     status_->setWordWrap(true);
-    status_->setFont(resolveTypography(TextStyle::Callout));
-    layout->addWidget(status_);
+    status_->setFont(resolveTypography(TextStyle::Caption));
+    busy_ = new Spinner(footer);
+    busy_->setObjectName("quickSearchBusy");
+    busy_->setAccessibleName(tr("Searching"));
+    busy_->hide();
+    auto* statusRow = new QHBoxLayout;
+    statusRow->setSpacing(spacing(Spacing::One));
+    statusRow->addWidget(busy_, 0, Qt::AlignTop);
+    statusRow->addWidget(status_, 1);
+    footerLayout->addLayout(statusRow);
+    const auto native = [](QKeyCombination key) {
+        return QKeySequence(key).toString(QKeySequence::NativeText);
+    };
+    auto* hints = new KeyHints({{native(Qt::Key_Up) + native(Qt::Key_Down), tr("Select")},
+                                {native(Qt::Key_Return), tr("Open")},
+                                {native(Qt::Key_Escape), tr("Close")}},
+                               footer);
+    hints->setObjectName("quickSearchKeyHints");
+    footerLayout->addWidget(hints);
+    layout->addWidget(footer);
 
     connect(input_, &QLineEdit::textChanged, this, &QuickSearchDialog::queryChanged);
     connect(list_, &QListWidget::itemClicked, this, [this] { activateCurrent(); });
@@ -177,7 +212,7 @@ void QuickSearchDialog::setResults(const QList<QuickSearchResult>& results) {
         item->setData(Qt::AccessibleTextRole,
                       QStringLiteral("%1. %2. %3").arg(result.type, result.title, result.context));
         item->setData(Qt::UserRole, result.id);
-        item->setSizeHint(QSize(0, dimension(Dimension::QuickSearchRow)));
+        item->setSizeHint(QSize(0, dimension(Dimension::MenuRow)));
         item->setToolTip(result.context);
         list_->setItemWidget(item, new QuickSearchResultRow(result, list_));
     }
@@ -197,11 +232,6 @@ void QuickSearchDialog::setResults(const QList<QuickSearchResult>& results) {
 }
 
 void QuickSearchDialog::updateSelectedAccessibility() {
-    for (int row = 0; row < list_->count(); ++row) {
-        if (auto* resultRow =
-                static_cast<QuickSearchResultRow*>(list_->itemWidget(list_->item(row))))
-            resultRow->setSelected(row == list_->currentRow());
-    }
     list_->setAccessibleDescription(
         tr("%1 results. %2")
             .arg(results_.size())
@@ -214,8 +244,9 @@ void QuickSearchDialog::setStatus(const QString& message) {
     statusMessage_ = message;
     updateStatus();
 }
-void QuickSearchDialog::setSearchState(PanelStateKind kind, const QString& message) {
+void QuickSearchDialog::setSearchState(PanelStateKind kind, const QString& message, bool busy) {
     showPanelState(placeholder_, kind, message);
+    busy_->setVisible(busy);
     searchMessage_ = kind == PanelStateKind::Hidden ? message : QString();
     updateStatus();
 }
@@ -244,6 +275,7 @@ void QuickSearchDialog::openSearch() {
     statusMessage_.clear();
     searchMessage_.clear();
     showPanelState(placeholder_, PanelStateKind::Hidden, {});
+    busy_->hide();
     const bool changed = !input_->text().isEmpty();
     input_->clear();
     updateStatus();
@@ -297,6 +329,7 @@ void QuickSearchDialog::changeEvent(QEvent* event) {
     QDialog::changeEvent(event);
     if (!list_ || (event->type() != QEvent::PaletteChange && event->type() != QEvent::StyleChange))
         return;
+    refreshSearchIcon();
     for (int row = 0; row < list_->count(); ++row) {
         if (auto* resultRow =
                 static_cast<QuickSearchResultRow*>(list_->itemWidget(list_->item(row))))
@@ -304,8 +337,15 @@ void QuickSearchDialog::changeEvent(QEvent* event) {
     }
 }
 
+void QuickSearchDialog::refreshSearchIcon() {
+    const int size = dimension(Dimension::IconSmall);
+    searchIcon_->setPixmap(
+        themedIcon(Icon::Search, resolvedThemeForWidget(*this).colors.textSubtle, size)
+            .pixmap(size, size));
+}
+
 void QuickSearchDialog::paintEvent(QPaintEvent*) {
-    paintDialogSurface(*this);
+    paintDialogSurface(*this, true, Radius::Large);
 }
 void QuickSearchDialog::showEvent(QShowEvent* event) {
     const int width = parentWidget()
@@ -313,6 +353,7 @@ void QuickSearchDialog::showEvent(QShowEvent* event) {
                                  qMax(1, parentWidget()->width() - spacing(Spacing::Eight)))
                           : dimension(Dimension::QuickSearchWidth);
     resize(width, sizeHint().height());
+    refreshSearchIcon();
     QDialog::showEvent(event);
     presentation_.shown();
 }

@@ -3,6 +3,7 @@
 #include "design_system/icons.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/theme.h"
+#include "design_system/tooltip/tooltip.h"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -15,7 +16,6 @@
 #include <QPainter>
 #include <QTableView>
 #include <QTimer>
-#include <QToolTip>
 
 namespace choscordb::design {
 namespace {
@@ -31,6 +31,33 @@ bool hasLink(const QModelIndex& index) {
         return link.toBool();
     return !index.data(ForeignKeyLinkLabelRole).toString().isEmpty();
 }
+
+class LinkCursor final : public QObject {
+  public:
+    explicit LinkCursor(QTableView& table) : QObject(&table), table_(table) {
+        table.viewport()->installEventFilter(this);
+    }
+
+  protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::MouseMove) {
+            const auto point = static_cast<QMouseEvent*>(event)->position().toPoint();
+            const auto index = table_.indexAt(point);
+            const bool overLink =
+                hasLink(index) && linkRect(table_.visualRect(index)).contains(point);
+            if (overLink)
+                table_.viewport()->setCursor(Qt::PointingHandCursor);
+            else
+                table_.viewport()->unsetCursor();
+        } else if (event->type() == QEvent::Leave) {
+            table_.viewport()->unsetCursor();
+        }
+        return false;
+    }
+
+  private:
+    QTableView& table_;
+};
 
 QStringList choices(const QModelIndex& index) {
     if (!(index.flags() & Qt::ItemIsEditable))
@@ -123,18 +150,16 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
                                 const QModelIndex& index) const {
     QStyleOptionViewItem rowOption(option);
     initStyleOption(&rowOption, index);
-    const bool hovered =
-        (rowOption.state & QStyle::State_MouseOver) && !(rowOption.state & QStyle::State_Selected);
-    rowOption.state &= ~QStyle::State_MouseOver;
     auto* style = rowOption.widget ? rowOption.widget->style() : QApplication::style();
     if (const auto change = index.data(CellChangeRole).toInt();
         change != int(CellChange::None) && option.widget) {
         const auto& colors = theme(*option.widget).colors;
-        rowOption.backgroundBrush = change == int(CellChange::Deleted)    ? colors.dangerSurface
-                                    : change == int(CellChange::Inserted) ? colors.successSurface
-                                                                          : colors.warningSurface;
-    } else if (hovered && option.widget) {
-        rowOption.backgroundBrush = theme(*option.widget).colors.surfaceRaised;
+        const auto tint = change == int(CellChange::Deleted)    ? colors.dangerTint
+                          : change == int(CellChange::Inserted) ? colors.successTint
+                                                                : colors.warningTint;
+        const bool hovered = rowOption.state & QStyle::State_MouseOver;
+        rowOption.state &= ~QStyle::State_MouseOver;
+        rowOption.backgroundBrush = hovered ? composite(colors.tint, tint) : tint;
     }
     const bool link = hasLink(index);
     if (link) {
@@ -144,6 +169,11 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
         rowOption.rect.setRight(strip.rect.left() - 1);
     }
     style->drawControl(QStyle::CE_ItemViewItem, &rowOption, painter, rowOption.widget);
+    if (index.data(CellChangeRole).toInt() == int(CellChange::Changed) && option.widget) {
+        auto edge = option.rect;
+        edge.setWidth(focusSpec().ringWidth);
+        painter->fillRect(edge, theme(*option.widget).colors.textWarning);
+    }
     if (!link || !option.widget)
         return;
     const QRect hit = linkRect(option.rect);
@@ -153,8 +183,8 @@ void ResultTableDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     const auto& colors = theme(*option.widget).colors;
     painter->drawPixmap(
         iconRect,
-        linkPixmap(option.state & QStyle::State_Selected ? colors.fg : colors.primary, iconSize,
-                   painter->device() ? painter->device()->devicePixelRatioF() : 1.0));
+        linkPixmap(option.state & QStyle::State_Selected ? colors.textDefault : colors.brand,
+                   iconSize, painter->device() ? painter->device()->devicePixelRatioF() : 1.0));
 }
 
 QWidget* ResultTableDelegate::createEditor(QWidget* parent, const QStyleOptionViewItem& option,
@@ -224,20 +254,39 @@ bool ResultTableDelegate::editorEvent(QEvent* event, QAbstractItemModel* model,
 bool ResultTableDelegate::helpEvent(QHelpEvent* event, QAbstractItemView* view,
                                     const QStyleOptionViewItem& option, const QModelIndex& index) {
     if (hasLink(index) && linkRect(option.rect).contains(event->pos())) {
-        QToolTip::showText(event->globalPos(), index.data(ForeignKeyLinkLabelRole).toString(),
-                           view);
+        detail::showTooltip(view->viewport(), linkRect(option.rect),
+                            index.data(ForeignKeyLinkLabelRole).toString());
         return true;
     }
     return QStyledItemDelegate::helpEvent(event, view, option, index);
 }
 
-ResultTableDelegate* configureResultTable(QTableView& table, bool showGrid) {
-    table.setShowGrid(showGrid);
-    table.setGridStyle(Qt::SolidLine);
+void configureDataTable(QTableView& table) {
+    table.setShowGrid(false);
+    table.setAlternatingRowColors(true);
+    table.verticalHeader()->setDefaultAlignment(Qt::AlignCenter);
+}
+
+void fitColumnsToContents(QTableView& table) {
+    if (!table.model())
+        return;
+    // perf-ok: configureDataTable callers limit the content sample to 50 rows.
+    table.resizeColumnsToContents();
+    for (int column = 0; column < table.model()->columnCount(); ++column)
+        table.setColumnWidth(
+            column, qMax(table.horizontalHeader()->sectionSizeHint(column),
+                         qBound(dimension(Dimension::TableColumnMin), table.columnWidth(column),
+                                dimension(Dimension::TableColumnMax))));
+}
+
+ResultTableDelegate* configureResultTable(QTableView& table) {
+    configureDataTable(table);
     table.horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     table.verticalHeader()->setResizeContentsPrecision(50);
     auto* delegate = new ResultTableDelegate(table);
     table.setItemDelegate(delegate);
+    table.setMouseTracking(true);
+    new LinkCursor(table);
     return delegate;
 }
 }

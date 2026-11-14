@@ -1,10 +1,12 @@
 QTreeView {
   font-size: @font-callout;
-  icon-size: 14px;
+  icon-size: @icon-size;
   qproperty-indentation: 9;
 }
 
 QTreeView[designNavigationTree="true"] {
+  font-size: @font-body;
+  font-weight: 500;
   selection-background-color: transparent;
   padding-left: @space-1;
   qproperty-indentation: 16;

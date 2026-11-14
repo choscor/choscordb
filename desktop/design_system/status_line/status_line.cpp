@@ -1,4 +1,5 @@
 #include "design_system/status_line/status_line.h"
+#include "design_system/spinner/spinner.h"
 
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
@@ -28,7 +29,8 @@
 namespace choscordb::design {
 
 StatusLine::StatusLine(QWidget* parent) : QWidget(parent) {
-    setFont(resolveTypography(TextStyle::Body));
+    setProperty("designSurface", "banner");
+    setFont(resolveTypography(TextStyle::Callout));
     noticeExpiry_ = new QTimer(this);
     noticeExpiry_->setSingleShot(true);
     connect(noticeExpiry_, &QTimer::timeout, this, [this] {
@@ -40,7 +42,7 @@ StatusLine::StatusLine(QWidget* parent) : QWidget(parent) {
                                  spacing(Spacing::Two), spacing(Spacing::One));
     content_->setSpacing(spacing(Spacing::Two));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
-    loading_ = new QLabel(this);
+    loading_ = new Spinner(this);
     loading_->setObjectName("statusLoadingIcon");
     loading_->setAccessibleName(tr("Loading"));
     loading_->hide();
@@ -111,8 +113,7 @@ void StatusLine::configure(const Fields& fields, bool centered) {
         if (auto* shared = qobject_cast<Button*>(button)) {
             shared->setVariant(ButtonVariant::Ghost);
             shared->setButtonSize(ButtonSize::IconSmall);
-            shared->setDesignIcon(button == fields.previous ? Icon::ChevronLeft
-                                                            : Icon::ChevronRight);
+            shared->setDesignIcon(button == fields.previous ? Icon::CaretLeft : Icon::CaretRight);
         }
         if (auto* shared = qobject_cast<Button*>(button))
             static_cast<ButtonGroup*>(paging_)->addButton(shared);
@@ -353,11 +354,8 @@ void StatusLine::openDetails() {
     text->setReadOnly(true);
     text->setPlainText(fullMessage_);
     sections->bodyLayout()->addWidget(text);
-    auto* close = new Button(tr("Close"), sections);
+    auto* close = sections->addAction(DialogActionRole::Dismiss, tr("Close"));
     close->setObjectName("statusDetailsClose");
-    close->setVariant(ButtonVariant::Outline);
-    sections->footerLayout()->addStretch();
-    sections->footerLayout()->addWidget(close);
     connect(close, &QPushButton::clicked, dialog, &QDialog::reject);
     detailsDialog_ = dialog;
     detailsText_ = text;
@@ -376,6 +374,36 @@ void StatusLine::showNotice(const QString& message, int expiryMs) {
     else
         noticeExpiry_->stop();
 }
+void StatusLine::showInfo(const QString& message) {
+    setBusy(false);
+    setState(State::Neutral);
+    setMessage(message);
+    show();
+}
+void StatusLine::showProgress(const QString& message) {
+    setState(State::Neutral);
+    setBusy(true);
+    setMessage(message);
+    show();
+}
+void StatusLine::showError(const QString& message) {
+    setBusy(false);
+    setState(State::Error);
+    setMessage(message);
+    show();
+}
+void StatusLine::showSuccess(const QString& message) {
+    setBusy(false);
+    setState(State::Success);
+    setMessage(message);
+    show();
+}
+void StatusLine::clearReport() {
+    setBusy(false);
+    setState(State::Neutral);
+    setMessage({});
+    hide();
+}
 void StatusLine::setBusy(bool busy) {
     setProperty("busy", busy);
     loading_->setVisible(busy);
@@ -392,12 +420,8 @@ void StatusLine::changeEvent(QEvent* event) {
 }
 
 void StatusLine::paintEvent(QPaintEvent*) {
-    const auto colors = resolvedThemeForWidget(*this).colors;
     QPainter painter(this);
-    const auto state = property("busy").toBool() ? State::Neutral : state_;
-    painter.fillRect(rect(), state == State::Success ? colors.successSurface
-                             : state == State::Error ? colors.dangerSurface
-                                                     : colors.surfaceRaised);
+    painter.fillRect(rect(), palette().color(QPalette::Window));
     painter.setFont(font());
     painter.setPen(palette().color(QPalette::WindowText));
     for (const auto& point : separators_)
@@ -413,20 +437,19 @@ void StatusLine::refreshAppearance() {
     const auto colors = resolvedThemeForWidget(*this).colors;
     const auto state = property("busy").toBool() ? State::Neutral : state_;
     auto colorsForLine = palette();
-    colorsForLine.setColor(QPalette::Window, state == State::Success ? colors.successSurface
-                                             : state == State::Error ? colors.dangerSurface
-                                                                     : colors.surfaceRaised);
-    colorsForLine.setColor(QPalette::WindowText, state == State::Success ? colors.success
-                                                 : state == State::Error ? colors.danger
-                                                                         : colors.fgMuted);
+    const bool error = state == State::Error;
+    const auto banner = secondaryBanner(colors);
+    colorsForLine.setColor(QPalette::Window,
+                           error ? composite(colors.dangerTint, colors.base) : banner.fill);
+    colorsForLine.setColor(QPalette::WindowText, error ? colors.textDanger : banner.text);
     setPalette(colorsForLine);
-    const auto semantic = state == State::Error     ? "error"
-                          : state == State::Success ? "success"
-                                                    : "neutral";
     for (auto* label : {fields_.source, fields_.outcome, fields_.duration, fields_.memory,
                         fields_.page, fields_.rows}) {
         if (!label)
             continue;
+        const auto semantic = error                                                 ? "error"
+                              : state == State::Success && label == fields_.outcome ? "success"
+                                                                                    : "neutral";
         if (label->property("statusLineState") != semantic) {
             label->setProperty("statusLineState", semantic);
             label->style()->unpolish(label);
@@ -434,8 +457,6 @@ void StatusLine::refreshAppearance() {
         }
     }
     message_->setMaximumHeight(dimension(Dimension::Row) * 3);
-    loading_->setPixmap(themedIcon(Icon::Loader, colors.fgMuted, dimension(Dimension::Icon))
-                            .pixmap(dimension(Dimension::Icon), dimension(Dimension::Icon)));
     if (configured_)
         details_->setIcon(themedIcon(Icon::Eye, colorsForLine.color(QPalette::WindowText),
                                      dimension(Dimension::Icon)));

@@ -17,38 +17,42 @@ Write this file in ASD-STE100 Simplified Technical English, as `docs/style-guide
 
 ## Typography
 
-- Use the eight text styles. Their names come from the macOS built-in styles:
-  `LargeTitle`, `Title1`, `Title2`, `Title3`, `Headline`, `Body`, `Callout` and `Caption`.
+- Use the four text styles. Their names come from the macOS built-in styles:
+  `Headline`, `Body`, `Callout` and `Caption`.
 - Use `FontDesign::Monospaced` for fixed-pitch text.
-- The styles use the bundled Geist and Geist Mono fonts.
-- Keep the style values equal to the table in the reference.
-- Do not make a style smaller than 12px, the Geist minimum.
+- The UI styles use the bundled Inter font with the Kumo letter spacing and features.
+- Monospaced styles use the first installed family of the Kumo monospace stack.
+- Keep the style values equal to the Kumo type scale in the reference.
+- Do not make a style smaller than 12px, the Kumo `text-xs` size.
 
 ## Shapes and sizes
 
-- The radii are `Small` 4, `Medium` 6 and `Large` 10.
+- The radii are `Small` 4, `Medium` 6, `Large` 8 and `ExtraLarge` 12.
 - Tables, trees and document tab bars are square.
-  Only the current document tab has `Medium` top corners.
-- Pane tabs are a segmented control: a `Large` track with `Medium` segments.
-- Put sizes on the 4px grid.
-  Controls are 24, 28 or 32. Rows and headers are 28. Tabs and the toolbar are 32.
+  Document tabs are Kumo underline tabs with a `kumo-brand` bottom indicator.
+- Pane tabs are a segmented control: a `kumo-recessed` `Large` track with `Medium` segments.
+- Use the Kumo class values for sizes. `docs/design-system.md` gives the table.
+  Controls are 20, 26 or 36. Navigator rows are 34. Table rows and headers are 45.
 
 ## States
 
-- Hover uses `surface-raised`.
-- Selection uses `selection` with `fg`. Do not make selected text bold.
-- Navigator rows use `sidebar-hover` and `sidebar-selection` on the `surface-raised` surface.
-- The menu highlight uses `surface-raised`.
-- A primary control goes from `primary` to `primary-hover` to `primary-pressed`.
-- Use the 2px `ring` only for keyboard focus.
-- A status uses `<status>-surface` with `<status>` text.
+- Hover uses `kumo-tint`. Kumo has no pressed fill for rows and ghost buttons.
+- Selection uses `kumo-tint` with `text-kumo-default`. Do not make selected text bold.
+- Navigator rows use `kumo-tint` for hover and selection on the `kumo-elevated` surface.
+- The menu highlight uses `kumo-tint`.
+- A primary control uses the Kumo brand emphasis gradient. Its text is `white`.
+- Use the 2px `kumo-brand` ring only for keyboard focus.
+- A status uses `kumo-<status>-tint` with `text-kumo-<status>` text.
 
 ## Icons
 
-- Use unchanged upstream Lucide files at the Lucide stroke.
-  `desktop/resources/icons/SOURCE-LUCIDE.json` pins the release.
+- Use unchanged upstream Phosphor files of the regular weight.
+  `desktop/resources/icons/SOURCE-PHOSPHOR.json` pins the release.
+- If Kumo uses a specific Phosphor icon for a role, use that icon.
 - A brand logo is a square SVG with no size.
 - Show icons only at `Dimension::IconSmall` or `Dimension::Icon`. `ui_policy.py` enforces this.
+  A database logo on a driver choice uses `Dimension::Logo`.
+  The status icon of a confirmation uses `Dimension::IconLarge`.
 
 ## Stylesheets
 

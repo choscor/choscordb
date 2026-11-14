@@ -17,7 +17,7 @@ bool drawTreeIndicator(QStyle::PrimitiveElement element, const QStyleOption* opt
             QStyleOption branch(*option);
             if (widget && widget->property("designNavigationTree").toBool())
                 branch.palette.setColor(QPalette::ButtonText,
-                                        resolvedThemeForWidget(*widget).colors.fgMuted);
+                                        resolvedThemeForWidget(*widget).colors.textSubtle);
             drawArrowIndicator(arrow, &branch, painter, widget);
         }
         return true;

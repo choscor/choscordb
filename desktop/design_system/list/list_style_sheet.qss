@@ -1,11 +1,13 @@
 QListView::item {
-  min-height: 20px;
-  padding: 4px 6px;
+  border: none;
+  min-height: @row-content-height;
+  padding: @space-half @space-1-5;
   border-radius: 0;
 }
 
 QListView[designNavigationItem="true"]::item {
-  min-height: @row-line-height;
-  margin: 2px 5px;
-  padding: 1px 3px;
+  border: none;
+  min-height: @row-content-height;
+  margin: @space-half @space-1;
+  padding: 0 @space-1;
 }

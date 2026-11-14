@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QColor>
+#include <QEasingCurve>
 #include <QList>
 #include <QMetaType>
 #include <QSize>
@@ -8,8 +9,8 @@
 
 namespace choscordb::design {
 
-enum class DialogSize { Short, Export, Preferences, Profiles, Detail, Ddl };
-enum class Spacing { Half, One, OneHalf, Two, Three, Four, Six, Eight };
+enum class DialogSize { Short, Form, Preferences, Profiles, Detail };
+enum class Spacing { Half, One, OneHalf, Two, TwoHalf, Three, Four, Six, Eight };
 enum class Dimension {
     ControlExtraSmall,
     ControlSmall,
@@ -17,15 +18,22 @@ enum class Dimension {
     Checkbox,
     IconSmall,
     Icon,
+    IconLarge,
+    Logo,
     ModalWidth,
     QuickSearchWidth,
-    QuickSearchRow,
     CompletionPopupWidth,
+    MenuWidth,
     SheetWidth,
     TableColumn,
+    TableColumnMin,
+    TableColumnMax,
     Row,
+    TableRow,
+    MenuRow,
     Header,
     Tab,
+    DocumentTab,
     DocumentTabWidth,
     Toolbar,
     Progress,
@@ -35,11 +43,12 @@ enum class Dimension {
     Badge,
     SwitchWidth,
     SwitchHeight,
-    SwitchThumb
+    SwitchThumb,
+    SwitchRadius
 };
-enum class Radius { Small, Medium, Large };
-enum class Elevation { Popover, Dialog };
-enum class Motion { Interaction, Popup };
+enum class Radius { Small, Medium, Large, ExtraLarge };
+enum class Elevation { Tooltip, Popover, Dialog };
+enum class Motion { Interaction, Popup, LoaderTurn, LoaderDash };
 
 struct ShadowLayer final {
     int x = 0;
@@ -58,10 +67,9 @@ struct FocusSpec final {
 
 struct MotionSpec final {
     int durationMs = 0;
-    QString easing;
+    QEasingCurve easing;
 };
 
-[[nodiscard]] int backdropBlurRadius();
 [[nodiscard]] int spacing(Spacing value);
 [[nodiscard]] int dimension(Dimension value);
 [[nodiscard]] int radius(Radius value);
@@ -71,7 +79,6 @@ struct MotionSpec final {
 
 struct LayoutMetrics final {
     int connectionContentInset = 21;
-    int connectionDriverHeight = 44;
     int navigationHighlightGap = 1;
     int narrowWorkspaceWidth = 1100;
     int defaultWorkspaceWidth = 1280;

@@ -1,4 +1,5 @@
 #include "tools/preview/preview_standard.h"
+#include "tools/preview/preview_states.h"
 
 #include "design_system/button/button.h"
 #include "design_system/button_group/button_group.h"
@@ -9,6 +10,7 @@
 #include "design_system/metrics/metrics.h"
 #include "design_system/navigation_profile_row/navigation_profile_row.h"
 #include "design_system/panel_state/panel_state.h"
+#include "design_system/separator/separator.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/tabs/tab_add_corner.h"
 #include "design_system/tabs/tabs_style.h"
@@ -177,6 +179,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                                                  ? "Conflict: already assigned to Primary action."
                                                  : "Shortcut available.");
                          });
+    } else if (id == "interaction-states") {
+        populateInteractionStates(host, layout);
     } else if (id == "lists-navigation") {
         auto* list = new QListWidget(host);
         list->addItems({"First item", "Second item", "Việt Nam · 日本語",
@@ -191,14 +195,14 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         sidebarList->setProperty("designNavigationItem", true);
         sidebarList->setMouseTracking(true);
         sidebarList->addItems({"Pinned table", "Pinned view"});
-        sidebarList->setFixedHeight(72);
+        sidebarList->setFixedHeight(2 * dimension(Dimension::Row) + 2 * spacing(Spacing::Two));
         layout->addWidget(sidebarList);
         auto* tree = new NavigationTreeView(host);
         tree->setObjectName("previewNavigationTree");
         auto* model = new QStandardItemModel(tree);
         auto* parent = new QStandardItem("Navigation group");
         auto* child = new QStandardItem("Nested item");
-        child->setIcon(themedIcon(Icon::Table, resolvedThemeForWidget(*host).colors.fgMuted,
+        child->setIcon(themedIcon(Icon::Table, resolvedThemeForWidget(*host).colors.textSubtle,
                                   dimension(Dimension::IconSmall)));
         parent->appendRow(child);
         model->appendRow(parent);
@@ -244,7 +248,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         }
         list->setCurrentRow(1);
         list->item(0)->setSelected(true);
-        list->setFixedHeight(116);
+        list->setFixedHeight(4 * dimension(Dimension::Row) + spacing(Spacing::One));
         layout->addWidget(list);
         layout->addStretch();
     } else if (id == "dock") {
@@ -263,7 +267,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         for (int i = 0; i < 8; ++i) {
             const auto icon = i >= 1 && i <= 3 ? Icon::Table : Icon::Code;
             tabs->addTab(new QLabel("Neutral document chrome", tabs),
-                         themedIcon(icon, resolvedThemeForWidget(*host).colors.fgMuted,
+                         themedIcon(icon, resolvedThemeForWidget(*host).colors.textSubtle,
                                     dimension(Dimension::Icon)),
                          i == 0   ? "Untitled query 1"
                          : i == 1 ? "orders"
@@ -304,7 +308,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         for (int i = 0; i < 40; ++i)
             rows->addWidget(new QLabel(
                 QString("Synthetic row %1 · scroll vertically and horizontally").arg(i), content));
-        content->setMinimumWidth(900);
+        content->setMinimumWidth(2 * dimension(Dimension::SheetWidth));
         scroll->setWidget(content);
         scroll->setWidgetResizable(true);
         layout->addWidget(scroll, 1);
@@ -329,10 +333,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         auto* line = new QFrame(host);
         line->setFrameShape(QFrame::HLine);
         layout->addWidget(line);
-        auto* vertical = new QFrame(host);
-        vertical->setFrameShape(QFrame::VLine);
-        vertical->setFixedHeight(48);
-        layout->addWidget(vertical);
+        layout->addWidget(createToolbarSeparator(host));
     } else if (id == "button-groups") {
         for (const auto orientation : {Qt::Horizontal, Qt::Vertical}) {
             auto* group = new ButtonGroup(orientation, host);
@@ -429,7 +430,8 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
     } else if (id == "feedback") {
         auto* badges = new QHBoxLayout;
         badges->setSpacing(spacing(Spacing::Two));
-        for (const auto* variant : {"default", "secondary", "outline", "destructive"}) {
+        for (const auto* variant :
+             {"default", "secondary", "outline", "error", "success", "warning"}) {
             auto* badge = new QLabel(QString::fromLatin1(variant), host);
             badge->setObjectName(QStringLiteral("previewBadge_%1").arg(variant));
             badge->setProperty("designRole", "badge");
@@ -439,14 +441,15 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         }
         auto* logo = new QLabel(host);
         logo->setObjectName("previewDriverLogo");
-        logo->setPixmap(themedIcon(Icon::PostgreSQL, resolvedThemeForWidget(*host).colors.fg,
+        logo->setPixmap(themedIcon(Icon::PostgreSQL,
+                                   resolvedThemeForWidget(*host).colors.textDefault,
                                    dimension(Dimension::Icon))
                             .pixmap(dimension(Dimension::Icon), dimension(Dimension::Icon)));
         badges->addWidget(logo);
         auto* driver = new QLabel("PostgreSQL", host);
         driver->setObjectName("previewDriverBadge");
         driver->setProperty("designRole", "badge");
-        driver->setProperty("variant", "driver");
+        driver->setProperty("variant", "outline");
         badges->addWidget(driver);
         badges->addStretch();
         layout->addLayout(badges);
@@ -542,7 +545,7 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         items->setObjectName("previewTooltipItems");
         auto* item = new QListWidgetItem("Example Postgres", items);
         item->setToolTip("Example Postgres");
-        items->setFixedHeight(64);
+        items->setFixedHeight(2 * dimension(Dimension::Row) + spacing(Spacing::Two));
         layout->addWidget(items);
     }
     layout->addStretch();

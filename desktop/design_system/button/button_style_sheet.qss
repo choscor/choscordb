@@ -1,104 +1,55 @@
 QPushButton {
   min-height: @control-height;
-  padding: 0 12px;
-  border: 1px solid @border;
-  border-radius: @radius-md;
-  background: @surface;
-  color: @fg;
-  font-weight: 400;
+  padding: 0 @space-3;
+  border: 1px solid @kumo-line;
+  border-radius: @radius-lg;
+  background: @kumo-base;
+  color: @text-kumo-default;
+  font-weight: 500;
 }
 
 QPushButton:hover, QPushButton:pressed {
-  background-color: @surface-raised;
+  background-color: @kumo-tint;
 }
 
-QPushButton:default, QPushButton:checked {
-  color: @primary-fg;
-  background-color: @primary;
-  border-color: @primary;
+QPushButton:checked, QPushButton:checked:hover {
+  color: @text-kumo-default;
+  background-color: @kumo-tint;
+  border-color: @kumo-line;
 }
 
-QPushButton:default:hover, QPushButton:checked:hover {
-  background-color: @primary-hover;
-  border-color: @primary-hover;
+QPushButton:default, QPushButton[primary="true"], QToolButton[primary="true"], QPushButton[variant="default"] {
+  color: @white;
+  background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 @button-emphasis-brand-start, stop: 1 @button-emphasis-brand-end);
+  border-color: @button-emphasis-brand-ring;
 }
 
-QPushButton:default:pressed, QPushButton:checked:pressed {
-  background-color: @primary-pressed;
-  border-color: @primary-pressed;
-}
-
-QPushButton:focus {
-  border: 1px solid @ring;
-}
-
-QPushButton[primary="true"], QToolButton[primary="true"] {
-  color: @primary-fg;
-  background-color: @primary;
-  border-color: @primary;
-}
-
-QPushButton[primary="true"]:hover {
-  background-color: @primary-hover;
-  border-color: @primary-hover;
-}
-
-QPushButton[primary="true"]:pressed {
-  background-color: @primary-pressed;
-  border-color: @primary-pressed;
-}
-
-QPushButton:disabled {
-  color: @fg-disabled;
-}
-
-QPushButton[variant="default"] {
-  background: @primary;
-  color: @primary-fg;
-  border-color: transparent;
-  font-weight: 400;
-}
-
-QPushButton[variant="default"]:hover {
-  background: @primary-hover;
-}
-
-QPushButton[variant="default"]:pressed {
-  background: @primary-pressed;
+QPushButton:default:hover, QPushButton[primary="true"]:hover, QPushButton[variant="default"]:hover,
+QPushButton:default:pressed, QPushButton[primary="true"]:pressed, QPushButton[variant="default"]:pressed {
+  background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 @button-emphasis-brand-bg, stop: 1 @button-emphasis-brand-end);
 }
 
 QPushButton[variant="outline"] {
-  background: @surface;
-  color: @fg;
-  border-color: @border;
-  font-weight: 400;
+  background: transparent;
+  color: @text-kumo-default;
+  border-color: @kumo-line;
 }
 
 QPushButton[variant="outline"]:hover, QPushButton[variant="outline"]:pressed {
-  background: @surface-raised;
-  color: @fg;
+  background: transparent;
+  color: @text-kumo-strong;
 }
 
 QPushButton[variant="destructive"] {
-  background: @destructive-tint;
-  color: @danger;
-  border-color: transparent;
-  font-weight: 400;
+  color: @white;
+  background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 @button-emphasis-danger-start, stop: 1 @button-emphasis-danger-end);
+  border-color: @button-emphasis-danger-ring;
 }
 
 QPushButton[variant="destructive"]:hover, QPushButton[variant="destructive"]:pressed {
-  background: @destructive-hover;
-  color: @danger;
+  background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 @button-emphasis-danger-bg, stop: 1 @button-emphasis-danger-end);
 }
 
-QPushButton:default:focus, QPushButton:checked:focus, QPushButton[variant="default"]:focus, QPushButton[primary="true"]:focus {
-  border-color: @primary-fg;
-}
-
-QPushButton[variant="outline"]:focus, QPushButton[variant="destructive"]:focus {
-  border-color: @ring;
-}
-
-QPushButton[variant="default"]:disabled, QPushButton[variant="outline"]:disabled, QPushButton[variant="destructive"]:disabled {
-  color: @fg-disabled;
+QPushButton:disabled, QPushButton:default:disabled, QPushButton[primary="true"]:disabled, QPushButton[variant]:disabled {
+  color: @text-kumo-inactive;
 }

@@ -1,17 +1,24 @@
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus, QKeySequenceEdit:focus {
-  border-color: @ring;
+QComboBox:hover {
+  background: @kumo-tint;
 }
 
-QLineEdit:read-only:focus {
-  border-color: @border;
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus, QKeySequenceEdit:focus {
+  border-color: @field-focus-ring;
+}
+
+QLineEdit:read-only {
+  background: @kumo-canvas;
+  border-color: @kumo-hairline;
 }
 
 QLineEdit[invalid="true"], QComboBox[invalid="true"], QSpinBox[invalid="true"], QDoubleSpinBox[invalid="true"], QPlainTextEdit[invalid="true"], QTextEdit[invalid="true"], QKeySequenceEdit[invalid="true"] {
-  border-color: @danger;
+  border-color: @kumo-danger;
 }
 
-QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QPlainTextEdit:disabled, QTextEdit:disabled {
-  color: @fg-disabled;
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QPlainTextEdit:disabled, QTextEdit:disabled, QKeySequenceEdit:disabled {
+  color: @text-kumo-inactive;
+  background: @field-disabled-fill;
+  border-color: @field-disabled-ring;
 }
 
 QLabel[designRole="fieldError"] {

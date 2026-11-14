@@ -3,10 +3,10 @@
 #include "design_system/dialog_presentation/dialog_presentation.h"
 #include <QDialog>
 
-class QHBoxLayout;
 class QScrollArea;
 
 namespace choscordb::design {
+class DialogSections;
 class Text;
 
 class RightSheet final : public QDialog {
@@ -16,7 +16,7 @@ class RightSheet final : public QDialog {
     ~RightSheet() override;
     void setTitle(const QString& title);
     void setBody(QWidget* body);
-    [[nodiscard]] QHBoxLayout* footerLayout() const;
+    [[nodiscard]] DialogSections* sections() const;
 
   public slots:
     void open() override;
@@ -30,6 +30,6 @@ class RightSheet final : public QDialog {
     DialogPresentation presentation_;
     Text* title_ = nullptr;
     QScrollArea* body_ = nullptr;
-    QHBoxLayout* footer_ = nullptr;
+    DialogSections* sections_ = nullptr;
 };
 }

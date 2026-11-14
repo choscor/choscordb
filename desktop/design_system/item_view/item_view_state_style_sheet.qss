@@ -1,19 +1,36 @@
 QTableView::item:selected, QListView::item:selected {
-  background: @selection;
-  color: @fg;
+  background: @kumo-tint;
+  color: @text-kumo-default;
+}
+
+QTableView::item:selected:!active, QListView::item:selected:!active {
+  background: @kumo-tint;
+}
+
+QTableView::item:selected:hover, QListView::item:selected:hover {
+  background: @kumo-tint;
 }
 
 QTableView::item:hover:!selected, QListView::item:hover:!selected {
-  background: @surface-raised;
+  background: @kumo-tint;
 }
 
 QListView[designSurface="sidebar"]::item:selected {
-  background: @sidebar-selection;
-  border-radius: @radius-md;
+  background: @kumo-tint;
+  border-radius: @radius-lg;
+}
+
+QListView[designSurface="sidebar"]::item:selected:hover {
+  background: @kumo-tint;
 }
 
 QListView[designSurface="sidebar"]::item:hover:!selected {
-  background: @sidebar-hover;
-  color: @fg;
-  border-radius: @radius-md;
+  background: @kumo-tint;
+  color: @text-kumo-default;
+  border-radius: @radius-lg;
+}
+
+QTableView:disabled, QListView:disabled, QTreeView:disabled,
+QTableView::item:disabled, QListView::item:disabled, QTreeView::item:disabled {
+  color: @text-kumo-inactive;
 }

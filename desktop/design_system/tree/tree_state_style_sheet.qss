@@ -1,25 +1,40 @@
-QTreeView::item:hover {
-  background: @surface-raised;
+QTreeView::item:hover:!selected {
+  background: @kumo-tint;
 }
 
 QTreeView::item:selected {
-  background: @selection;
-  color: @fg;
+  background: @kumo-tint;
+  color: @text-kumo-default;
 }
 
-QTreeView[designSurface="sidebar"]::item:hover {
-  background: @sidebar-hover;
+QTreeView::item:selected:!active {
+  background: @kumo-tint;
+}
+
+QTreeView::item:selected:hover {
+  background: @kumo-tint;
+}
+
+QTreeView[designSurface="sidebar"]::item:hover:!selected {
+  background: @kumo-tint;
 }
 
 QTreeView[designSurface="sidebar"]::item:selected {
-  background: @sidebar-selection;
+  background: @kumo-tint;
 }
 
-QTreeView[designNavigationTree="true"]::item:selected {
+QTreeView[designSurface="sidebar"]::item:selected:hover {
+  background: @kumo-tint;
+}
+
+QTreeView[designNavigationTree="true"]::item:selected,
+QTreeView[designNavigationTree="true"]::item:selected:hover,
+QTreeView[designNavigationTree="true"]::item:selected:!active {
   background: transparent;
-  color: @fg;
+  color: @text-kumo-default;
 }
 
-QTreeView[designNavigationTree="true"]::item:hover {
+QTreeView[designNavigationTree="true"]::item:hover,
+QTreeView[designNavigationTree="true"]::item:hover:!selected {
   background: transparent;
 }

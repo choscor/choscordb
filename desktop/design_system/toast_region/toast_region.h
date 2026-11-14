@@ -11,10 +11,10 @@ class QDialog;
 class QToolButton;
 namespace choscordb::design {
 class Button;
+class Spinner;
 }
 class QProgressBar;
-class QGraphicsOpacityEffect;
-class QPropertyAnimation;
+class QVariantAnimation;
 namespace choscordb {
 enum class ToastVariant { Success, Warning, Danger };
 class ToastRegion final : public QLabel {
@@ -38,7 +38,6 @@ class ToastRegion final : public QLabel {
 
   private:
     [[nodiscard]] static int leadingInset();
-    [[nodiscard]] int titleRowHeight() const;
     void applyCardMargins(int bottomExtra);
     void showStatusIcon(design::Icon icon, const QColor& color);
     struct Notice {
@@ -66,15 +65,16 @@ class ToastRegion final : public QLabel {
     QPointer<QWidget> overlayHost_;
     QTimer* timer_;
     QLabel* icon_;
+    design::Spinner* spinner_;
     design::Button* dismiss_;
     QToolButton* details_;
     QPointer<QDialog> detailsDialog_;
     QString fullTitle_;
+    QColor titleColor_;
     QString fullBody_;
     QString fullContent_;
     QProgressBar* progress_;
-    QGraphicsOpacityEffect* opacity_;
-    QPropertyAnimation* fade_;
+    QVariantAnimation* fade_;
     bool dismissing_ = false;
     bool pinned_ = false;
     std::optional<Notice> currentNotice_;

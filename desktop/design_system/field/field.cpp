@@ -1,5 +1,7 @@
 #include "design_system/field/field.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/theme.h"
+#include <QAbstractItemView>
 #include <QAbstractSpinBox>
 #include <QApplication>
 #include <QComboBox>
@@ -10,8 +12,11 @@
 #include <QLineEdit>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QStyle>
+#include <QTabBar>
 #include <QTextEdit>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace choscordb::design {
@@ -20,7 +25,7 @@ FieldValidation::FieldValidation(QWidget* control, QWidget* parent)
     Q_ASSERT(control_);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(4);
+    layout->setSpacing(spacing(Spacing::One));
     control_->setParent(this);
     setFocusProxy(control_);
     setProperty("originalAccessibleDescription", control_->accessibleDescription());
@@ -78,11 +83,11 @@ class FieldFocusFrame final : public QFocusFrame {
         if (themeValue.canConvert<ResolvedTheme>()) {
             const auto theme = themeValue.value<ResolvedTheme>();
             color =
-                widget()->property("invalid").toBool() ? theme.colors.danger : theme.colors.ring;
+                widget()->property("invalid").toBool() ? theme.colors.danger : theme.colors.brand;
         }
         painter.setPen(QPen(color, focusSpec().ringWidth));
         painter.setBrush(Qt::NoBrush);
-        const auto rounding = radius(Radius::Medium);
+        const auto rounding = radius(Radius::Large);
         painter.drawRoundedRect(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5), rounding, rounding);
     }
 };
@@ -92,8 +97,20 @@ bool isField(const QWidget* widget) {
            qobject_cast<const QPlainTextEdit*>(widget) || qobject_cast<const QTextEdit*>(widget) ||
            qobject_cast<const QKeySequenceEdit*>(widget);
 }
+bool paintsOwnFocus(const QWidget* widget) {
+    return widget->property("designButton").toBool() ||
+           widget->property("designTabVariant").toString() == QLatin1String("document") ||
+           widget->property("designNavigationTree").toBool();
+}
+bool takesFocusFrame(const QWidget* widget) {
+    if (!widget || paintsOwnFocus(widget))
+        return false;
+    return isField(widget) || qobject_cast<const QPushButton*>(widget) ||
+           qobject_cast<const QToolButton*>(widget) || qobject_cast<const QTabBar*>(widget) ||
+           qobject_cast<const QAbstractItemView*>(widget);
+}
 void handleFieldFocusEvent(QWidget* field, QEvent* event, QPointer<QFocusFrame>& focusFrame_) {
-    if (field && isField(field) && event->type() == QEvent::FocusIn) {
+    if (takesFocusFrame(field) && event->type() == QEvent::FocusIn) {
         const auto reason = static_cast<QFocusEvent*>(event)->reason();
         if (reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason ||
             reason == Qt::ShortcutFocusReason) {

@@ -16,6 +16,7 @@ class QPlainTextEdit;
 class QTimer;
 
 namespace choscordb::design {
+class Spinner;
 
 class StatusLine final : public QWidget {
     Q_OBJECT
@@ -44,6 +45,11 @@ class StatusLine final : public QWidget {
     void setMessage(const QString& message);
     void showNotice(const QString& message, int expiryMs);
     void setBusy(bool busy);
+    void showInfo(const QString& message);
+    void showProgress(const QString& message);
+    void showError(const QString& message);
+    void showSuccess(const QString& message);
+    void clearReport();
 
   protected:
     void changeEvent(QEvent* event) override;
@@ -64,7 +70,7 @@ class StatusLine final : public QWidget {
     QWidget* paging_ = nullptr;
     QHBoxLayout* content_ = nullptr;
     QLabel* message_ = nullptr;
-    QLabel* loading_ = nullptr;
+    Spinner* loading_ = nullptr;
     QToolButton* details_ = nullptr;
     QPointer<QDialog> detailsDialog_;
     QPointer<QPlainTextEdit> detailsText_;

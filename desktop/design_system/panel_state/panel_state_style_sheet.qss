@@ -1,0 +1,5 @@
+QLabel[panelState="true"] {
+  background: transparent;
+  border: 0;
+  padding: @space-6 @space-4;
+}

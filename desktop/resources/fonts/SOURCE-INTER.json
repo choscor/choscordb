@@ -1,0 +1,34 @@
+{
+  "repository": "https://github.com/rsms/inter",
+  "release": "v4.1",
+  "url": "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+  "archiveSha256": "9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e",
+  "license": "SIL Open Font License 1.1",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "local": "OFL.txt",
+      "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a"
+    },
+    {
+      "path": "extras/ttf/Inter-Regular.ttf",
+      "local": "Inter-Regular.ttf",
+      "sha256": "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82"
+    },
+    {
+      "path": "extras/ttf/Inter-Medium.ttf",
+      "local": "Inter-Medium.ttf",
+      "sha256": "97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872"
+    },
+    {
+      "path": "extras/ttf/Inter-SemiBold.ttf",
+      "local": "Inter-SemiBold.ttf",
+      "sha256": "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3"
+    },
+    {
+      "path": "extras/ttf/Inter-Bold.ttf",
+      "local": "Inter-Bold.ttf",
+      "sha256": "288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f"
+    }
+  ]
+}

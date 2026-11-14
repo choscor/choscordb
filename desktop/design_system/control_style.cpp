@@ -13,6 +13,7 @@
 
 #include <QAbstractSpinBox>
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QDynamicPropertyChangeEvent>
 #include <QKeySequenceEdit>
 #include <QLineEdit>
@@ -29,22 +30,7 @@ void ControlStyle::polish(QWidget* widget) {
         tabs->setDrawBase(false);
     if (qobject_cast<QLineEdit*>(widget) || qobject_cast<QComboBox*>(widget) ||
         qobject_cast<QAbstractSpinBox*>(widget) || qobject_cast<QKeySequenceEdit*>(widget)) {
-        auto fieldFont = resolveTypography(TextStyle::Callout);
-        fieldFont.setWeight(QFont::Medium);
-        widget->setFont(fieldFont);
-        if (auto* line = qobject_cast<QLineEdit*>(widget)) {
-            const auto updateFont = [line, fieldFont] {
-                auto font = fieldFont;
-                if (line->text().isEmpty() && !line->placeholderText().isEmpty())
-                    font.setWeight(QFont::Normal);
-                line->setFont(font);
-            };
-            if (!line->property("fieldFontConnected").toBool()) {
-                line->setProperty("fieldFontConnected", true);
-                connect(line, &QLineEdit::textChanged, line, updateFont);
-            }
-            updateFont();
-        }
+        widget->setFont(resolveTypography(TextStyle::Body));
     }
 
     detail::polishMenu(widget);
@@ -91,7 +77,7 @@ bool ControlStyle::eventFilter(QObject* watched, QEvent* event) {
             field->update();
         }
     }
-    if (detail::handleTooltipEvent(field, event, tooltip_, tooltipOwner_)) {
+    if (detail::handleTooltipEvent(field, event)) {
         return true;
     }
     detail::handleFieldFocusEvent(field, event, focusFrame_);
@@ -102,6 +88,8 @@ int ControlStyle::styleHint(StyleHint hint, const QStyleOption* option, const QW
                             QStyleHintReturn* returnData) const {
     if (hint == SH_ComboBox_Popup)
         return 0;
+    if (hint == SH_DialogButtonLayout)
+        return QDialogButtonBox::MacLayout;
     return QProxyStyle::styleHint(hint, option, widget, returnData);
 }
 void ControlStyle::drawPrimitive(PrimitiveElement element, const QStyleOption* option,
@@ -131,17 +119,19 @@ int ControlStyle::pixelMetric(PixelMetric metric, const QStyleOption* option,
     if (metric == PM_TabBarIconSize && widget &&
         widget->property("designTabVariant").toString() == QLatin1String("document"))
         return dimension(Dimension::IconSmall);
+    if (metric == PM_CheckBoxLabelSpacing || metric == PM_RadioButtonLabelSpacing)
+        return spacing(Spacing::Two);
     if (metric == PM_ExclusiveIndicatorWidth || metric == PM_ExclusiveIndicatorHeight)
-        return 18;
+        return dimension(Dimension::Checkbox);
     if (metric == PM_SubMenuOverlap && qobject_cast<const QMenu*>(widget))
         return spacing(Spacing::One) - detail::menuShadowMargin();
     if (metric == PM_HeaderDefaultSectionSizeVertical)
-        return dimension(Dimension::Row);
+        return dimension(Dimension::TableRow);
     if (metric == PM_FocusFrameHMargin || metric == PM_FocusFrameVMargin) {
         if (metric == PM_FocusFrameHMargin && widget &&
             widget->property("designNavigationTree").toBool())
             return spacing(Spacing::Half) - 1;
-        return 3;
+        return focusSpec().ringWidth + 1;
     }
     if (metric == PM_IndicatorWidth || metric == PM_IndicatorHeight) {
         if (widget && widget->property("designRole").toString() == QLatin1String("switch"))

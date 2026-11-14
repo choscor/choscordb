@@ -97,35 +97,43 @@ QList<IconDefinition> iconCatalog() {
     return {
         {Icon::Code, QStringLiteral("code"), QStringLiteral("desktop/resources/icons/code.svg")},
         {Icon::Table, QStringLiteral("table"), QStringLiteral("desktop/resources/icons/table.svg")},
-        {Icon::Grid2x2, QStringLiteral("grid-2x2"),
-         QStringLiteral("desktop/resources/icons/grid-2x2.svg")},
+        {Icon::GridFour, QStringLiteral("grid-four"),
+         QStringLiteral("desktop/resources/icons/grid-four.svg")},
         {Icon::Folder, QStringLiteral("folder"),
          QStringLiteral("desktop/resources/icons/folder.svg")},
         {Icon::File, QStringLiteral("file"), QStringLiteral("desktop/resources/icons/file.svg")},
         {Icon::Key, QStringLiteral("key"), QStringLiteral("desktop/resources/icons/key.svg")},
         {Icon::Link, QStringLiteral("link"), QStringLiteral("desktop/resources/icons/link.svg")},
         {Icon::Eye, QStringLiteral("eye"), QStringLiteral("desktop/resources/icons/eye.svg")},
-        {Icon::EyeOff, QStringLiteral("eye-off"),
-         QStringLiteral("desktop/resources/icons/eye-off.svg")},
+        {Icon::EyeSlash, QStringLiteral("eye-slash"),
+         QStringLiteral("desktop/resources/icons/eye-slash.svg")},
+        {Icon::Trash, QStringLiteral("trash"), QStringLiteral("desktop/resources/icons/trash.svg")},
+        {Icon::ArrowUp, QStringLiteral("arrow-up"),
+         QStringLiteral("desktop/resources/icons/arrow-up.svg")},
+        {Icon::ArrowDown, QStringLiteral("arrow-down"),
+         QStringLiteral("desktop/resources/icons/arrow-down.svg")},
         {Icon::AppMark, QStringLiteral("app-mark"),
          QStringLiteral("desktop/resources/icons/app-mark.svg")},
         {Icon::Run, QStringLiteral("play"), QStringLiteral("desktop/resources/icons/play.svg")},
-        {Icon::Cancel, QStringLiteral("square"),
-         QStringLiteral("desktop/resources/icons/square.svg")},
+        {Icon::Cancel, QStringLiteral("stop"), QStringLiteral("desktop/resources/icons/stop.svg")},
         {Icon::Add, QStringLiteral("plus"), QStringLiteral("desktop/resources/icons/plus.svg")},
-        {Icon::Refresh, QStringLiteral("refresh-cw"),
-         QStringLiteral("desktop/resources/icons/refresh-cw.svg")},
+        {Icon::Refresh, QStringLiteral("arrow-clockwise"),
+         QStringLiteral("desktop/resources/icons/arrow-clockwise.svg")},
         {Icon::Close, QStringLiteral("x"), QStringLiteral("desktop/resources/icons/x.svg")},
         {Icon::Square, QStringLiteral("square"),
          QStringLiteral("desktop/resources/icons/square.svg")},
-        {Icon::ChevronDown, QStringLiteral("chevron-down"),
-         QStringLiteral("desktop/resources/icons/chevron-down.svg")},
-        {Icon::ChevronRight, QStringLiteral("chevron-right"),
-         QStringLiteral("desktop/resources/icons/chevron-right.svg")},
-        {Icon::ChevronLeft, QStringLiteral("chevron-left"),
-         QStringLiteral("desktop/resources/icons/chevron-left.svg")},
-        {Icon::Search, QStringLiteral("search"),
-         QStringLiteral("desktop/resources/icons/search.svg")},
+        {Icon::Prohibit, QStringLiteral("prohibit"),
+         QStringLiteral("desktop/resources/icons/prohibit.svg")},
+        {Icon::CaretDown, QStringLiteral("caret-down"),
+         QStringLiteral("desktop/resources/icons/caret-down.svg")},
+        {Icon::CaretRight, QStringLiteral("caret-right"),
+         QStringLiteral("desktop/resources/icons/caret-right.svg")},
+        {Icon::CaretLeft, QStringLiteral("caret-left"),
+         QStringLiteral("desktop/resources/icons/caret-left.svg")},
+        {Icon::CaretUpDown, QStringLiteral("caret-up-down"),
+         QStringLiteral("desktop/resources/icons/caret-up-down.svg")},
+        {Icon::Search, QStringLiteral("magnifying-glass"),
+         QStringLiteral("desktop/resources/icons/magnifying-glass.svg")},
         {Icon::PostgreSQL, QStringLiteral("postgresql"),
          QStringLiteral("desktop/resources/icons/postgresql.svg")},
         {Icon::MySQL, QStringLiteral("mysql"), QStringLiteral("desktop/resources/icons/mysql.svg")},
@@ -136,17 +144,19 @@ QList<IconDefinition> iconCatalog() {
         {Icon::Database, QStringLiteral("database"),
          QStringLiteral("desktop/resources/icons/database.svg")},
         {Icon::Check, QStringLiteral("check"), QStringLiteral("desktop/resources/icons/check.svg")},
+        {Icon::CheckCircle, QStringLiteral("check-circle"),
+         QStringLiteral("desktop/resources/icons/check-circle.svg")},
         {Icon::Settings, QStringLiteral("sliders-horizontal"),
          QStringLiteral("desktop/resources/icons/sliders-horizontal.svg")},
-        {Icon::Warning, QStringLiteral("triangle-alert"),
-         QStringLiteral("desktop/resources/icons/triangle-alert.svg")},
-        {Icon::Error, QStringLiteral("circle-alert"),
-         QStringLiteral("desktop/resources/icons/circle-alert.svg")},
-        {Icon::Loader, QStringLiteral("loader-circle"),
-         QStringLiteral("desktop/resources/icons/loader-circle.svg")},
+        {Icon::Warning, QStringLiteral("warning"),
+         QStringLiteral("desktop/resources/icons/warning.svg")},
+        {Icon::Error, QStringLiteral("warning-octagon"),
+         QStringLiteral("desktop/resources/icons/warning-octagon.svg")},
+        {Icon::Loader, QStringLiteral("circle-notch"),
+         QStringLiteral("desktop/resources/icons/circle-notch.svg")},
         {Icon::Copy, QStringLiteral("copy"), QStringLiteral("desktop/resources/icons/copy.svg")},
-        {Icon::Export, QStringLiteral("download"),
-         QStringLiteral("desktop/resources/icons/download.svg")},
+        {Icon::Export, QStringLiteral("download-simple"),
+         QStringLiteral("desktop/resources/icons/download-simple.svg")},
     };
 }
 
@@ -156,8 +166,8 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/code.svg");
     case Icon::Table:
         return QStringLiteral(":/icons/table.svg");
-    case Icon::Grid2x2:
-        return QStringLiteral(":/icons/grid-2x2.svg");
+    case Icon::GridFour:
+        return QStringLiteral(":/icons/grid-four.svg");
     case Icon::Folder:
         return QStringLiteral(":/icons/folder.svg");
     case Icon::File:
@@ -168,30 +178,40 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/link.svg");
     case Icon::Eye:
         return QStringLiteral(":/icons/eye.svg");
-    case Icon::EyeOff:
-        return QStringLiteral(":/icons/eye-off.svg");
+    case Icon::EyeSlash:
+        return QStringLiteral(":/icons/eye-slash.svg");
+    case Icon::Trash:
+        return QStringLiteral(":/icons/trash.svg");
+    case Icon::ArrowUp:
+        return QStringLiteral(":/icons/arrow-up.svg");
+    case Icon::ArrowDown:
+        return QStringLiteral(":/icons/arrow-down.svg");
     case Icon::AppMark:
         return QStringLiteral(":/icons/app-mark.svg");
     case Icon::Run:
         return QStringLiteral(":/icons/play.svg");
     case Icon::Cancel:
-        return QStringLiteral(":/icons/square.svg");
+        return QStringLiteral(":/icons/stop.svg");
     case Icon::Add:
         return QStringLiteral(":/icons/plus.svg");
     case Icon::Refresh:
-        return QStringLiteral(":/icons/refresh-cw.svg");
+        return QStringLiteral(":/icons/arrow-clockwise.svg");
     case Icon::Close:
         return QStringLiteral(":/icons/x.svg");
     case Icon::Square:
         return QStringLiteral(":/icons/square.svg");
-    case Icon::ChevronDown:
-        return QStringLiteral(":/icons/chevron-down.svg");
-    case Icon::ChevronRight:
-        return QStringLiteral(":/icons/chevron-right.svg");
-    case Icon::ChevronLeft:
-        return QStringLiteral(":/icons/chevron-left.svg");
+    case Icon::Prohibit:
+        return QStringLiteral(":/icons/prohibit.svg");
+    case Icon::CaretDown:
+        return QStringLiteral(":/icons/caret-down.svg");
+    case Icon::CaretRight:
+        return QStringLiteral(":/icons/caret-right.svg");
+    case Icon::CaretUpDown:
+        return QStringLiteral(":/icons/caret-up-down.svg");
+    case Icon::CaretLeft:
+        return QStringLiteral(":/icons/caret-left.svg");
     case Icon::Search:
-        return QStringLiteral(":/icons/search.svg");
+        return QStringLiteral(":/icons/magnifying-glass.svg");
     case Icon::PostgreSQL:
         return QStringLiteral(":/icons/postgresql.svg");
     case Icon::MySQL:
@@ -204,18 +224,20 @@ QString iconResourcePath(Icon icon) {
         return QStringLiteral(":/icons/database.svg");
     case Icon::Check:
         return QStringLiteral(":/icons/check.svg");
+    case Icon::CheckCircle:
+        return QStringLiteral(":/icons/check-circle.svg");
     case Icon::Settings:
         return QStringLiteral(":/icons/sliders-horizontal.svg");
     case Icon::Warning:
-        return QStringLiteral(":/icons/triangle-alert.svg");
+        return QStringLiteral(":/icons/warning.svg");
     case Icon::Error:
-        return QStringLiteral(":/icons/circle-alert.svg");
+        return QStringLiteral(":/icons/warning-octagon.svg");
     case Icon::Loader:
-        return QStringLiteral(":/icons/loader-circle.svg");
+        return QStringLiteral(":/icons/circle-notch.svg");
     case Icon::Copy:
         return QStringLiteral(":/icons/copy.svg");
     case Icon::Export:
-        return QStringLiteral(":/icons/download.svg");
+        return QStringLiteral(":/icons/download-simple.svg");
     }
     return {};
 }

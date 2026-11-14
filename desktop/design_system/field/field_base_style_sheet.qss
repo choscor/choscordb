@@ -1,11 +1,13 @@
 QLineEdit, QSpinBox, QDoubleSpinBox, QKeySequenceEdit {
   min-height: @control-height;
+  max-height: @control-height;
 }
 
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QKeySequenceEdit {
-  padding: 0 9px;
-  border: 1px solid @border;
-  border-radius: @radius-md;
-  color: @fg;
-  background: @surface;
+  padding: 0 @space-3;
+  border: 1px solid @kumo-line;
+  border-radius: @radius-lg;
+  color: @text-kumo-default;
+  background: @kumo-control;
+  placeholder-text-color: @text-kumo-placeholder;
 }

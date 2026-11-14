@@ -12,7 +12,7 @@ preserved by the component extraction.
 | Button | `button/`: semantic `Button` subclass, painting, stock QPushButton rules |
 | Button group | `button_group/`: `ButtonGroup` layout and adjoining edges |
 | Text | `text/`: semantic `Text` label and typography-aware sizing |
-| Label, badge, keyboard hint | `label/`, `badge/`, `kbd/`: QLabel role/state styles; the Badge `driver` variant names a driver with a neutral badge beside its unmodified logo |
+| Label, badge, keyboard hint | `label/`, `badge/`, `kbd/`: QLabel role/state styles; `KeyHints` shows a row of `kbd` keys, each with a Caption description (quick search, ERD); the Badge `driver` variant names a driver with a neutral badge beside its unmodified logo |
 | Fields | `field/`: shared single-line input, key-sequence and field-state rules; keyboard focus frame and focus painting |
 | Text area | `text_area/`: QPlainTextEdit/QTextEdit rules |
 | JSON text view | `json_text_view/`: selectable read-only JSON text with theme-aware syntax coloring |
@@ -23,13 +23,13 @@ preserved by the component extraction.
 | Tool button | `tool_button/`: QToolButton states and menu-indicator rules |
 | Toolbar | `toolbar/`: toolbar geometry, separators, and muted workspace variant |
 | Panel state | `panel_state/`: one centered placeholder `Text` for empty, no-match and failed panels; failed uses the `fieldError` role, the others the `description` role |
-| Status line | `status_line/`: shared single-row workspace layout, Body typography, paging, overflow, `<status>-surface` fills with status text (neutral uses `surface-raised`), loading icon, and complete Details |
-| Tabs | `tabs/`: segmented pane and document variants, left-aligned document labels, and tab-close painting |
+| Status line | `status_line/`: shared single-row workspace layout, Body typography, paging, overflow, `kumo-<status>-tint` fills with status text (neutral uses `kumo-elevated`), loading icon, and complete Details |
+| Tabs | `tabs/`: segmented pane and document variants, `SegmentedControl` for button segments, left-aligned document labels, and tab-close painting |
 | Table | `table/`: table font, row styles, and interactive result headers |
 | Tree | `tree/`: navigation rows and branch painting |
 | List | `list/`: list item styles |
 | Item view | `item_view/`: selectors genuinely shared by table/tree/list |
-| Saved connection row | `navigation_profile_row/`: compact database profile delegate, neutral driver-logo tile and selection state |
+| Saved connection row | `navigation_profile_row/`: Kumo sidebar database profile delegate, neutral driver-logo tile and selection state |
 | Recent history row | `history_row/`: SQL excerpt, database metadata, status badge (`historyStatusTint`, shared with the history dock), and hover delegate |
 | Column row | `column_row/`: iconless navigation name with a right-aligned database type on the same row; `RowMark` rows with a trailing status icon and a red failed row (`previewStatusRows`) |
 | Header | `header/`: header and table-corner styles |
@@ -42,11 +42,11 @@ preserved by the component extraction.
 | Dialog presentation | `dialog_presentation/`: owner-contained modal surfaces, shared backdrop, focus boundary and restoration |
 | Modal dialog | `modal_panel/`: `ModalDialog` surface; the dimmed overlay belongs to `dialog_presentation/` |
 | Right sheet | `right_sheet/`: right-aligned modal shell with header, scrolling body and fixed muted footer |
-| Quick search | `quick_search/`: compact modal search field, reusable icon/title/detail result rows, states and keyboard/pointer interaction |
+| Quick search | `quick_search/`: Kumo command palette with a search header, reusable icon/title/detail result rows, states and keyboard/pointer interaction |
 | Dialog shell | `dialog_shell/`: reusable nonmodal `QDialog` shell, content/status styles, and `createSections()` for edge-to-edge dialog sections (`ModalDialog` has the same) |
-| Dialog sections | `dialog_sections/`: compact header, growing body, and muted padded footer for dialogs; an empty footer and its separator stay hidden; `addDismissButton()` adds the shared header close button |
+| Dialog sections | `dialog_sections/`: Kumo dialog header, growing body, and elevated padded footer for dialogs; an empty footer and its separator stay hidden; `addDismissButton()` adds the shared header close button |
 | Confirmation dialog | `confirmation_dialog/`: reusable QMessageBox contract and presentation |
-| Toast region | `toast_region/`: host-attached queued notices with `<status>-surface` fills, status text and a status icon; a neutral progress notice; reading-time and focus/hover pauses, pinned failures, one replacing notice with a count (`previewToast_replacing`), and bounded full Details |
+| Toast region | `toast_region/`: host-attached queued notices with `kumo-<status>-tint` fills, status text and a status icon; a neutral progress notice; reading-time and focus/hover pauses, pinned failures, one replacing notice with a count (`previewToast_replacing`), and bounded full Details |
 | Shared glyphs | `control_glyphs/`: select/spin overlays and arrow painting; Qt retains hit testing |
 
 Stock Qt widgets remain stock widgets. Their owning modules supply styles and,
@@ -62,14 +62,14 @@ uses semantic theme colors and metrics in the feature widget.
 The token vocabulary, scales, typography roles and state model are documented in
 `docs/design-system.md`.
 
-- `colors/`: `design::Colors` (26 named colors), contrast and forced-contrast
+- `colors/`: `design::Colors` (the Kumo named colors in `colorTokens`), contrast and forced-contrast
   resolution. Literal palette colors live only here.
-- `metrics/`: the compact `Dimension`, `Spacing` and `Radius` scales, elevation,
+- `metrics/`: the Kumo `Dimension`, `Spacing` and `Radius` scales, elevation,
   motion, and `LayoutMetrics` for window defaults and initial pane sizes.
 - `fonts/`: font registration and the macOS built-in `TextStyle` text styles.
 - `tokens/`: discoverable token catalog used by the developer gallery.
 - `icons.h/.cpp`: icon roles, resource lookup and themed rendering of upstream
-  Lucide icons and brand logos.
+  Phosphor icons and brand logos.
 - `theme.h/.cpp`: resolved-theme value, widget-scope lookup and Qt palette.
 - `theme_manager.h/.cpp`: application/root theme lifecycle.
 - `platform_accessibility.h/.cpp`: platform preference integration.
@@ -113,6 +113,7 @@ owning modules.
 | Selects and popup rows | Select, shared control glyphs |
 | Checks and toggles | Checkbox, switch, radio button |
 | Switches | Switch thumb and track in both states |
+| Hover, pressed, selected and focus states | Field, item view rows and cells, pane tabs, tool button, check box, focus indicator |
 | Lists and navigation | List, tree, shared item view styles |
 | Columns with database types | Column row |
 | Saved connection rows | Navigation profile row |
@@ -164,3 +165,7 @@ assembly, named tokens, removed density and accent) rendered every offscreen
 Light/Dark gallery capture byte-identical except the token catalog, whose names
 changed. Phase 2 changed values deliberately (orange brand, compact sizes,
 unified states, seven type roles).
+
+Kumo design system, 2026-11-14: the tokens, sizes, type scale, icons and
+components now copy Cloudflare Kumo exactly, with Light and Dark only. The
+brand is Kumo blue, the font is Inter and the icons are Phosphor regular.

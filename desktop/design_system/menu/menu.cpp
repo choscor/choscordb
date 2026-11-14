@@ -16,6 +16,31 @@
 
 namespace choscordb::design::detail {
 namespace {
+void spreadAlpha(std::vector<int>& alpha, int width, int height, int spread) {
+    if (spread == 0)
+        return;
+    const int reach = qAbs(spread);
+    const auto pick = [spread](int a, int b) { return spread < 0 ? qMin(a, b) : qMax(a, b); };
+    std::vector<int> pass(alpha.size());
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            int value = alpha[y * width + x];
+            for (int dx = -reach; dx <= reach; ++dx) {
+                const int sx = x + dx;
+                value = pick(value, sx >= 0 && sx < width ? alpha[y * width + sx] : 0);
+            }
+            pass[y * width + x] = value;
+        }
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            int value = pass[y * width + x];
+            for (int dy = -reach; dy <= reach; ++dy) {
+                const int sy = y + dy;
+                value = pick(value, sy >= 0 && sy < height ? pass[sy * width + x] : 0);
+            }
+            alpha[y * width + x] = value;
+        }
+}
 void blurAlpha(std::vector<int>& alpha, int width, int height, int radius) {
     if (radius <= 0)
         return;
@@ -72,12 +97,24 @@ QAbstractButton* owningButton(QWidget* origin, const QMenu* menu) {
 }
 class MenuShadowEffect final : public QGraphicsEffect {
   public:
-    explicit MenuShadowEffect(QObject* parent) : QGraphicsEffect(parent) {}
+    MenuShadowEffect(QObject* parent, bool expand) : QGraphicsEffect(parent), expand_(expand) {}
+    [[nodiscard]] QRectF boundingRectFor(const QRectF& rect) const override {
+        if (!expand_)
+            return rect;
+        const int margin = menuShadowMargin();
+        return rect.adjusted(-margin, -margin, margin, margin);
+    }
+    [[nodiscard]] qreal opacity() const { return opacity_; }
+    void setOpacity(qreal opacity) {
+        opacity_ = opacity;
+        update();
+    }
 
   protected:
     void draw(QPainter* painter) override {
         QPoint offset;
-        const auto source = sourcePixmap(Qt::LogicalCoordinates, &offset, NoPad);
+        const auto source = sourcePixmap(Qt::LogicalCoordinates, &offset,
+                                         expand_ ? PadToEffectiveBoundingRect : NoPad);
         if (source.isNull()) {
             return;
         }
@@ -100,6 +137,7 @@ class MenuShadowEffect final : public QGraphicsEffect {
                         if (sx >= 0 && sx < width && sy >= 0 && sy < height)
                             alpha[y * width + x] = sourceImage.pixelColor(sx, sy).alpha();
                     }
+                spreadAlpha(alpha, width, height, qRound(layer.spread * scale));
                 blurAlpha(alpha, width, height, qMax(1, qRound(layer.blur * scale / 2)));
                 QImage colored(sourceImage.size(), QImage::Format_ARGB32_Premultiplied);
                 const auto color = layer.color;
@@ -117,11 +155,16 @@ class MenuShadowEffect final : public QGraphicsEffect {
             shadow_ = QPixmap::fromImage(shadowImage);
             shadow_.setDevicePixelRatio(scale);
         }
+        painter->save();
+        painter->setOpacity(painter->opacity() * opacity_);
         painter->drawPixmap(offset, shadow_);
         painter->drawPixmap(offset, source);
+        painter->restore();
     }
 
   private:
+    bool expand_;
+    qreal opacity_ = 1.0;
     qint64 sourceKey_ = 0;
     QPixmap shadow_;
 };
@@ -130,7 +173,7 @@ void polishMenu(QWidget* widget) {
         auto* origin = widget->parentWidget();
         widget->setWindowFlag(Qt::NoDropShadowWindowHint);
         widget->setAttribute(Qt::WA_TranslucentBackground);
-        widget->setGraphicsEffect(new MenuShadowEffect(widget));
+        widget->setGraphicsEffect(new MenuShadowEffect(widget, false));
         const auto cursor = origin ? origin->property("standardContextMenuCursor") : QVariant();
         embedPopup(widget, origin);
         if (cursor.isValid()) {
@@ -138,6 +181,18 @@ void polishMenu(QWidget* widget) {
             origin->setProperty("standardContextMenuCursor", QVariant());
         }
     }
+}
+void applyPopoverShadow(QWidget* widget) {
+    if (!widget->graphicsEffect())
+        widget->setGraphicsEffect(new MenuShadowEffect(widget, true));
+}
+qreal popoverOpacity(const QWidget& widget) {
+    const auto* effect = dynamic_cast<const MenuShadowEffect*>(widget.graphicsEffect());
+    return effect ? effect->opacity() : 1.0;
+}
+void setPopoverOpacity(QWidget& widget, qreal opacity) {
+    if (auto* effect = dynamic_cast<MenuShadowEffect*>(widget.graphicsEffect()))
+        effect->setOpacity(opacity);
 }
 void prepareStandardContextMenu(QWidget* widget, QEvent* event) {
     if (!widget || event->type() != QEvent::ContextMenu ||
@@ -157,7 +212,8 @@ void positionSubmenu(QWidget* field, QEvent* event) {
             const auto available = menu->screen()->availableGeometry();
             const int panelWidth = menu->width() - 2 * margin;
             const int panelHeight = menu->height() - 2 * margin;
-            const QPoint anchor = button->mapToGlobal(QPoint(0, button->height() + 2));
+            const QPoint anchor =
+                button->mapToGlobal(QPoint(0, button->height() + spacing(Spacing::Two)));
             const int x = qBound(available.left(), anchor.x(),
                                  qMax(available.left(), available.right() + 1 - panelWidth));
             const int y = qBound(available.top(), anchor.y(),

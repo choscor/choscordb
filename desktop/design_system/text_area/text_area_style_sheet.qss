@@ -1,9 +1,16 @@
 QPlainTextEdit, QTextEdit {
-  border: 1px solid @border;
-  border-radius: @radius-md;
-  padding: 8px;
-  background: @surface;
-  color: @fg;
+  border: 1px solid @kumo-line;
+  border-radius: @radius-lg;
+  padding: @space-2 @space-3;
+  background: @kumo-control;
+  color: @text-kumo-default;
+}
+
+QPlainTextEdit[designRole="log"], QPlainTextEdit[designRole="log"]:focus {
+  border: none;
+  border-radius: 0;
+  padding: @space-3 @space-4;
+  background: @kumo-base;
 }
 
 QPlainTextEdit[designRole="codePreview"] {

@@ -5,7 +5,7 @@
 
 namespace choscordb::design {
 
-enum class TextStyle { LargeTitle, Title1, Title2, Title3, Headline, Body, Callout, Caption };
+enum class TextStyle { Headline, Body, Callout, Caption };
 
 enum class FontDesign { Default, Monospaced };
 

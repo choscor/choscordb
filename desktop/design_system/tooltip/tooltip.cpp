@@ -7,6 +7,7 @@
 #include <QHelpEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPointer>
 #include <QScreen>
 #include <QTabBar>
 #include <QTextLayout>
@@ -15,6 +16,70 @@
 #include <QtMath>
 
 namespace choscordb::design::detail {
+namespace {
+int tooltipShadowMargin() {
+    int margin = 0;
+    for (const auto& layer : elevation(Elevation::Tooltip))
+        margin = qMax(margin, layer.blur + qMax(qAbs(layer.x), qAbs(layer.y)));
+    return margin;
+}
+struct KumoArrow final {
+    QPainterPath fill;
+    QPainterPath edge;
+    QPainterPath stroke;
+};
+KumoArrow buildKumoArrow() {
+    QPainterPath fill;
+    QPainterPath edge;
+    QPainterPath stroke;
+    fill.moveTo(9.66437, 2.60207);
+    fill.lineTo(4.80758, 6.97318);
+    fill.cubicTo(4.07308, 7.63423, 3.11989, 8, 2.13172, 8);
+    fill.lineTo(0, 8);
+    fill.lineTo(0, 10);
+    fill.lineTo(20, 10);
+    fill.lineTo(20, 8);
+    fill.lineTo(18.5349, 8);
+    fill.cubicTo(17.5468, 8, 16.5936, 7.63423, 15.8591, 6.97318);
+    fill.lineTo(11.0023, 2.60207);
+    fill.cubicTo(10.622, 2.2598, 10.0447, 2.25979, 9.66437, 2.60207);
+    fill.closeSubpath();
+    edge.moveTo(8.99542, 1.85876);
+    edge.cubicTo(9.75604, 1.17425, 10.9106, 1.17422, 11.6713, 1.85878);
+    edge.lineTo(16.5281, 6.22989);
+    edge.cubicTo(17.0789, 6.72568, 17.7938, 7.00001, 18.5349, 7.00001);
+    edge.lineTo(15.89, 7);
+    edge.lineTo(11.0023, 2.60207);
+    edge.cubicTo(10.622, 2.2598, 10.0447, 2.2598, 9.66436, 2.60207);
+    edge.lineTo(4.77734, 7);
+    edge.lineTo(2.13171, 7.00001);
+    edge.cubicTo(2.87284, 7.00001, 3.58774, 6.72568, 4.13861, 6.22989);
+    edge.lineTo(8.99542, 1.85876);
+    edge.closeSubpath();
+    stroke.moveTo(10.3333, 3.34539);
+    stroke.lineTo(5.47654, 7.71648);
+    stroke.cubicTo(4.55842, 8.54279, 3.36693, 9, 2.13172, 9);
+    stroke.lineTo(0, 9);
+    stroke.lineTo(0, 8);
+    stroke.lineTo(2.13172, 8);
+    stroke.cubicTo(3.11989, 8, 4.07308, 7.63423, 4.80758, 6.97318);
+    stroke.lineTo(9.66437, 2.60207);
+    stroke.cubicTo(10.0447, 2.25979, 10.622, 2.2598, 11.0023, 2.60207);
+    stroke.lineTo(15.8591, 6.97318);
+    stroke.cubicTo(16.5936, 7.63423, 17.5468, 8, 18.5349, 8);
+    stroke.lineTo(20, 8);
+    stroke.lineTo(20, 9);
+    stroke.lineTo(18.5349, 9);
+    stroke.cubicTo(17.2998, 9, 16.1083, 8.54278, 15.1901, 7.71648);
+    stroke.lineTo(10.3333, 3.34539);
+    stroke.closeSubpath();
+    return {fill, edge, stroke};
+}
+const KumoArrow& kumoArrow() {
+    static const KumoArrow arrow = buildKumoArrow();
+    return arrow;
+}
+}
 class TooltipSurface final : public QWidget {
   public:
     TooltipSurface(const QString& text, QWidget* owner, const QRect& anchorRect)
@@ -28,8 +93,12 @@ class TooltipSurface final : public QWidget {
         setAttribute(Qt::WA_ShowWithoutActivating);
         setFont(resolveTypography(TextStyle::Callout));
         const auto available = owner->window()->rect();
-        const qreal contentWidth = qMax(1, qMin(296, available.width() - 40));
-        const qreal contentHeight = qMax(1, available.height() - 34);
+        const int horizontal = spacing(Spacing::TwoHalf);
+        const int vertical = spacing(Spacing::OneHalf);
+        const qreal contentWidth =
+            qMax(1, qMin(dimension(Dimension::ToastWidth) - 2 * horizontal,
+                         available.width() - 2 * horizontal - 2 * spacing(Spacing::Two)));
+        const qreal contentHeight = qMax(1, available.height() - 2 * vertical);
         textLayout_.setText(text);
         textLayout_.setFont(font());
         QTextOption textOption;
@@ -53,19 +122,25 @@ class TooltipSurface final : public QWidget {
             layoutWidth = qMax(layoutWidth, line.naturalTextWidth());
         }
         textLayout_.endLayout();
-        resize(
-            QSize(qCeil(layoutWidth) + 24, qCeil(layoutHeight) + 18).boundedTo(available.size()));
+        const int shadow = tooltipShadowMargin();
+        resize(QSize(qCeil(layoutWidth) + 2 * horizontal + 2 * shadow,
+                     qCeil(layoutHeight) + 2 * vertical + 2 * shadow)
+                   .boundedTo(available.size()));
         const auto anchor =
             owner->mapTo(owner->window(), QPoint(anchorRect.center().x(), anchorRect.top()));
-        int y = anchor.y() - height() - 4;
-        below_ = y < available.top();
-        if (below_) {
-            y = owner->mapTo(owner->window(), QPoint(0, anchorRect.bottom() + 1)).y() + 4;
+        const int gap = spacing(Spacing::TwoHalf);
+        int y = anchor.y() - height() + shadow - gap;
+        if (y < available.top()) {
+            y = owner->mapTo(owner->window(), QPoint(0, anchorRect.bottom() + 1)).y() + gap -
+                shadow;
+            arrowBelow_ = false;
         }
         const int x =
             qBound(available.left(), anchor.x() - width() / 2, available.right() - width() + 1);
+        const int arrowReach =
+            shadow + radius(Radius::Medium) + qCeil(kumoArrow().fill.boundingRect().width() / 2);
+        arrowX_ = qBound(arrowReach, anchor.x() - x, qMax(arrowReach, width() - arrowReach));
         move(x, qBound(available.top(), y, available.bottom() - height() + 1));
-        arrowX_ = qBound(12, anchor.x() - x, width() - 12);
         connect(owner, &QObject::destroyed, this, [this] {
             setProperty("embeddedPopupOwner", QVariant());
             hide();
@@ -100,29 +175,67 @@ class TooltipSurface final : public QWidget {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(colors.fg);
-        const QRectF body(0, below_ ? 6 : 0, width(), height() - 6);
-        painter.drawRoundedRect(body, 8, 8);
-        QPainterPath arrow;
-        const qreal base = below_ ? 6 : height() - 6;
-        arrow.moveTo(arrowX_ - 5, base);
-        arrow.lineTo(arrowX_, below_ ? 1 : height() - 1);
-        arrow.lineTo(arrowX_ + 5, base);
-        arrow.closeSubpath();
-        painter.drawPath(arrow);
-        painter.setPen(colors.bg);
-        painter.setClipRect(body.adjusted(12, 6, -12, -6));
-        textLayout_.draw(&painter, QPointF(12, body.top() + 6));
+        const int shadow = tooltipShadowMargin();
+        const QRectF body = QRectF(rect()).adjusted(shadow, shadow, -shadow, -shadow);
+        const qreal rounding = radius(Radius::Medium);
+        for (const auto& layer : elevation(Elevation::Tooltip)) {
+            const auto cast =
+                body.translated(layer.x, layer.y)
+                    .adjusted(-layer.spread, -layer.spread, layer.spread, layer.spread);
+            for (int step = 0; step < layer.blur; ++step) {
+                const qreal grow = step - layer.blur / 2.0;
+                auto tint = layer.color;
+                tint.setAlphaF(layer.opacity / layer.blur);
+                painter.setBrush(tint);
+                painter.drawRoundedRect(cast.adjusted(-grow, -grow, grow, grow),
+                                        qMax(0.0, rounding + grow), qMax(0.0, rounding + grow));
+            }
+        }
+        painter.setBrush(colors.base);
+        painter.setPen(QPen(colors.line, 1));
+        painter.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), rounding, rounding);
+        paintArrow(painter, body, colors);
+        const int horizontal = spacing(Spacing::TwoHalf);
+        const int vertical = spacing(Spacing::OneHalf);
+        painter.setPen(colors.textDefault);
+        painter.setClipRect(body.adjusted(horizontal, vertical, -horizontal, -vertical));
+        textLayout_.draw(&painter, body.topLeft() + QPointF(horizontal, vertical));
     }
 
   private:
+    void paintArrow(QPainter& painter, const QRectF& body, const Colors& colors) const {
+        const auto& arrow = kumoArrow();
+        const QRectF viewBox(QPointF(), arrow.fill.boundingRect().bottomRight());
+        const qreal reach = spacing(Spacing::Two) - viewBox.height() / 2;
+        painter.save();
+        painter.setPen(Qt::NoPen);
+        painter.translate(arrowX_, arrowBelow_ ? body.bottom() + reach : body.top() - reach);
+        if (arrowBelow_)
+            painter.rotate(180);
+        painter.translate(-viewBox.center());
+        painter.fillPath(arrow.fill, colors.base);
+        painter.fillPath(arrow.edge, colors.arrowEdge);
+        painter.fillPath(arrow.stroke, colors.arrowStroke);
+        painter.restore();
+    }
+
     QTextLayout textLayout_;
     QPointer<QWidget> owner_;
-    bool below_ = false;
     int arrowX_ = 0;
+    bool arrowBelow_ = true;
 };
-bool handleTooltipEvent(QWidget* field, QEvent* event, QPointer<QWidget>& tooltip_,
-                        QPointer<QWidget>& tooltipOwner_) {
+namespace {
+QPointer<QWidget> tooltip_;
+QPointer<QWidget> tooltipOwner_;
+}
+void showTooltip(QWidget* owner, const QRect& anchor, const QString& text) {
+    if (tooltip_)
+        delete tooltip_.data();
+    tooltip_ = new TooltipSurface(text, owner, anchor);
+    tooltipOwner_ = owner;
+    tooltip_->show();
+}
+bool handleTooltipEvent(QWidget* field, QEvent* event) {
     if (field && event->type() == QEvent::ToolTip) {
         QString text = field->toolTip();
         QRect anchorRect = field->rect();
@@ -159,12 +272,7 @@ bool handleTooltipEvent(QWidget* field, QEvent* event, QPointer<QWidget>& toolti
             }
             return false;
         }
-        if (tooltip_) {
-            delete tooltip_.data();
-        }
-        tooltip_ = new TooltipSurface(text, field, anchorRect);
-        tooltipOwner_ = field;
-        tooltip_->show();
+        showTooltip(field, anchorRect, text);
         event->accept();
         return true;
     }

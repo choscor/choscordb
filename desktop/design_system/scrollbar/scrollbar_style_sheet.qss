@@ -18,15 +18,19 @@ QScrollBar:horizontal {
 }
 
 QScrollBar::handle {
-  background: @border;
-  border: 2px solid transparent;
+  background: @kumo-fill;
+  border: @space-half solid transparent;
   border-radius: @scrollbar-radius;
-  min-width: 20px;
-  min-height: 20px;
+  min-width: @space-6;
+  min-height: @space-6;
 }
 
-QScrollBar::handle:hover, QScrollBar::handle:pressed {
-  background: @fg-muted;
+QScrollBar::handle:hover {
+  background: @kumo-line;
+}
+
+QScrollBar::handle:pressed {
+  background: @text-kumo-subtle;
 }
 
 QScrollBar::add-line, QScrollBar::sub-line {

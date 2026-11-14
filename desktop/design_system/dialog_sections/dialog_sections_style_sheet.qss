@@ -1,5 +1,10 @@
 QWidget#dialogSectionsFooter {
-  background-color: @surface-raised;
-  border-bottom-left-radius: @radius-lg;
-  border-bottom-right-radius: @radius-lg;
+  background-color: @kumo-elevated;
+  border-bottom-left-radius: @radius-xl;
+  border-bottom-right-radius: @radius-xl;
+}
+
+QDialog#rightSheet QWidget#dialogSectionsFooter {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }

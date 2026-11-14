@@ -3,10 +3,11 @@
 #include "design_system/icons.h"
 #include <QPushButton>
 #include <QStyle>
+#include <QVariantAnimation>
 #include <optional>
 
 namespace choscordb::design {
-enum class ButtonContext { Standard, EditorAction, Choice, Sidebar, TabAction };
+enum class ButtonContext { Standard, Choice, Segment, TabAction };
 enum class ButtonVariant { Default, Secondary, Outline, Ghost, Destructive, Link };
 enum class ButtonSize { ExtraSmall, Small, Default, IconExtraSmall, IconSmall, Icon };
 
@@ -27,12 +28,17 @@ class Button : public QPushButton {
     [[nodiscard]] QSize sizeHint() const override;
 
   protected:
+    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void focusInEvent(QFocusEvent* event) override;
     [[nodiscard]] virtual QStyle::State visualState() const;
 
   private:
+    void animateHover(qreal target);
+    [[nodiscard]] qreal hoverAmount(bool hover) const;
+
     std::optional<Icon> designIcon_;
+    QVariantAnimation* hoverAnimation_ = nullptr;
     QIcon paintedIcon_;
     QColor paintedIconColor_;
     ButtonContext context_ = ButtonContext::Standard;

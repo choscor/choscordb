@@ -1,33 +1,37 @@
 QLabel[designRole="badge"] {
-  min-height: 18px;
-  max-height: 18px;
+  min-height: @badge-height;
+  max-height: @badge-height;
   border: 1px solid transparent;
-  border-radius: @radius-sm;
-  padding: 0 7px;
+  border-radius: @badge-radius;
+  padding: 0 @space-2;
   font-size: @font-caption;
   font-weight: @font-caption-weight;
-  color: @primary;
-  background: @selection;
+  color: @text-kumo-badge-inverted;
+  background: @kumo-badge-inverted;
 }
 
 QLabel[designRole="badge"][variant="secondary"] {
-  background: @surface-raised;
-  color: @fg;
+  background: @kumo-fill;
+  color: @text-kumo-badge-neutral-subtle;
 }
 
 QLabel[designRole="badge"][variant="outline"] {
-  background: transparent;
-  color: @fg;
-  border-color: @border;
+  background: @kumo-base;
+  color: @text-kumo-default;
+  border-color: @kumo-fill;
 }
 
-QLabel[designRole="badge"][variant="destructive"] {
-  background: @destructive-tint;
-  color: @danger;
+QLabel[designRole="badge"][variant="error"] {
+  background: @kumo-danger-tint;
+  color: @text-kumo-danger;
 }
 
-QLabel[designRole="badge"][variant="driver"] {
-  background: @surface-raised;
-  color: @fg;
-  border-color: @border;
+QLabel[designRole="badge"][variant="success"] {
+  background: @kumo-success-tint;
+  color: @text-kumo-success;
+}
+
+QLabel[designRole="badge"][variant="warning"] {
+  background: @kumo-warning-tint;
+  color: @text-kumo-warning;
 }

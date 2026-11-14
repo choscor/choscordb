@@ -16,6 +16,8 @@ class QListWidget;
 
 namespace choscordb::design {
 
+class Spinner;
+
 struct QuickSearchResult final {
     QString type;
     QString title;
@@ -27,7 +29,6 @@ struct QuickSearchResult final {
 class QuickSearchResultRow final : public QWidget {
   public:
     explicit QuickSearchResultRow(const QuickSearchResult& result, QWidget* parent = nullptr);
-    void setSelected(bool selected);
     void refreshAppearance();
 
   protected:
@@ -38,8 +39,8 @@ class QuickSearchResultRow final : public QWidget {
     Icon iconRole_;
     QLabel* iconLabel_ = nullptr;
     QLabel* titleLabel_ = nullptr;
+    QLabel* separatorLabel_ = nullptr;
     QLabel* detailLabel_ = nullptr;
-    bool selected_ = false;
     bool refreshing_ = false;
 };
 
@@ -54,7 +55,7 @@ class QuickSearchDialog final : public QDialog {
     [[nodiscard]] QString selectedResultId() const;
     void setResults(const QList<QuickSearchResult>& results);
     void setStatus(const QString& message);
-    void setSearchState(PanelStateKind kind, const QString& message);
+    void setSearchState(PanelStateKind kind, const QString& message, bool busy);
     void setReopenShortcut(const QKeySequence& shortcut);
 
   public slots:
@@ -75,11 +76,14 @@ class QuickSearchDialog final : public QDialog {
     void activateCurrent();
     void updateSelectedAccessibility();
     void updateStatus();
+    void refreshSearchIcon();
 
     DialogPresentation presentation_;
+    QLabel* searchIcon_ = nullptr;
     QLineEdit* input_ = nullptr;
     QListWidget* list_ = nullptr;
     QLabel* status_ = nullptr;
+    Spinner* busy_ = nullptr;
     Text* placeholder_ = nullptr;
     QList<QuickSearchResult> results_;
     QString statusMessage_;

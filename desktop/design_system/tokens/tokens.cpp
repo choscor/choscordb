@@ -15,7 +15,6 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     };
     for (const auto& [name, value] : colorTokens(colors))
         color(name, value);
-    add(QStringLiteral("backdrop.blur"), QString::number(backdropBlurRadius()) + "px");
 
     const auto pixels = [&add](const QString& name, int value) {
         add(name, QString::number(value) + QStringLiteral("px"));
@@ -24,6 +23,7 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("spacing.1"), spacing(Spacing::One));
     pixels(QStringLiteral("spacing.1.5"), spacing(Spacing::OneHalf));
     pixels(QStringLiteral("spacing.2"), spacing(Spacing::Two));
+    pixels(QStringLiteral("spacing.2.5"), spacing(Spacing::TwoHalf));
     pixels(QStringLiteral("spacing.3"), spacing(Spacing::Three));
     pixels(QStringLiteral("spacing.4"), spacing(Spacing::Four));
     pixels(QStringLiteral("spacing.6"), spacing(Spacing::Six));
@@ -31,15 +31,18 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("radius.sm"), radius(Radius::Small));
     pixels(QStringLiteral("radius.md"), radius(Radius::Medium));
     pixels(QStringLiteral("radius.lg"), radius(Radius::Large));
+    pixels(QStringLiteral("radius.xl"), radius(Radius::ExtraLarge));
     pixels(QStringLiteral("size.control.xs"), dimension(Dimension::ControlExtraSmall));
     pixels(QStringLiteral("size.control.sm"), dimension(Dimension::ControlSmall));
     pixels(QStringLiteral("size.control"), dimension(Dimension::Control));
     pixels(QStringLiteral("size.row"), dimension(Dimension::Row));
+    pixels(QStringLiteral("size.row.table"), dimension(Dimension::TableRow));
+    pixels(QStringLiteral("size.row.menu"), dimension(Dimension::MenuRow));
     pixels(QStringLiteral("size.header"), dimension(Dimension::Header));
     pixels(QStringLiteral("size.tab"), dimension(Dimension::Tab));
+    pixels(QStringLiteral("size.tab.document"), dimension(Dimension::DocumentTab));
     pixels(QStringLiteral("size.tab.document.width"), dimension(Dimension::DocumentTabWidth));
     pixels(QStringLiteral("size.toolbar"), dimension(Dimension::Toolbar));
-    pixels(QStringLiteral("size.quickSearch.row"), dimension(Dimension::QuickSearchRow));
     pixels(QStringLiteral("size.icon.sm"), dimension(Dimension::IconSmall));
     pixels(QStringLiteral("size.icon"), dimension(Dimension::Icon));
     pixels(QStringLiteral("size.checkbox"), dimension(Dimension::Checkbox));
@@ -56,15 +59,16 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
     pixels(QStringLiteral("size.sheet.width"), dimension(Dimension::SheetWidth));
     pixels(QStringLiteral("size.completion.width"), dimension(Dimension::CompletionPopupWidth));
     pixels(QStringLiteral("size.table.column"), dimension(Dimension::TableColumn));
+    pixels(QStringLiteral("size.table.column-min"), dimension(Dimension::TableColumnMin));
+    pixels(QStringLiteral("size.table.column-max"), dimension(Dimension::TableColumnMax));
+    pixels(QStringLiteral("size.menu.width"), dimension(Dimension::MenuWidth));
 
     pixels(QStringLiteral("border.width"), focusSpec().borderWidth);
     pixels(QStringLiteral("focus.width"), focusSpec().ringWidth);
     add(QStringLiteral("focus.referenceOpacity"),
         QString::number(focusSpec().referenceRingOpacity));
     for (const auto& [name, style] :
-         {std::pair{"largeTitle", TextStyle::LargeTitle}, std::pair{"title1", TextStyle::Title1},
-          std::pair{"title2", TextStyle::Title2}, std::pair{"title3", TextStyle::Title3},
-          std::pair{"headline", TextStyle::Headline}, std::pair{"body", TextStyle::Body},
+         {std::pair{"headline", TextStyle::Headline}, std::pair{"body", TextStyle::Body},
           std::pair{"callout", TextStyle::Callout}, std::pair{"caption", TextStyle::Caption}}) {
         const auto spec = typographySpec(style);
         const auto prefix = QStringLiteral("typography.%1.").arg(QLatin1String(name));
@@ -80,10 +84,16 @@ QList<DesignToken> designTokens(ResolvedAppearance appearance) {
         const auto spec = motionSpec(role);
         const auto prefix = QStringLiteral("motion.%1").arg(QLatin1String(name));
         add(prefix, QString::number(spec.durationMs) + QStringLiteral("ms"));
-        add(prefix + QStringLiteral(".easing"), spec.easing);
+        const auto points = spec.easing.toCubicSpline();
+        add(prefix + QStringLiteral(".easing"), QStringLiteral("cubic-bezier(%1, %2, %3, %4)")
+                                                    .arg(points.at(0).x())
+                                                    .arg(points.at(0).y())
+                                                    .arg(points.at(1).x())
+                                                    .arg(points.at(1).y()));
     }
     for (const auto& [name, role] :
-         {std::pair{"popover", Elevation::Popover}, std::pair{"dialog", Elevation::Dialog}}) {
+         {std::pair{"tooltip", Elevation::Tooltip}, std::pair{"popover", Elevation::Popover},
+          std::pair{"dialog", Elevation::Dialog}}) {
         const auto layers = elevation(role);
         for (qsizetype i = 0; i < layers.size(); ++i) {
             const auto prefix = QStringLiteral("elevation.%1%2.")

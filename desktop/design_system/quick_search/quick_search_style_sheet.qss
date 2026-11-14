@@ -1,24 +1,46 @@
-QListWidget#quickSearchResults {
+QWidget#quickSearchHeader {
+  background: @kumo-base;
+  border-top-left-radius: @radius-lg;
+  border-top-right-radius: @radius-lg;
+}
+QLineEdit#quickSearchInput {
   background: transparent;
   border: none;
+  padding: 0;
+}
+QListWidget#quickSearchResults {
+  background: @kumo-base;
+  border: none;
+  border-top: 1px solid @kumo-hairline;
+  padding: @space-2;
   outline: none;
-  color: @fg;
+  color: @text-kumo-default;
 }
 QListWidget#quickSearchResults::item {
-  border-radius: @radius-md;
-  padding: 4px 8px;
-  margin: 1px 0;
+  border: none;
+  border-radius: @radius-lg;
+  padding: 0;
+  margin: 0;
 }
 QListWidget#quickSearchResults::item:hover:!selected {
-  background: @surface-raised;
+  background: @kumo-overlay;
 }
 QListWidget#quickSearchResults::item:selected {
-  background: @selection;
-  color: @fg;
+  background: @kumo-overlay;
+  color: @text-kumo-default;
+}
+QListWidget#quickSearchResults::item:selected:hover {
+  background: @kumo-overlay;
+}
+QWidget#quickSearchFooter {
+  background: @kumo-elevated;
+  border-top: 1px solid @kumo-hairline;
+  border-bottom-left-radius: @radius-lg;
+  border-bottom-right-radius: @radius-lg;
 }
 QLabel#quickSearchStatus {
-  color: @fg-muted;
+  color: @text-kumo-subtle;
 }
 QLabel#quickSearchStatus[state="error"] {
-  color: @danger;
+  color: @text-kumo-danger;
 }

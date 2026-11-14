@@ -4,7 +4,6 @@
 #include <QApplication>
 #include <QDialog>
 #include <QEvent>
-#include <QGraphicsBlurEffect>
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsPathItem>
 #include <QGraphicsPixmapItem>
@@ -13,7 +12,6 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QScopedValueRollback>
 #include <QSet>
 #include <QTimer>
 
@@ -34,84 +32,17 @@ bool belongsToDialog(QWidget* widget, const QDialog& dialog) {
 }
 class Backdrop final : public QWidget {
   public:
-    Backdrop(QWidget* parent, QDialog& dialog) : QWidget(parent), dialog_(dialog) {
+    Backdrop(QWidget* parent, QDialog& dialog, Scrim scrim)
+        : QWidget(parent), dialog_(dialog), scrim_(scrim) {
         setObjectName("modalBackdrop");
         setFocusPolicy(Qt::NoFocus);
-    }
-
-    void captureOwner() {
-        if (capturing_)
-            return;
-        const QScopedValueRollback<bool> captureGuard(capturing_, true);
-        QList<QWidget*> excluded;
-        const int layer = activeDialogs.indexOf(&dialog_);
-        for (int i = qMax(0, layer); i < activeDialogs.size(); ++i) {
-            if (auto* modal = activeDialogs[i].data(); modal && modal->window() == dialog_.window())
-                excluded.append(modal);
-        }
-        for (auto* child :
-             parentWidget()->findChildren<QWidget*>(QString{}, Qt::FindDirectChildrenOnly)) {
-            if (auto* backdrop = dynamic_cast<Backdrop*>(child);
-                backdrop && activeDialogs.indexOf(&backdrop->dialog_) >= layer)
-                excluded.append(backdrop);
-        }
-        QList<QWidget*> visible;
-        for (auto* widget : excluded) {
-            if (widget->isVisible()) {
-                visible.append(widget);
-                widget->setAttribute(Qt::WA_WState_Visible, false);
-                widget->setAttribute(Qt::WA_WState_Hidden, true);
-            }
-        }
-        const auto source = parentWidget()->grab();
-        for (auto* widget : visible) {
-            widget->setAttribute(Qt::WA_WState_Hidden, false);
-            widget->setAttribute(Qt::WA_WState_Visible, true);
-        }
-        background_ = QPixmap(source.size());
-        background_.setDevicePixelRatio(source.devicePixelRatio());
-        background_.fill(Qt::transparent);
-        QGraphicsScene scene;
-        auto* item = scene.addPixmap(source);
-        auto* effect = new QGraphicsBlurEffect;
-        effect->setBlurRadius(backdropBlurRadius() * 2);
-        item->setGraphicsEffect(effect);
-        QPainter painter(&background_);
-        const QRectF bounds(QPointF(), source.deviceIndependentSize());
-        scene.render(&painter, bounds, bounds);
-    }
-
-    void scheduleCapture() {
-        if (capturePending_)
-            return;
-        capturePending_ = true;
-        QTimer::singleShot(0, this, [this] {
-            if (!capturePending_)
-                return;
-            const auto siblings =
-                parentWidget()->findChildren<QWidget*>(QString{}, Qt::FindDirectChildrenOnly);
-            for (const auto& dialog : activeDialogs) {
-                for (auto* sibling : siblings) {
-                    auto* backdrop = dynamic_cast<Backdrop*>(sibling);
-                    if (backdrop && &backdrop->dialog_ == dialog && backdrop->capturePending_) {
-                        backdrop->capturePending_ = false;
-                        if (backdrop->isVisible()) {
-                            backdrop->captureOwner();
-                            backdrop->update();
-                        }
-                    }
-                }
-            }
-        });
     }
 
   protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
         const auto theme = resolvedThemeForWidget(dialog_);
-        if (!theme.forcedContrast)
-            painter.drawPixmap(0, 0, background_);
-        painter.fillRect(rect(), theme.colors.backdrop);
+        painter.fillRect(rect(), dialogBackdrop(theme.colors, scrim_));
         if (theme.forcedContrast)
             return;
         const QRect panel(parentWidget()->mapFromGlobal(dialog_.mapToGlobal(QPoint())),
@@ -126,13 +57,18 @@ class Backdrop final : public QWidget {
             shadow_.fill(Qt::transparent);
             QPainter shadowPainter(&shadow_);
             QPainterPath path;
-            path.addRoundedRect(panel, radius(Radius::Large), radius(Radius::Large));
+            path.addRoundedRect(panel, radius(Radius::ExtraLarge), radius(Radius::ExtraLarge));
             QPainterPath outside;
             outside.addRect(rect());
             shadowPainter.setClipPath(outside.subtracted(path));
             for (const auto& layer : elevation(Elevation::Dialog)) {
                 QGraphicsScene scene;
-                auto* item = scene.addPath(path, Qt::NoPen, theme.colors.fg);
+                QPainterPath cast;
+                const qreal castRadius = qMax(0, radius(Radius::ExtraLarge) + layer.spread);
+                cast.addRoundedRect(QRectF(panel).adjusted(-layer.spread, -layer.spread,
+                                                           layer.spread, layer.spread),
+                                    castRadius, castRadius);
+                auto* item = scene.addPath(cast, Qt::NoPen, theme.colors.textDefault);
                 auto* effect = new QGraphicsDropShadowEffect;
                 effect->setBlurRadius(layer.blur * 2);
                 effect->setOffset(layer.x, layer.y);
@@ -154,9 +90,7 @@ class Backdrop final : public QWidget {
 
   private:
     QDialog& dialog_;
-    bool capturing_ = false;
-    bool capturePending_ = false;
-    QPixmap background_;
+    Scrim scrim_;
     QPixmap shadow_;
     QRect shadowPanel_;
     QSize shadowSize_;
@@ -253,9 +187,10 @@ void DialogPresentation::shown() {
     qApp->installEventFilter(this);
     if (owner_) {
         if (!backdrop_) {
-            backdrop_ = new Backdrop(owner_, dialog_);
+            backdrop_ = new Backdrop(owner_, dialog_,
+                                     placement_ == Placement::TopCenter ? Scrim::CommandPalette
+                                                                        : Scrim::Dialog);
         }
-        static_cast<Backdrop*>(backdrop_.data())->captureOwner();
         backdrop_->show();
         backdrop_->raise();
         center();
@@ -363,26 +298,23 @@ bool DialogPresentation::eventFilter(QObject* watched, QEvent* event) {
         if (event->type() == QEvent::Resize) {
             QEvent request(QEvent::LayoutRequest);
             QApplication::sendEvent(&dialog_, &request);
-            if (backdrop_)
-                static_cast<Backdrop*>(backdrop_.data())->scheduleCapture();
         }
-        if (backdrop_ &&
-            (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange))
-            static_cast<Backdrop*>(backdrop_.data())->scheduleCapture();
+        if (backdrop_)
+            backdrop_->update();
         center();
         if (event->type() == QEvent::Resize || event->type() == QEvent::Move)
             scheduleCenter();
     }
     return QObject::eventFilter(watched, event);
 }
-void paintDialogSurface(QWidget& widget, bool drawBorder) {
+void paintDialogSurface(QWidget& widget, bool drawBorder, Radius corner) {
     QPainter painter(&widget);
     painter.setRenderHint(QPainter::Antialiasing);
     const auto theme = resolvedThemeForWidget(widget);
     const auto& colors = theme.colors;
-    painter.setBrush(colors.surface);
-    painter.setPen(drawBorder ? QPen(colors.border, 1) : Qt::NoPen);
-    const auto cornerRadius = radius(Radius::Large);
+    painter.setBrush(colors.base);
+    painter.setPen(drawBorder ? QPen(colors.line, 1) : Qt::NoPen);
+    const auto cornerRadius = radius(corner);
     const auto bounds =
         drawBorder ? QRectF(widget.rect()).adjusted(.5, .5, -.5, -.5) : QRectF(widget.rect());
     painter.drawRoundedRect(bounds, cornerRadius, cornerRadius);

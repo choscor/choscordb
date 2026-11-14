@@ -1,4 +1,6 @@
 #include "design_system/control_glyphs/control_glyphs.h"
+#include "design_system/icons.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/style/scoped_theme.h"
 #include "design_system/theme.h"
 #include <QAbstractItemView>
@@ -24,19 +26,11 @@ class ControlGlyphOverlay final : public QWidget {
             connect(spin, &QSpinBox::valueChanged, this, [this] { update(); });
         } else if (auto* doubleSpin = qobject_cast<QDoubleSpinBox*>(owner)) {
             connect(doubleSpin, &QDoubleSpinBox::valueChanged, this, [this] { update(); });
-        } else if (auto* combo = qobject_cast<QComboBox*>(owner)) {
-            combo->view()->parentWidget()->installEventFilter(this);
         }
         show();
     }
 
   protected:
-    bool eventFilter(QObject* watched, QEvent* event) override {
-        if (event->type() == QEvent::Show || event->type() == QEvent::Hide)
-            update();
-        return QWidget::eventFilter(watched, event);
-    }
-
     void paintEvent(QPaintEvent*) override {
         auto* owner = parentWidget();
         if (!owner) {
@@ -45,7 +39,7 @@ class ControlGlyphOverlay final : public QWidget {
         auto color = owner->palette().color(QPalette::ButtonText);
         const auto themeValue = scopedThemeValue(owner);
         if (themeValue.canConvert<ResolvedTheme>()) {
-            color = themeValue.value<ResolvedTheme>().colors.fg;
+            color = themeValue.value<ResolvedTheme>().colors.textSubtle;
         }
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
@@ -69,14 +63,15 @@ class ControlGlyphOverlay final : public QWidget {
             painter.restore();
         };
         if (auto* combo = qobject_cast<QComboBox*>(owner)) {
-            QStyleOptionComboBox option;
-            option.initFrom(combo);
-            option.editable = combo->isEditable();
-            option.frame = combo->hasFrame();
-            auto arrow = combo->style()->subControlRect(QStyle::CC_ComboBox, &option,
-                                                        QStyle::SC_ComboBoxArrow, combo);
-            arrow.translate(combo->layoutDirection() == Qt::RightToLeft ? -2 : 2, 0);
-            drawArrow(arrow, combo->view()->isVisible(), combo->isEnabled(), 16);
+            const int size = dimension(Dimension::Icon);
+            const int inset = spacing(Spacing::Three);
+            QRect caret(0, (combo->height() - size) / 2, size, size);
+            if (combo->layoutDirection() == Qt::RightToLeft)
+                caret.moveLeft(inset);
+            else
+                caret.moveRight(combo->width() - 1 - inset);
+            painter.setOpacity(combo->isEnabled() ? 1.0 : 0.5);
+            themedIcon(Icon::CaretUpDown, color, size).paint(&painter, caret);
         } else if (auto* spin = qobject_cast<QAbstractSpinBox*>(owner)) {
             if (spin->buttonSymbols() == QAbstractSpinBox::NoButtons) {
                 return;

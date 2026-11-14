@@ -65,5 +65,7 @@ class ResultTableDelegate final : public QStyledItemDelegate {
     QPointer<QAbstractItemModel> model_;
 };
 
-ResultTableDelegate* configureResultTable(QTableView& table, bool showGrid = true);
+void configureDataTable(QTableView& table);
+void fitColumnsToContents(QTableView& table);
+ResultTableDelegate* configureResultTable(QTableView& table);
 }

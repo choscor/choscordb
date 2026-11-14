@@ -94,7 +94,8 @@ class EmbeddedPopup final : public QObject {
             else if (auto* button =
                          owningButton(origin_.data(), qobject_cast<QMenu*>(surface_.data())))
                 requested = button->mapTo(
-                    owner_, QPoint(-menuShadowMargin(), button->height() + 2 - menuShadowMargin()));
+                    owner_, QPoint(-menuShadowMargin(),
+                                   button->height() + spacing(Spacing::Two) - menuShadowMargin()));
             if (auto* parent = qobject_cast<QMenu*>(origin_.data());
                 !cursor.isValid() && parent && parent->isVisible()) {
                 const int right = parent->geometry().right() - 2 * menuShadowMargin() + 3;
@@ -213,7 +214,7 @@ class EmbeddedPopup final : public QObject {
         surface_->setProperty("designTheme", QVariant::fromValue(theme));
         auto palette = applicationPalette(theme);
         if (qobject_cast<QMenu*>(surface_)) {
-            palette.setColor(QPalette::Window, theme.colors.surface);
+            palette.setColor(QPalette::Window, theme.colors.base);
             const auto sheet = applicationStyleSheet(theme);
             if (surface_->styleSheet() != sheet)
                 surface_->setStyleSheet(sheet);

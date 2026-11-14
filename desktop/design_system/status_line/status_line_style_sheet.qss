@@ -1,9 +1,9 @@
 QLabel[statusLineState="neutral"] {
-  color: @fg-muted;
+  color: @banner-secondary-text;
 }
 QLabel[statusLineState="success"] {
-  color: @success;
+  color: @text-kumo-success;
 }
 QLabel[statusLineState="error"] {
-  color: @danger;
+  color: @text-kumo-danger;
 }

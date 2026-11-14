@@ -23,7 +23,7 @@ class JsonSyntaxHighlighter final : public QSyntaxHighlighter {
     explicit JsonSyntaxHighlighter(QTextDocument* document) : QSyntaxHighlighter(document) {}
 
     bool setColors(const Colors& colors) {
-        const std::array<QColor, 4> next{colors.codeKeyword, colors.codeString, colors.codeComment,
+        const std::array<QColor, 4> next{colors.codeKey, colors.codeString, colors.codeNumber,
                                          colors.codeNumber};
         if (resolved_ && next == colors_)
             return false;

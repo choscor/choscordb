@@ -1,6 +1,7 @@
 <RCC>
   <qresource prefix="/styles">
     <file alias="badge/badge_style_sheet.qss">../design_system/badge/badge_style_sheet.qss</file>
+    <file alias="panel_state/panel_state_style_sheet.qss">../design_system/panel_state/panel_state_style_sheet.qss</file>
     <file alias="button/button_painted_style_sheet.qss">../design_system/button/button_painted_style_sheet.qss</file>
     <file alias="button/button_style_sheet.qss">../design_system/button/button_style_sheet.qss</file>
     <file alias="dialog_sections/dialog_sections_style_sheet.qss">../design_system/dialog_sections/dialog_sections_style_sheet.qss</file>

@@ -3,6 +3,8 @@
 #include <QObject>
 #include <QPointer>
 
+#include "design_system/metrics/metrics.h"
+
 class QDialog;
 class QWidget;
 
@@ -34,6 +36,7 @@ class DialogPresentation final : public QObject {
     bool active_ = false;
 };
 
-void paintDialogSurface(QWidget& widget, bool drawBorder = true);
+void paintDialogSurface(QWidget& widget, bool drawBorder = true,
+                        Radius corner = Radius::ExtraLarge);
 
 }

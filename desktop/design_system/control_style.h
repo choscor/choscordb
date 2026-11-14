@@ -24,8 +24,6 @@ class ControlStyle final : public QProxyStyle {
 
   private:
     QPointer<QFocusFrame> focusFrame_;
-    QPointer<QWidget> tooltip_;
-    QPointer<QWidget> tooltipOwner_;
 };
 
 }

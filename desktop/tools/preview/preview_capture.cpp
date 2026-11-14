@@ -43,7 +43,7 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
     const QPointer<PreviewWindow> owner(this);
     const auto fail = [owner](const QString& reason) {
         if (owner)
-            owner->status_->setText(tr("Capture failed: %1").arg(reason));
+            owner->status_->setText(tr("Could not save the capture: %1").arg(reason));
         return false;
     };
     if (captureInProgress_)
@@ -68,7 +68,7 @@ bool PreviewWindow::exportCapture(const QString& path, bool comparison, QSize lo
 
     PreviewWindow fixture;
     (void)fixture.selectSpecimen(id);
-    fixture.resize(1440, 1100);
+    fixture.resize(1440, 1100); // ui-ok: the capture fixture matches the screenshot baseline
     fixture.ensurePolished();
     fixture.layout()->activate();
     auto* singleHost = appearance == ResolvedAppearance::Dark ? fixture.dark_ : fixture.light_;

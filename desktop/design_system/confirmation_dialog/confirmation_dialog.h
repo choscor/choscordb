@@ -6,6 +6,7 @@
 #include <QMessageBox>
 
 class QLabel;
+class QPushButton;
 class QScrollArea;
 
 namespace choscordb {
@@ -19,9 +20,11 @@ class ConfirmationDialog final : public QMessageBox {
     ConfirmationDialog(Icon icon, const QString& title, const QString& text,
                        StandardButtons buttons = NoButton, QWidget* parent = nullptr);
     using QMessageBox::open;
-    static StandardButton question(QWidget* parent, const QString& title, const QString& text,
-                                   StandardButtons buttons = StandardButtons(Yes | No),
-                                   StandardButton defaultButton = NoButton);
+    enum class Consequence { Safe, Destructive };
+    static bool confirm(QWidget* parent, const QString& title, const QString& text,
+                        const QString& action, Consequence consequence);
+    QPushButton* addActionButton(const QString& text, Consequence consequence);
+    template <typename... Arguments> static void question(Arguments&&...) = delete;
 
   public slots:
     void open() override;

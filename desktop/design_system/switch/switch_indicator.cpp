@@ -7,25 +7,39 @@
 
 namespace choscordb::design::detail {
 bool drawSwitchIndicator(const QStyleOption* option, QPainter* painter, const QWidget* widget) {
+    if (!widget || widget->property("designRole").toString() != QLatin1String("switch"))
+        return false;
     const bool checked = option->state.testFlag(QStyle::State_On);
-    const auto rectangle = QRectF(option->rect).adjusted(0.5, 0.5, -0.5, -0.5);
-    if (widget && widget->property("designRole").toString() == QLatin1String("switch")) {
-        const auto theme = resolvedThemeForWidget(*widget);
-        const auto& colors = theme.colors;
-        painter->setPen(theme.forcedContrast ? QPen(colors.border, 1) : Qt::NoPen);
-        painter->setBrush(checked ? colors.primary : colors.switchTrack);
-        painter->drawRoundedRect(rectangle, rectangle.height() / 2, rectangle.height() / 2);
-        const auto thumbSize = dimension(Dimension::SwitchThumb);
-        const auto inset = (dimension(Dimension::SwitchHeight) - thumbSize) / 2;
-        const bool right = checked != (option->direction == Qt::RightToLeft);
-        const auto x =
-            right ? option->rect.right() - inset - thumbSize + 1 : option->rect.left() + inset;
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(theme.forcedContrast ? (checked ? colors.primaryFg : colors.fg)
-                                               : switchThumb(colors, theme.appearance));
-        painter->drawEllipse(QRectF(x, option->rect.top() + inset, thumbSize, thumbSize));
-        return true;
+    const bool enabled = option->state.testFlag(QStyle::State_Enabled);
+    const auto theme = resolvedThemeForWidget(*widget);
+    const auto& colors = theme.colors;
+    const auto fill = switchColors(colors, theme.appearance, theme.forcedContrast, checked);
+    const qreal rounding = dimension(Dimension::SwitchRadius);
+    if (!enabled)
+        painter->setOpacity(0.5);
+    const QRectF track(option->rect);
+    painter->setPen(QPen(fill.ring, 1));
+    painter->setBrush(fill.track);
+    painter->drawRoundedRect(track.adjusted(0.5, 0.5, -0.5, -0.5), rounding - 0.5, rounding - 0.5);
+    const auto thumbWidth = dimension(Dimension::SwitchThumb);
+    const bool right = checked != (option->direction == Qt::RightToLeft);
+    const QRectF thumb(right ? track.right() + 1 - thumbWidth : track.left(), track.top(),
+                       thumbWidth, track.height());
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(colors.shadowDrop);
+    painter->drawRoundedRect(thumb.translated(0, 1), rounding, rounding);
+    painter->setPen(QPen(colors.shadowEdge, 1));
+    painter->setBrush(fill.thumb);
+    painter->drawRoundedRect(thumb.adjusted(0.5, 0.5, -0.5, -0.5), rounding - 0.5, rounding - 0.5);
+    if (option->state.testFlag(QStyle::State_HasFocus) &&
+        option->state.testFlag(QStyle::State_KeyboardFocusChange)) {
+        const qreal width = focusSpec().ringWidth;
+        painter->setPen(QPen(colors.brand, width));
+        painter->setBrush(Qt::NoBrush);
+        const qreal offset = width / 2;
+        painter->drawRoundedRect(track.adjusted(-offset, -offset, offset, offset),
+                                 rounding + offset, rounding + offset);
     }
-    return false;
+    return true;
 }
 }

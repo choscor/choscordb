@@ -1,14 +1,14 @@
 QWidget[designSurface="subtle"] {
-  background: @selection;
+  background: @kumo-tint;
 }
 
 QWidget[designSurface="sidebar"] {
-  background: @surface-raised;
+  background: @kumo-elevated;
 }
 
 QWidget#navigatorBody {
-  background: @surface-raised;
-  border-right: 1px solid @border;
+  background: @kumo-elevated;
+  border-right: 1px solid @kumo-hairline;
 }
 
 QWidget#navigatorBody QStackedWidget,
@@ -27,19 +27,18 @@ QListWidget#sidebarHistoryItems {
 }
 
 QWidget[designSurface="panel"] {
-  background: @surface;
+  background: @kumo-base;
 }
 
 QWidget[designSurface="muted"] {
-  background: @surface-raised;
+  background: @kumo-elevated;
 }
 
 QTableView, QTreeView, QListView {
-  background: @surface;
-  color: @fg;
+  background: @kumo-base;
+  color: @text-kumo-default;
   border: 0;
-  gridline-color: @border;
-  selection-background-color: @selection;
-  selection-color: @fg;
-  outline: 0;
+  gridline-color: @kumo-hairline;
+  selection-background-color: @kumo-tint;
+  selection-color: @text-kumo-default;
 }

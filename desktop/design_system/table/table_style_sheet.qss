@@ -1,25 +1,4 @@
 QTableView {
-  font-size: @font-callout;
-}
-
-QTableView QHeaderView,
-QTableView QHeaderView::section,
-QTableView QTableCornerButton::section {
-  background: @surface;
-}
-
-QTableView QHeaderView::section:horizontal {
-  border-right: 1px solid @border;
-}
-
-QTableView QHeaderView:vertical {
-  border-right: 1px solid @border;
-}
-
-QTableView QHeaderView::section:vertical {
-  border-right: 1px solid @border;
-}
-
-QTableView QTableCornerButton::section {
-  border-right: 1px solid @border;
+  font-size: @font-body;
+  alternate-background-color: @kumo-elevated;
 }

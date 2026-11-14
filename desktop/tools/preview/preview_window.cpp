@@ -10,6 +10,7 @@
 #include "design_system/history_row/history_row.h"
 #include "design_system/icons.h"
 #include "design_system/json_text_view/json_text_view.h"
+#include "design_system/kbd/key_hints.h"
 #include "design_system/menu/menu.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/modal_panel/modal_panel.h"
@@ -17,6 +18,7 @@
 #include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/right_sheet/right_sheet.h"
 #include "design_system/table/table_style.h"
+#include "design_system/tabs/segmented_control.h"
 #include "design_system/text/text.h"
 #include "design_system/text_area/text_area_style.h"
 #include "design_system/theme_manager.h"
@@ -86,7 +88,8 @@ QList<Specimen> specimens() {
          "desktop/design_system/tokens/tokens.cpp"},
         {"Typography", "typography", "Type roles and Unicode",
          "desktop/design_system/text/text.cpp"},
-        {"Icons", "icons", "Lucide names, sizes and alignment", "desktop/design_system/icons.cpp"},
+        {"Icons", "icons", "Phosphor names, sizes and alignment",
+         "desktop/design_system/icons.cpp"},
         {"Components", "buttons", "Buttons: variants, sizes and states",
          "desktop/design_system/button/button.cpp"},
         {"Components", "tool-buttons", "Tool buttons and dropdowns",
@@ -106,6 +109,8 @@ QList<Specimen> specimens() {
         {"Components", "switches", "Switches", "desktop/design_system/switch/switch_indicator.cpp"},
         {"Components", "shortcuts", "Shortcut entry",
          "desktop/design_system/field/field_style.cpp"},
+        {"Components", "interaction-states", "Hover, pressed, selected and focus states",
+         "desktop/design_system/item_view/item_view_state_style_sheet.qss"},
         {"Components", "lists-navigation", "Lists and navigation",
          "desktop/design_system/tree/tree_style.cpp"},
         {"Components", "column-row", "Columns with types",
@@ -168,7 +173,7 @@ class IconDisplay final : public QLabel {
   protected:
     void paintEvent(QPaintEvent*) override {
         const auto colors = resolvedThemeForWidget(*this).colors;
-        const auto color = dimmed_ ? colors.fgDisabled : colors.fg;
+        const auto color = dimmed_ ? colors.textInactive : colors.textDefault;
         if (icon_.isNull() || color_ != color) {
             icon_ = themedIcon(role_, color, size_);
             color_ = color;
@@ -206,7 +211,7 @@ void populateIcons(QWidget* host, QVBoxLayout* layout) {
         auto* disabled = new IconDisplay(entry.role, dimension(Dimension::Icon), true, host);
         grid->addWidget(disabled, row++, column);
     }
-    layout->addWidget(new QLabel(QString("Lucide name · %1 / %2 logical pixels · disabled")
+    layout->addWidget(new QLabel(QString("Phosphor name · %1 / %2 logical pixels · disabled")
                                      .arg(dimension(Dimension::IconSmall))
                                      .arg(dimension(Dimension::Icon)),
                                  host));
@@ -246,14 +251,14 @@ void populateTypography(QWidget* host, QVBoxLayout* layout) {
                                  "fallback follows the operating system for unsupported glyphs.",
                                  host);
     constrained->setWordWrap(true);
-    constrained->setMaximumWidth(260);
+    constrained->setMaximumWidth(dimension(Dimension::MenuWidth));
     layout->addWidget(constrained);
     auto* sectionLabel = new Text("Schema & objects", host);
     sectionLabel->setObjectName("previewSectionLabel");
     sectionLabel->setSectionLabel();
     layout->addWidget(sectionLabel);
-    auto* keyboardHint = new QLabel("Ctrl / ⌘ + Enter", host);
-    keyboardHint->setProperty("designRole", "kbd");
+    auto* keyboardHint = new KeyHints({{"Ctrl / ⌘ + Enter", "Run"}}, host);
+    keyboardHint->setObjectName("previewKeyHints");
     layout->addWidget(keyboardHint);
     layout->addStretch();
 }
@@ -274,11 +279,9 @@ void populateRightSheet(QWidget* host, QVBoxLayout* layout) {
     body->setPlainText(
         "{\n  \"key\": \"value\",\n  \"count\": 42,\n  \"active\": true,\n  \"missing\": null\n}");
     sheet->setBody(body);
-    auto* done = new Button("Done", sheet);
+    auto* done = sheet->sections()->addAction(DialogActionRole::Primary, "Done");
     done->setObjectName("previewRightSheetDone");
-    done->setAccessibleName("Done");
-    sheet->footerLayout()->addWidget(done);
-    QObject::connect(done, &QPushButton::clicked, sheet, &QDialog::reject);
+    QObject::connect(done, &QPushButton::clicked, sheet, &QDialog::accept);
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(sheet));
     QObject::connect(open, &QPushButton::clicked, sheet, &QDialog::open);
     layout->addStretch();
@@ -325,8 +328,8 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
         confirmation->setObjectName("previewActualDialog");
         open->setProperty("previewSurface", QVariant::fromValue<QObject*>(confirmation));
         applyHostTheme(*confirmation, *host);
-        auto* affirmative = confirmation->addButton("Delete", QMessageBox::DestructiveRole);
-        confirmation->setDefaultButton(QMessageBox::Cancel);
+        auto* affirmative = confirmation->addActionButton(
+            "Delete", choscordb::ConfirmationDialog::Consequence::Destructive);
         confirmation->setEscapeButton(QMessageBox::Cancel);
         QObject::connect(confirmation, &QDialog::finished, status,
                          [status, confirmation, affirmative](int) {
@@ -370,14 +373,8 @@ void populateDialog(QWidget* host, QVBoxLayout* layout, bool modeless, bool dest
     input->setPlaceholderText("Synthetic label");
     input->setAccessibleName("Synthetic label");
     content->addWidget(input);
-    auto* actions = sections->footerLayout();
-    auto* cancel = new Button("Cancel", sections);
-    cancel->setVariant(ButtonVariant::Outline);
-    cancel->setDefault(true);
-    auto* confirm = new Button("Done", sections);
-    actions->addStretch();
-    actions->addWidget(cancel);
-    actions->addWidget(confirm);
+    auto* cancel = sections->addAction(DialogActionRole::Dismiss, "Cancel");
+    auto* confirm = sections->addAction(DialogActionRole::Primary, "Save");
     QObject::connect(cancel, &QPushButton::clicked, dialog, &QDialog::reject);
     QObject::connect(confirm, &QPushButton::clicked, dialog, &QDialog::accept);
     QObject::connect(dialog, &QDialog::finished, status, [status](int result) {
@@ -402,7 +399,7 @@ void populateMenu(QWidget* host, QVBoxLayout* layout) {
         host, &QWidget::customContextMenuRequested, menu,
         [host, menu](const QPoint& point) { popupContextMenu(*menu, host->mapToGlobal(point)); });
     open->setProperty("previewSurface", QVariant::fromValue<QObject*>(menu));
-    menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.fg,
+    menu->addAction(themedIcon(Icon::Run, resolvedThemeForWidget(*host).colors.textDefault,
                                dimension(Dimension::Icon)),
                     "Primary action")
         ->setShortcut(QKeySequence("Ctrl+Return"));
@@ -445,11 +442,11 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
         QLineEdit* field = state == "password" ? new PasswordLineEdit(host) : new QLineEdit(host);
         field->setObjectName("field-" + state);
         field->setAccessibleName(state + " input");
-        field->setPlaceholderText("Enter a value…");
+        field->setPlaceholderText("warehouse_01");
         if (state == "password") {
             field->setEchoMode(QLineEdit::Password);
             field->setText("synthetic-password");
-            const auto iconColor = resolvedThemeForWidget(*host).colors.fg;
+            const auto iconColor = resolvedThemeForWidget(*host).colors.textDefault;
             auto* toggle =
                 field->addAction(themedIcon(Icon::Eye, iconColor, dimension(Dimension::Icon)),
                                  QLineEdit::TrailingPosition);
@@ -459,7 +456,7 @@ void populateFields(QWidget* host, QVBoxLayout* layout) {
             QObject::connect(toggle, &QAction::triggered, field, [field, toggle, iconColor] {
                 const bool show = field->echoMode() == QLineEdit::Password;
                 field->setEchoMode(show ? QLineEdit::Normal : QLineEdit::Password);
-                toggle->setIcon(themedIcon(show ? Icon::EyeOff : Icon::Eye, iconColor,
+                toggle->setIcon(themedIcon(show ? Icon::EyeSlash : Icon::Eye, iconColor,
                                            dimension(Dimension::Icon)));
                 toggle->setText(show ? "Hide password" : "Show password");
             });
@@ -492,15 +489,20 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
     navigator->setProperty("designSurface", "sidebar");
     navigator->setAttribute(Qt::WA_StyledBackground);
     auto* navigatorLayout = new QVBoxLayout(navigator);
-    auto* sidebarTab = new Button("Connections", navigator);
+    auto* sidebarTabs = new SegmentedControl(navigator);
+    sidebarTabs->setObjectName("previewSidebarTabs");
+    auto* sidebarTab = new Button({}, sidebarTabs);
     sidebarTab->setObjectName("previewSidebarTab");
-    sidebarTab->setVariant(ButtonVariant::Ghost);
-    sidebarTab->setButtonContext(ButtonContext::Sidebar);
+    sidebarTab->setAccessibleName("Connections");
     sidebarTab->setDesignIcon(Icon::Database);
-    sidebarTab->setCheckable(true);
-    sidebarTab->setChecked(true);
     sidebarTab->setToolTip("Tab to show keyboard focus; switching windows preserves focus style.");
-    navigatorLayout->addWidget(sidebarTab);
+    sidebarTabs->addSegment(sidebarTab);
+    auto* savedTab = new Button({}, sidebarTabs);
+    savedTab->setAccessibleName("Saved queries");
+    savedTab->setDesignIcon(Icon::File);
+    sidebarTabs->addSegment(savedTab);
+    sidebarTab->setChecked(true);
+    navigatorLayout->addWidget(sidebarTabs);
     auto* profiles = new QListWidget(navigator);
     profiles->setObjectName("savedConnections");
     profiles->setProperty("designSurface", "sidebar");
@@ -508,7 +510,7 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
     auto* profile = new QListWidgetItem("Example Postgres", profiles);
     profile->setData(NavigationProfileDelegate::DriverRole, "postgres");
     profiles->setCurrentItem(profile);
-    profiles->setFixedHeight(44);
+    profiles->setFixedHeight(dimension(Dimension::Row) + 2 * spacing(Spacing::Two));
     navigatorLayout->addWidget(profiles);
     layout->addWidget(navigator);
 
@@ -522,13 +524,10 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
     save->setObjectName("previewReferenceSave");
     save->setVariant(ButtonVariant::Outline);
     save->setButtonSize(ButtonSize::Small);
-    save->setButtonContext(ButtonContext::EditorAction);
     auto* run = new Button("Run", host);
     run->setObjectName("previewReferenceRun");
     run->setDesignIcon(Icon::Run);
     run->setButtonSize(ButtonSize::Small);
-    run->setButtonContext(ButtonContext::EditorAction);
-    run->setFixedWidth(75);
     referenceActions->addStretch();
     referenceActions->addWidget(save);
     referenceActions->addWidget(run);
@@ -568,7 +567,7 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
         auto* button = new Button(size.first.startsWith("icon") ? QString{} : size.first, host);
         button->setObjectName("button-size-" + size.first);
         button->setAccessibleName("Add · " + size.first);
-        button->setIcon(themedIcon(Icon::Add, resolvedThemeForWidget(*host).colors.primaryFg,
+        button->setIcon(themedIcon(Icon::Add, resolvedThemeForWidget(*host).colors.white,
                                    dimension(Dimension::Icon)));
         button->setButtonSize(size.second);
         sizeGrid->addWidget(button, i / 3, i % 3);
@@ -576,7 +575,7 @@ void populateButtons(QWidget* host, QVBoxLayout* layout) {
     layout->addLayout(sizeGrid);
     auto* longLabel = new Button("Truy vấn dữ liệu · 日本語 · Long constrained label", host);
     longLabel->setVariant(ButtonVariant::Outline);
-    longLabel->setMaximumWidth(250);
+    longLabel->setMaximumWidth(dimension(Dimension::MenuWidth));
     layout->addWidget(longLabel);
     layout->addStretch();
 }
@@ -593,18 +592,25 @@ void populateTokens(QWidget* host, QVBoxLayout* layout, ResolvedAppearance appea
         const auto& token = tokens[row];
         table->setItem(row, 0, new QTableWidgetItem(token.name));
         auto* value = new QTableWidgetItem(token.value);
+        value->setToolTip(token.value);
         const QColor color(token.value);
         if (color.isValid()) {
             value->setData(Qt::DecorationRole, color);
         }
         table->setItem(row, 1, value);
-        table->setItem(row, 2, new QTableWidgetItem(token.source));
+        auto* source = new QTableWidgetItem(token.source);
+        source->setToolTip(token.source);
+        table->setItem(row, 2, source);
     }
+    table->setTextElideMode(Qt::ElideMiddle);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     table->setCurrentCell(0, 0);
     layout->addWidget(table, 1);
-    auto* copy = new QPushButton(QObject::tr("Copy selected token and source"), host);
+    auto* copy = new Button(QObject::tr("Copy selected token and source"), host);
     copy->setObjectName("previewCopyToken");
+    copy->setVariant(ButtonVariant::Outline);
     QObject::connect(copy, &QPushButton::clicked, table, [table] {
         const int row = table->currentRow();
         if (row >= 0) {
@@ -624,19 +630,19 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
     auto* body = new QWidget(this);
     auto* root = new QHBoxLayout(body);
     auto* controls = new QWidget(body);
-    controls->setFixedWidth(190);
+    controls->setFixedWidth(dimension(Dimension::MenuWidth));
     auto* layout = new QVBoxLayout(controls);
     layout->setContentsMargins(0, 0, 0, 0);
     root->addWidget(controls);
     search_ = new QLineEdit(body);
     search_->setObjectName("previewSearch");
-    search_->setPlaceholderText(tr("Search specimens"));
+    search_->setPlaceholderText(tr("Search specimens…"));
     search_->setAccessibleName(tr("Search specimens"));
     layout->addWidget(search_);
     navigation_ = new QListWidget(body);
     navigation_->setObjectName("previewNavigation");
     navigation_->addItems({"Tokens", "Typography", "Icons", "Components"});
-    navigation_->setMaximumHeight(170);
+    navigation_->setMaximumHeight(6 * dimension(Dimension::Row));
     layout->addWidget(navigation_);
     specimen_ = new QComboBox(body);
     specimen_->setObjectName("previewSpecimen");
@@ -647,8 +653,9 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
     source_->setWordWrap(true);
     source_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
     layout->addWidget(source_);
-    auto* copySource = new QPushButton(tr("Copy source location"), body);
+    auto* copySource = new Button(tr("Copy source location"), body);
     copySource->setObjectName("previewCopySource");
+    copySource->setVariant(ButtonVariant::Outline);
     connect(copySource, &QPushButton::clicked, this,
             [this] { QApplication::clipboard()->setText(source_->text()); });
     layout->addWidget(copySource);
@@ -677,8 +684,9 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
     status_->setTextFormat(Qt::PlainText);
     status_->setWordWrap(true);
     layout->addWidget(status_);
-    auto* exportButton = new QPushButton(tr("Export comparison…"), body);
+    auto* exportButton = new Button(tr("Export comparison…"), body);
     exportButton->setObjectName("previewExport");
+    exportButton->setVariant(ButtonVariant::Outline);
     layout->addWidget(exportButton);
     connect(exportButton, &QPushButton::clicked, this, [this] {
         const auto path = QFileDialog::getSaveFileName(this, tr("Export comparison"), {},
@@ -699,7 +707,7 @@ PreviewWindow::PreviewWindow(QWidget* parent) : QMainWindow(parent) {
         rebuildSpecimens();
     });
     navigation_->setCurrentRow(0);
-    resize(1280, 900);
+    resize(1280, 900); // ui-ok: the gallery window matches the 1280x900 capture baseline
     setCentralWidget(body);
     connect(search_, &QLineEdit::textChanged, this, [this](const QString& query) {
         for (int i = 0; i < navigation_->count(); ++i) {
@@ -805,7 +813,7 @@ void PreviewWindow::rebuildSpecimens() {
             tree->setModel(model);
             tree->setItemDelegate(new ColumnRowDelegate(detailRole, tree));
             tree->setHeaderHidden(true);
-            tree->setFixedSize(220, 275);
+            tree->setFixedSize(dimension(Dimension::MenuWidth), 10 * dimension(Dimension::Row));
             contentLayout->addWidget(tree);
             auto* pinnedSurface = new QWidget(content);
             pinnedSurface->setProperty("designSurface", "muted");
@@ -827,9 +835,10 @@ void PreviewWindow::rebuildSpecimens() {
             pinnedTree->setItemDelegate(new ColumnRowDelegate(detailRole, pinnedTree));
             pinnedTree->setHeaderHidden(true);
             pinnedTree->expandAll();
-            pinnedTree->setFixedSize(220, 230);
+            pinnedTree->setFixedSize(dimension(Dimension::MenuWidth),
+                                     8 * dimension(Dimension::Row));
             pinnedLayout->addWidget(pinnedTree);
-            pinnedSurface->setFixedHeight(250);
+            pinnedSurface->setFixedHeight(9 * dimension(Dimension::Row));
             contentLayout->addWidget(pinnedSurface);
             constexpr int markRole = Qt::UserRole + 2;
             auto* statusTree = new NavigationTreeView(content);
@@ -846,7 +855,8 @@ void PreviewWindow::rebuildSpecimens() {
             statusTree->setModel(statusModel);
             statusTree->setItemDelegate(new ColumnRowDelegate(detailRole, statusTree, markRole));
             statusTree->setHeaderHidden(true);
-            statusTree->setFixedSize(220, 150);
+            statusTree->setFixedSize(dimension(Dimension::MenuWidth),
+                                     5 * dimension(Dimension::Row));
             contentLayout->addWidget(statusTree);
             contentLayout->addStretch();
         } else if (id == "typography") {
@@ -854,7 +864,7 @@ void PreviewWindow::rebuildSpecimens() {
         } else if (id == "tables") {
             auto* table = new QTableWidget(content);
             table->setObjectName("previewResultTable");
-            configureResultTable(*table, false);
+            configureResultTable(*table);
             table->setColumnCount(2);
             table->setHorizontalHeaderLabels({"Name", "Value"});
             table->setRowCount(3);
@@ -872,11 +882,11 @@ void PreviewWindow::rebuildSpecimens() {
             auto* enumeration = new QTableWidgetItem("ready");
             enumeration->setData(ChoiceLabelsRole, QStringList{"ready", "pending", "done"});
             table->setItem(2, 1, enumeration);
-            table->horizontalHeader()->resizeSection(0, 240);
+            table->horizontalHeader()->resizeSection(0, dimension(Dimension::TableColumn));
             contentLayout->addWidget(table, 1);
             auto* choiceTable = new QTableWidget(content);
             choiceTable->setObjectName("previewChoiceEditorTable");
-            configureResultTable(*choiceTable, false);
+            configureResultTable(*choiceTable);
             choiceTable->setColumnCount(2);
             choiceTable->setHorizontalHeaderLabels({"Choice editor", "Boolean"});
             choiceTable->setRowCount(1);
@@ -885,7 +895,7 @@ void PreviewWindow::rebuildSpecimens() {
             choice->setData(ChoiceLabelsRole, QStringList{"true", "false"});
             choiceTable->setItem(0, 1, choice);
             choiceTable->openPersistentEditor(choice);
-            choiceTable->setFixedHeight(80);
+            choiceTable->setFixedHeight(3 * dimension(Dimension::Row));
             contentLayout->addWidget(choiceTable);
         } else if (id == "right-sheet") {
             populateRightSheet(content, contentLayout);
@@ -930,7 +940,7 @@ void PreviewWindow::rebuildSpecimens() {
                 item->setData(RecentHistoryRowDelegate::StatusRole, example.status);
                 item->setData(RecentHistoryRowDelegate::DriverRole, example.driver);
             }
-            list->setFixedHeight(220);
+            list->setFixedHeight(8 * dimension(Dimension::Row));
             contentLayout->addWidget(list);
             contentLayout->addStretch();
         } else {

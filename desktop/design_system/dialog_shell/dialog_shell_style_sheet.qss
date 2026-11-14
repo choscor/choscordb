@@ -1,13 +1,13 @@
 QDialog[appDialog="true"] {
-  border-radius: @radius-lg;
+  border-radius: @radius-xl;
 }
 
 QDialog[appDialog="true"] QLabel[dialogDescription="true"] {
-  color: @fg-muted;
+  color: @text-kumo-subtle;
 }
 
 QDialog[appDialog="true"] QLabel[dialogStatus="true"] {
-  border: 1px solid @border;
+  border: 1px solid @kumo-hairline;
   border-radius: @radius-md;
   padding: @space-1;
 }

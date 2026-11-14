@@ -19,30 +19,29 @@ void paintMarkedRow(QPainter* painter, QStyleOptionViewItem item, RowMark mark) 
     const auto colors = resolvedThemeForWidget(*widget).colors;
     const bool failed = mark == RowMark::Failed;
     const QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &item, widget);
-    const QString name = item.text;
-    item.text.clear();
-    item.features &= ~QStyleOptionViewItem::HasDisplay;
-    if (failed)
-        painter->fillRect(item.rect, colors.dangerSurface);
-    style->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
-
+    if (failed) {
+        painter->fillRect(item.rect, colors.dangerTint);
+        item.palette.setColor(QPalette::Text, colors.textDanger);
+        item.palette.setColor(QPalette::HighlightedText, colors.textDanger);
+    }
     const int size = dimension(Dimension::IconSmall);
-    const int nameWidth = qMax(0, textRect.width() - size - spacing(Spacing::One));
-    const QFontMetrics metrics(item.font);
+    const QRect markRect(textRect.right() - size + 1, textRect.center().y() - size / 2 + 1, size,
+                         size);
     painter->save();
-    painter->setClipRect(textRect);
-    painter->setFont(item.font);
-    painter->setPen(failed ? colors.danger : colors.fg);
-    painter->drawText(QRect(textRect.left(), textRect.top(), nameWidth, textRect.height()),
-                      Qt::AlignLeft | Qt::AlignVCenter,
-                      metrics.elidedText(name, Qt::ElideRight, nameWidth));
+    painter->setClipRect(item.rect.adjusted(
+        0, 0, markRect.left() - spacing(Spacing::One) - item.rect.right() - 1, 0));
+    style->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
+    painter->restore();
+    auto end = item;
+    end.text.clear();
+    end.icon = QIcon();
+    end.features &= ~(QStyleOptionViewItem::HasDisplay | QStyleOptionViewItem::HasDecoration);
+    end.rect.setLeft(markRect.left() - spacing(Spacing::One));
+    style->drawControl(QStyle::CE_ItemViewItem, &end, painter, widget);
     const Icon icon = mark == RowMark::Loading ? Icon::Loader
                       : failed                 ? Icon::Error
                                                : Icon::Warning;
-    themedIcon(icon, failed ? colors.danger : colors.fgMuted, size)
-        .paint(painter, QRect(textRect.right() - size + 1, textRect.center().y() - size / 2 + 1,
-                              size, size));
-    painter->restore();
+    themedIcon(icon, failed ? colors.textDanger : colors.textSubtle, size).paint(painter, markRect);
 }
 
 }
@@ -90,8 +89,9 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
 
     painter->save();
     painter->setClipRect(textRect);
+    const bool enabled = option.state.testFlag(QStyle::State_Enabled);
     painter->setFont(nameFont);
-    painter->setPen(colors.fg);
+    painter->setPen(enabled ? colors.textDefault : colors.textInactive);
     painter->drawText(QRect(textRect.left(), textRect.top(), nameWidth, textRect.height()),
                       Qt::AlignLeft | Qt::AlignVCenter,
                       nameMetrics.horizontalAdvance(name) <= nameWidth
@@ -103,7 +103,9 @@ void ColumnRowDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opt
             (option.state & QStyle::State_Selected) ||
             (view && view->selectionModel() && view->selectionModel()->isSelected(index));
         painter->setFont(detailFont);
-        painter->setPen(selected ? colors.fg : colors.fgMuted);
+        painter->setPen(!enabled   ? colors.textInactive
+                        : selected ? colors.textDefault
+                                   : colors.textSubtle);
         painter->drawText(QRect(textRect.right() - detailWidth + 1, textRect.top(), detailWidth,
                                 textRect.height()),
                           Qt::AlignRight | Qt::AlignVCenter,

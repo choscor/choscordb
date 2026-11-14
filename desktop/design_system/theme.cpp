@@ -24,25 +24,25 @@ ResolvedTheme resolvedThemeForWidget(const QWidget& widget) {
 QPalette applicationPalette(const ResolvedTheme& theme) {
     const auto& colors = theme.colors;
     QPalette palette;
-    palette.setColor(QPalette::Window, colors.bg);
-    palette.setColor(QPalette::WindowText, colors.fg);
-    palette.setColor(QPalette::Base, colors.surface);
-    palette.setColor(QPalette::AlternateBase, colors.surfaceRaised);
-    palette.setColor(QPalette::Text, colors.fg);
-    palette.setColor(QPalette::Button, colors.surface);
-    palette.setColor(QPalette::ButtonText, colors.fg);
-    palette.setColor(QPalette::Highlight, colors.selection);
-    palette.setColor(QPalette::HighlightedText, colors.fg);
-    palette.setColor(QPalette::Link, colors.primary);
-    palette.setColor(QPalette::Accent, colors.primary);
-    palette.setColor(QPalette::Mid, colors.border);
-    palette.setColor(QPalette::Dark, colors.ring);
-    palette.setColor(QPalette::LinkVisited, colors.success);
-    palette.setColor(QPalette::PlaceholderText, colors.fgMuted);
-    palette.setColor(QPalette::BrightText, colors.danger);
-    palette.setColor(QPalette::Disabled, QPalette::WindowText, colors.fgDisabled);
-    palette.setColor(QPalette::Disabled, QPalette::Text, colors.fgDisabled);
-    palette.setColor(QPalette::Disabled, QPalette::ButtonText, colors.fgDisabled);
+    palette.setColor(QPalette::Window, colors.canvas);
+    palette.setColor(QPalette::WindowText, colors.textDefault);
+    palette.setColor(QPalette::Base, colors.base);
+    palette.setColor(QPalette::AlternateBase, colors.elevated);
+    palette.setColor(QPalette::Text, colors.textDefault);
+    palette.setColor(QPalette::Button, colors.base);
+    palette.setColor(QPalette::ButtonText, colors.textDefault);
+    palette.setColor(QPalette::Highlight, colors.tint);
+    palette.setColor(QPalette::HighlightedText, colors.textDefault);
+    palette.setColor(QPalette::Link, colors.brand);
+    palette.setColor(QPalette::Accent, colors.brand);
+    palette.setColor(QPalette::Mid, colors.hairline);
+    palette.setColor(QPalette::Dark, colors.brand);
+    palette.setColor(QPalette::LinkVisited, colors.textSuccess);
+    palette.setColor(QPalette::PlaceholderText, colors.textPlaceholder);
+    palette.setColor(QPalette::BrightText, colors.textDanger);
+    palette.setColor(QPalette::Disabled, QPalette::WindowText, colors.textInactive);
+    palette.setColor(QPalette::Disabled, QPalette::Text, colors.textInactive);
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText, colors.textInactive);
     return palette;
 }
 

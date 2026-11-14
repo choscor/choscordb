@@ -1,6 +1,7 @@
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 
 #include "design_system/icons.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 
@@ -15,6 +16,7 @@
 #include <QScreen>
 #include <QScrollArea>
 #include <QShowEvent>
+#include <QStyle>
 
 namespace choscordb {
 ConfirmationDialog::ConfirmationDialog(Icon icon, const QString& title, const QString& text,
@@ -39,15 +41,15 @@ void ConfirmationDialog::refreshIcon() {
     }
     const auto theme = design::resolvedThemeForWidget(*this);
     const auto role = sourceIcon_ == Critical ? design::Icon::Error : design::Icon::Warning;
-    const auto color = sourceIcon_ == Critical  ? theme.colors.danger
-                       : sourceIcon_ == Warning ? theme.colors.warning
-                                                : theme.colors.fg;
+    const auto color = sourceIcon_ == Critical  ? theme.colors.textDanger
+                       : sourceIcon_ == Warning ? theme.colors.textWarning
+                                                : theme.colors.textDefault;
     const auto scale = devicePixelRatioF();
     if (iconTint_ == color && iconPixmap().devicePixelRatioF() == scale) {
         return;
     }
     iconTint_ = color;
-    const auto size = design::dimension(design::Dimension::Icon);
+    const auto size = design::dimension(design::Dimension::IconLarge);
     setIconPixmap(design::themedIcon(role, color, size).pixmap(QSize(size, size), scale));
 }
 bool ConfirmationDialog::event(QEvent* event) {
@@ -69,17 +71,31 @@ bool ConfirmationDialog::event(QEvent* event) {
     return result;
 }
 
-QMessageBox::StandardButton ConfirmationDialog::question(QWidget* parent, const QString& title,
-                                                         const QString& text,
-                                                         StandardButtons buttons,
-                                                         StandardButton defaultButton) {
-    ConfirmationDialog dialog(Question, title, text, buttons, parent);
-    dialog.setDefaultButton(defaultButton);
-    const auto result = dialog.exec();
-    return result == -1 ? Cancel : dialog.standardButton(dialog.clickedButton());
+QPushButton* ConfirmationDialog::addActionButton(const QString& text, Consequence consequence) {
+    auto* action = addButton(text, AcceptRole);
+    action->setProperty("confirmationConsequence",
+                        consequence == Consequence::Destructive ? "destructive" : "safe");
+    if (consequence == Consequence::Destructive) {
+        if (!button(Cancel))
+            addButton(Cancel);
+        setDefaultButton(Cancel);
+    } else {
+        setDefaultButton(action);
+    }
+    return action;
+}
+
+bool ConfirmationDialog::confirm(QWidget* parent, const QString& title, const QString& text,
+                                 const QString& action, Consequence consequence) {
+    ConfirmationDialog dialog(consequence == Consequence::Destructive ? Warning : Question, title,
+                              text, Cancel, parent);
+    dialog.setTextFormat(Qt::PlainText);
+    auto* accept = dialog.addActionButton(action, consequence);
+    dialog.exec();
+    return dialog.clickedButton() == accept;
 }
 void ConfirmationDialog::prepareContent() {
-    const int padding = design::spacing(design::Spacing::Four);
+    const int padding = design::spacing(design::Spacing::Six);
     setContentsMargins(0, 0, 0, 0);
     if (auto* grid = qobject_cast<QGridLayout*>(layout())) {
         if (!heading_) {
@@ -152,18 +168,23 @@ void ConfirmationDialog::prepareContent() {
             grid->addWidget(heading_, 0, 0, 1, qMax(1, columns - 1));
         }
         grid->setContentsMargins(padding, padding, padding, padding);
-        grid->setSpacing(design::spacing(design::Spacing::Two));
+        grid->setSpacing(design::spacing(design::Spacing::Four));
+        grid->setHorizontalSpacing(design::spacing(design::Spacing::Three));
         heading_->show();
     }
     for (auto* button : buttons()) {
         const auto role = buttonRole(button);
         const bool affirmative = role == AcceptRole || role == YesRole;
+        const bool destructive =
+            role == DestructiveRole || button->property("confirmationConsequence") == "destructive";
         button->setProperty("primary", affirmative);
-        button->setProperty("variant", role == DestructiveRole ? "destructive"
-                                       : affirmative           ? "default"
-                                                               : "outline");
+        button->setProperty("variant", destructive   ? "destructive"
+                                       : affirmative ? "default"
+                                                     : "outline");
+        button->style()->unpolish(button);
+        button->style()->polish(button);
     }
-    const int referenceWidth = 440;
+    const int referenceWidth = design::dialogInitialSize(design::DialogSize::Short).width();
     const int width = parentWidget()
                           ? qMin(referenceWidth, qMax(1, parentWidget()->window()->width() - 32))
                           : referenceWidth;

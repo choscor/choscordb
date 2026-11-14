@@ -4,37 +4,44 @@
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/dialog_shell/dialog_shell.h"
 #include "design_system/icons.h"
+#include "design_system/menu/menu.h"
 #include "design_system/metrics/metrics.h"
+#include "design_system/spinner/spinner.h"
+#include "design_system/status_line/status_line.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include <QAccessible>
 #include <QDialog>
 #include <QEvent>
-#include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QPlainTextEdit>
 #include <QProgressBar>
-#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QVariantAnimation>
 #include <algorithm>
 #include <limits>
 namespace choscordb {
 namespace {
-QString cardContent(const QString& title, const QString& body, const QColor& muted) {
+QString cardContent(const QString& title, const QString& body, const QColor& titleColor,
+                    const design::Colors& colors) {
+    const auto heading = QStringLiteral("<span style=\"font-weight:500;color:%1\">%2</span>")
+                             .arg(titleColor.name(), title.toHtmlEscaped());
     if (body.isEmpty())
-        return QStringLiteral("<b>%1</b>").arg(title.toHtmlEscaped());
-    return QStringLiteral("<b>%1</b><br/><span style=\"color:%2\">%3</span>")
-        .arg(title.toHtmlEscaped(), muted.name(), body.toHtmlEscaped());
+        return heading;
+    const auto description =
+        design::composite(design::withOpacity(colors.textDefault, 0.7), colors.base);
+    return heading + QStringLiteral("<br/><span style=\"color:%1\">%2</span>")
+                         .arg(description.name(), body.toHtmlEscaped());
 }
 }
 ToastRegion::ToastRegion(QWidget* parent)
-    : QLabel(parent), timer_(new QTimer(this)), opacity_(new QGraphicsOpacityEffect(this)),
-      fade_(new QPropertyAnimation(opacity_, "opacity", this)) {
+    : QLabel(parent), timer_(new QTimer(this)), fade_(new QVariantAnimation(this)) {
     setObjectName("toastRegion");
+    setProperty("designSurface", "banner");
     setAccessibleName(tr("Notifications"));
     setTextFormat(Qt::PlainText);
     setWordWrap(true);
@@ -43,6 +50,10 @@ ToastRegion::ToastRegion(QWidget* parent)
     icon_->setFixedSize(design::dimension(design::Dimension::Icon),
                         design::dimension(design::Dimension::Icon));
     icon_->hide();
+    spinner_ = new design::Spinner(this);
+    spinner_->setObjectName("toastSpinner");
+    spinner_->setAccessibleName(tr("In progress"));
+    spinner_->hide();
     dismiss_ = design::createDismissButton(tr("Dismiss notification"), this);
     dismiss_->setObjectName("toastDismiss");
     dismiss_->setFocusPolicy(Qt::TabFocus);
@@ -59,9 +70,13 @@ ToastRegion::ToastRegion(QWidget* parent)
     connect(details_, &QToolButton::clicked, this, &ToastRegion::openDetails);
     timer_->setSingleShot(true);
     connect(timer_, &QTimer::timeout, this, &ToastRegion::clearNotice);
-    setGraphicsEffect(opacity_);
-    fade_->setDuration(180);
-    connect(fade_, &QPropertyAnimation::finished, this, [this] {
+    design::detail::applyPopoverShadow(this);
+    fade_->setEasingCurve(design::motionSpec(design::Motion::Popup).easing);
+    connect(fade_, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        design::detail::setPopoverOpacity(*this, value.toReal());
+    });
+    connect(fade_, &QVariantAnimation::finished, this, [this] {
+        design::detail::setPopoverOpacity(*this, fade_->endValue().toReal());
         if (dismissing_) {
             clear();
             progress_->hide();
@@ -77,35 +92,28 @@ ToastRegion::ToastRegion(QWidget* parent)
     hide();
 }
 int ToastRegion::leadingInset() {
-    return design::spacing(design::Spacing::Three) + design::dimension(design::Dimension::Icon) +
+    return design::spacing(design::Spacing::Four) + design::dimension(design::Dimension::Icon) +
            design::spacing(design::Spacing::Two);
 }
-int ToastRegion::titleRowHeight() const {
-    return std::max(
-        {dismiss_->height(), design::dimension(design::Dimension::Icon), fontMetrics().height()});
-}
 void ToastRegion::applyCardMargins(int bottomExtra) {
-    const int inset = design::spacing(design::Spacing::Three);
-    const int top = inset + (titleRowHeight() - fontMetrics().height()) / 2;
-    setContentsMargins(leadingInset(), top,
-                       inset + dismiss_->width() + design::spacing(design::Spacing::Two),
-                       inset + bottomExtra);
+    const int inset = design::spacing(design::Spacing::Four);
+    const int edge = design::spacing(design::Spacing::Two);
+    setContentsMargins(leadingInset(), inset, edge + dismiss_->width() + edge, inset + bottomExtra);
 }
 void ToastRegion::showStatusIcon(design::Icon icon, const QColor& color) {
     const int size = design::dimension(design::Dimension::Icon);
     icon_->setPixmap(design::themedIcon(icon, color, size).pixmap(QSize(size, size)));
+    spinner_->hide();
     icon_->show();
 }
 void ToastRegion::resizeEvent(QResizeEvent* event) {
     QLabel::resizeEvent(event);
-    const int inset = design::spacing(design::Spacing::Three);
-    const int row = titleRowHeight();
-    dismiss_->move(qMax(0, width() - dismiss_->width() - inset),
-                   inset + (row - dismiss_->height()) / 2);
-    icon_->move(inset, inset + (row - icon_->height()) / 2);
-    details_->move(
-        design::spacing(design::Spacing::Three),
-        qMax(0, height() - details_->height() - design::spacing(design::Spacing::Three)));
+    const int inset = design::spacing(design::Spacing::Four);
+    const int edge = design::spacing(design::Spacing::Two);
+    dismiss_->move(qMax(0, width() - dismiss_->width() - edge), edge);
+    icon_->move(inset, inset + design::spacing(design::Spacing::Half));
+    spinner_->move(icon_->pos());
+    details_->move(inset, qMax(0, height() - details_->height() - inset));
 }
 void ToastRegion::attachTo(QWidget* host) {
     if (!host)
@@ -158,7 +166,7 @@ bool ToastRegion::eventFilter(QObject* watched, QEvent* event) {
 void ToastRegion::placeOverlay() {
     if (!overlayHost_)
         return;
-    const auto inset = design::spacing(design::Spacing::Four);
+    const auto inset = design::spacing(design::Spacing::Eight);
     const int width = qMin(design::dimension(design::Dimension::ToastWidth),
                            qMax(1, overlayHost_->width() - 2 * inset));
     const int heightLimit = qMax(1, overlayHost_->height() - 2 * inset);
@@ -183,9 +191,10 @@ void ToastRegion::placeOverlay() {
         applyCardMargins(details_->height() + design::spacing(design::Spacing::Two));
         auto title = fullTitle_;
         auto body = fullBody_;
-        const auto muted = design::resolvedThemeForWidget(*this).colors.fgMuted;
-        const auto content = [&muted](const QString& title, const QString& body) {
-            return cardContent(title, body, muted);
+        const auto& colors = design::resolvedThemeForWidget(*this).colors;
+        const auto titleColor = titleColor_;
+        const auto content = [&colors, &titleColor](const QString& title, const QString& body) {
+            return cardContent(title, body, titleColor, colors);
         };
         setText(content(title, {}));
         if (measuredHeight() > heightLimit) {
@@ -211,17 +220,31 @@ void ToastRegion::placeOverlay() {
     }
     setFixedHeight(qMin(heightLimit, measuredHeight()));
     if (progressVisible) {
-        const auto spacing = design::spacing(design::Spacing::Three);
+        const auto spacing = design::spacing(design::Spacing::Four);
         const auto progressHeight = design::spacing(design::Spacing::Two);
         const int detailsSpace = details_->isHidden() ? 0 : details_->height() + spacing;
         progress_->setGeometry(spacing, qMax(0, height() - spacing - progressHeight - detailsSpace),
                                qMax(1, this->width() - 2 * spacing), progressHeight);
     }
-    details_->move(
-        design::spacing(design::Spacing::Three),
-        qMax(0, height() - details_->height() - design::spacing(design::Spacing::Three)));
-    move(qMax(0, overlayHost_->width() - this->width() - inset),
-         qMax(0, overlayHost_->height() - this->height() - inset));
+    details_->move(design::spacing(design::Spacing::Four),
+                   qMax(0, height() - details_->height() - design::spacing(design::Spacing::Four)));
+    QRect card(qMax(0, overlayHost_->width() - this->width() - inset),
+               qMax(0, overlayHost_->height() - this->height() - inset), this->width(),
+               this->height());
+    const auto statusLines = overlayHost_->findChildren<design::StatusLine*>();
+    for (bool moved = true; moved && card.top() > 0;) {
+        moved = false;
+        for (const auto* line : statusLines) {
+            if (!line->isVisible())
+                continue;
+            const QRect lineRect(line->mapTo(overlayHost_.data(), QPoint()), line->size());
+            if (!lineRect.intersects(card))
+                continue;
+            card.moveBottom(qMax(card.height() - 1, lineRect.top() - inset - 1));
+            moved = true;
+        }
+    }
+    move(card.topLeft());
     raise();
 }
 void ToastRegion::openDetails() {
@@ -248,11 +271,8 @@ void ToastRegion::openDetails() {
     text->setReadOnly(true);
     text->setPlainText(fullTitle_ + QStringLiteral("\n\n") + fullBody_);
     sections->bodyLayout()->addWidget(text);
-    auto* close = new design::Button(tr("Close"), sections);
+    auto* close = sections->addAction(design::DialogActionRole::Dismiss, tr("Close"));
     close->setObjectName("toastDetailsClose");
-    close->setVariant(design::ButtonVariant::Outline);
-    sections->footerLayout()->addStretch();
-    sections->footerLayout()->addWidget(close);
     connect(close, &QPushButton::clicked, dialog, &QDialog::reject);
     detailsDialog_ = dialog;
     connect(dialog, &QDialog::finished, this, [this] {
@@ -299,15 +319,16 @@ void ToastRegion::renderToast(const QString& title, const QString& body, ToastVa
     style()->unpolish(this);
     style()->polish(this);
     const auto& colors = design::resolvedThemeForWidget(*this).colors;
-    showStatusIcon(variant == ToastVariant::Success   ? design::Icon::Check
+    titleColor_ = variant == ToastVariant::Success   ? colors.textSuccess
+                  : variant == ToastVariant::Warning ? colors.textWarning
+                                                     : colors.textDanger;
+    showStatusIcon(variant == ToastVariant::Success   ? design::Icon::CheckCircle
                    : variant == ToastVariant::Warning ? design::Icon::Warning
                                                       : design::Icon::Error,
-                   variant == ToastVariant::Success   ? colors.success
-                   : variant == ToastVariant::Warning ? colors.warning
-                                                      : colors.danger);
+                   titleColor_);
     setTextFormat(Qt::RichText);
     setAccessibleDescription(title + QStringLiteral(". ") + body);
-    display(cardContent(title, body, colors.fgMuted));
+    display(cardContent(title, body, titleColor_, colors));
     startReadingTimer(durationMs);
 }
 std::optional<ToastRegion::Notice> ToastRegion::replacingNotice() const {
@@ -403,11 +424,13 @@ void ToastRegion::renderProgress(const QString& title, const QString& detail) {
     setProperty("variant", "progress");
     style()->unpolish(this);
     style()->polish(this);
-    showStatusIcon(design::Icon::Loader, design::resolvedThemeForWidget(*this).colors.fgMuted);
+    const auto& colors = design::resolvedThemeForWidget(*this).colors;
+    titleColor_ = colors.textDefault;
+    icon_->hide();
+    spinner_->show();
     progress_->show();
     setTextFormat(Qt::RichText);
-    const auto content =
-        cardContent(title, detail, design::resolvedThemeForWidget(*this).colors.fgMuted);
+    const auto content = cardContent(title, detail, titleColor_, colors);
     setAccessibleDescription(title +
                              (detail.isEmpty() ? QString() : QStringLiteral(". ") + detail));
     if (updating) {
@@ -431,7 +454,7 @@ void ToastRegion::display(const QString& text) {
     if (!text.isEmpty())
         placeOverlay();
     if (!text.isEmpty())
-        opacity_->setOpacity(1.0);
+        design::detail::setPopoverOpacity(*this, 1.0);
     QAccessibleEvent announcement(this, property("variant") == "danger"
                                             ? QAccessible::Alert
                                             : QAccessible::DescriptionChanged);
@@ -459,7 +482,10 @@ void ToastRegion::clearVisibleNotice() {
         return;
     }
     dismissing_ = true;
-    fade_->setStartValue(opacity_->opacity());
+    const auto motion = design::motionSpec(design::Motion::Popup,
+                                           design::resolvedThemeForWidget(*this).reducedMotion);
+    fade_->setDuration(motion.durationMs);
+    fade_->setStartValue(design::detail::popoverOpacity(*this));
     fade_->setEndValue(0.0);
     fade_->start();
 }

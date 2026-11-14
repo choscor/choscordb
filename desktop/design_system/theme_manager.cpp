@@ -2,6 +2,7 @@
 #include "design_system/control_style.h"
 
 #include <QApplication>
+#include <QGuiApplication>
 #include <QWidget>
 
 namespace choscordb::design {
@@ -65,6 +66,7 @@ void ThemeManager::setReducedMotion(bool enabled) {
         return;
     }
     reducedMotion_ = enabled;
+    refreshTheme();
     emit accessibilityPolicyChanged(forcedContrast_, reducedMotion_);
 }
 
@@ -104,7 +106,7 @@ ResolvedTheme ThemeManager::resolveTheme() const {
     return {appearance,
             forcedContrast_ ? resolveForcedContrastColors(systemPalette_)
                             : resolveColors(appearance),
-            forcedContrast_};
+            forcedContrast_, reducedMotion_};
 }
 
 void ThemeManager::refreshTheme() {
@@ -114,7 +116,9 @@ void ThemeManager::refreshTheme() {
     }
     resolvedTheme_ = updated;
     if (application_ != nullptr) {
+        QGuiApplication::setOverrideCursor(Qt::WaitCursor);
         applyTo(*application_);
+        QGuiApplication::restoreOverrideCursor();
     }
     emit themeChanged(resolvedTheme_);
 }

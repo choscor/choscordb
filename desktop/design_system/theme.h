@@ -13,6 +13,7 @@ struct ResolvedTheme final {
     ResolvedAppearance appearance = ResolvedAppearance::Light;
     Colors colors;
     bool forcedContrast = false;
+    bool reducedMotion = false;
 
     friend bool operator==(const ResolvedTheme&, const ResolvedTheme&) = default;
 };

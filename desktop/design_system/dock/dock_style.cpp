@@ -13,8 +13,8 @@ namespace choscordb::design {
 void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
     auto* titleBar = new QWidget(&dock);
     auto* row = new QHBoxLayout(titleBar);
-    row->setContentsMargins(5, 0, 5, 0);
-    row->setSpacing(4);
+    row->setContentsMargins(spacing(Spacing::One), 0, spacing(Spacing::One), 0);
+    row->setSpacing(spacing(Spacing::One));
     auto* title = new QLabel(dock.windowTitle(), titleBar);
     title->setObjectName(QStringLiteral("dockTitleLabel"));
     QObject::connect(&dock, &QWidget::windowTitleChanged, title, &QLabel::setText);
@@ -25,9 +25,10 @@ void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
         button->setProperty("iconOnly", true);
         button->setToolTip(tooltip);
         const auto iconSize = dimension(Dimension::IconSmall);
-        button->setIcon(themedIcon(icon, theme.colors.fg, iconSize));
+        button->setIcon(themedIcon(icon, theme.colors.textDefault, iconSize));
         button->setIconSize(QSize(iconSize, iconSize));
-        button->setFixedSize(30, 30);
+        button->setFixedSize(dimension(Dimension::ControlSmall),
+                             dimension(Dimension::ControlSmall));
         row->addWidget(button);
         return button;
     };
@@ -39,7 +40,7 @@ void styleDockWidget(QDockWidget& dock, const ResolvedTheme& theme) {
         addButton(Icon::Close, QStringLiteral("dockCloseButton"), QStringLiteral("Close dock"));
     QObject::connect(closeButton, &QToolButton::clicked, &dock, &QDockWidget::close);
     titleBar->setObjectName(QStringLiteral("dockTitleBar"));
-    titleBar->setFixedHeight(34);
+    titleBar->setFixedHeight(dimension(Dimension::Toolbar));
     dock.setTitleBarWidget(titleBar);
     dock.setStyleSheet(themedStyleSheet(u"dock/dock_widget_style_sheet.qss", theme));
 }

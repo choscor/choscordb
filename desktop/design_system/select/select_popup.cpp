@@ -1,5 +1,6 @@
 #include "design_system/select/select_popup.h"
 #include "design_system/menu/embedded_popup.h"
+#include "design_system/menu/menu.h"
 #include "design_system/style/stylesheet.h"
 #include "design_system/theme.h"
 #include <QAbstractItemDelegate>
@@ -92,6 +93,7 @@ class PopupContentFitFilter final : public QObject {
                 if (!combo_ || !popup_ || !popup_->isVisible() || combo_->count() == 0)
                     return;
                 auto* view = combo_->view();
+                view->doItemsLayout();
                 const auto first = view->visualRect(combo_->model()->index(0, 0));
                 const auto last = view->visualRect(combo_->model()->index(combo_->count() - 1, 0));
                 if (!first.isValid() || !last.isValid() || first.top() < 0 ||
@@ -140,6 +142,14 @@ bool handleFontComboResize(QComboBox& combo, QEvent* event) {
     return true;
 }
 
+void preparePopoverList(QAbstractItemView& popup) {
+    const auto theme = resolvedThemeForWidget(popup);
+    popup.setAttribute(Qt::WA_MacShowFocusRect, false);
+    popup.setPalette(applicationPalette(theme));
+    popup.setStyleSheet(themedStyleSheet(u"select/select_popup_view_style_sheet.qss", theme));
+    applyPopoverShadow(&popup);
+}
+
 void prepareComboPopup(QComboBox& combo) {
     auto* view = combo.view();
     if (!dynamic_cast<NormalFontPopupDelegate*>(view->itemDelegate()))
@@ -153,6 +163,7 @@ void prepareComboPopup(QComboBox& combo) {
     popup->setPalette(applicationPalette(theme));
     popup->setStyleSheet(themedStyleSheet(u"select/select_popup_style_sheet.qss", theme));
     embedPopup(popup, &combo);
+    applyPopoverShadow(popup);
     if (!popup->property("designPopupContentFit").toBool()) {
         new PopupContentFitFilter(&combo, popup);
         popup->setProperty("designPopupContentFit", true);

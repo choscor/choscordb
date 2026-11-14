@@ -1,21 +1,30 @@
 QHeaderView {
-  background: @bg;
-  color: @fg;
+  background: @kumo-base;
+  color: @text-kumo-default;
+  font-size: @font-headline;
+  font-weight: @font-headline-weight;
 }
 
 QHeaderView::section {
   min-height: @header-height;
   border: 0;
-  border-bottom: 1px solid @border;
-  padding: 0 12px;
-  background: @surface-raised;
-  color: @fg-muted;
+  border-bottom: 1px solid @kumo-fill;
+  padding: 0 @space-3;
+  background: @kumo-base;
+  color: @text-kumo-default;
+}
+
+QHeaderView::section:vertical {
+  min-height: 0;
+  border-bottom: 0;
+  padding: 0 @space-2;
+  color: @text-kumo-subtle;
   font-size: @font-callout;
-  font-weight: @font-callout-weight;
+  font-weight: 400;
 }
 
 QTableCornerButton::section {
   border: 0;
-  border-bottom: 1px solid @border;
-  background: @bg;
+  border-bottom: 1px solid @kumo-fill;
+  background: @kumo-base;
 }

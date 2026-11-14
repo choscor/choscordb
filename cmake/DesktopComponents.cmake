@@ -21,6 +21,7 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/history_row/history_row.cpp
   desktop/design_system/icons.cpp
   desktop/design_system/json_text_view/json_text_view.cpp
+  desktop/design_system/kbd/key_hints.cpp
   desktop/design_system/navigation_profile_row/navigation_profile_row.cpp
   desktop/design_system/menu/menu.cpp
   desktop/design_system/menu/menu_indicator.cpp
@@ -30,12 +31,15 @@ choscordb_add_library(choscordb-design-system
   desktop/design_system/quick_search/quick_search_dialog.cpp
   desktop/design_system/right_sheet/right_sheet.cpp
   desktop/design_system/select/select_popup.cpp
+  desktop/design_system/separator/separator.cpp
   desktop/design_system/panel_state/panel_state.cpp
+  desktop/design_system/spinner/spinner.cpp
   desktop/design_system/status_line/status_line.cpp
   desktop/design_system/style/stylesheet.cpp
   desktop/design_system/switch/switch_indicator.cpp
   desktop/design_system/table/table_style.cpp
   desktop/design_system/table/table_style.h
+  desktop/design_system/tabs/segmented_control.cpp
   desktop/design_system/tabs/tab_indicator.cpp
   desktop/design_system/tabs/tabs_style.cpp
   desktop/design_system/text/text.cpp
@@ -93,10 +97,10 @@ add_dependencies(choscordb-desktop-services cargo-build_choscordb_bridge)
 
 choscordb_add_library(choscordb-widgets
   desktop/widgets/object_erd_widget.cpp
-  desktop/widgets/query_settings_dialog/query_settings_dialog.cpp
   desktop/widgets/editor_completion/editor_completion.cpp
   desktop/widgets/preferences_dialog/preferences_dialog.cpp
   desktop/widgets/search_panel/search_panel.cpp
+  desktop/widgets/filter_field/filter_field.cpp
   desktop/widgets/history_dock/history_dock.cpp
   desktop/widgets/sql_editor/sql_editor.cpp
   desktop/widgets/document_io/document_io.cpp
@@ -146,6 +150,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_workspace_lifecycle.cpp
   desktop/app/query_workspace_view.cpp
   desktop/app/result_filter_bar.cpp
+  desktop/app/result_pane_tabs.cpp
   desktop/app/object_data_workspace.cpp
   desktop/app/object_explorer.cpp
   desktop/app/object_action_sql.cpp
@@ -165,6 +170,7 @@ if(BUILD_TESTING)
     desktop/tools/preview/preview_window.cpp
     desktop/tools/preview/preview_capture.cpp
     desktop/tools/preview/preview_standard.cpp
+    desktop/tools/preview/preview_states.cpp
     desktop/tools/preview/preview_dialogs.cpp
   )
   target_link_libraries(choscordb-preview PUBLIC choscordb-design-system PRIVATE choscordb-rust Qt6::Concurrent)

@@ -1,48 +1,69 @@
 QToolButton {
-  icon-size: 12px;
+  icon-size: @icon-size-sm;
   min-height: @tool-height;
   max-height: @tool-height;
   border: 1px solid transparent;
   border-radius: @radius-md;
-  padding: 0 9px;
-  font-size: @font-callout;
+  padding: 0 @space-2;
+  font-size: @font-caption;
+  font-weight: 500;
   background: transparent;
-  color: @fg;
+  color: @text-kumo-default;
 }
 
 QToolButton[iconOnly="true"] {
-  min-width: 30px;
-  max-width: 30px;
+  min-width: @tool-height;
+  max-width: @tool-height;
   padding: 0;
 }
 
-QToolButton:hover, QToolButton:checked {
-  background: @surface-raised;
-  color: @fg;
+QToolButton:hover {
+  background: @kumo-tint;
+  color: @text-kumo-default;
 }
 
 QToolButton:pressed {
-  background: @surface-raised;
-  color: @fg;
+  background: @kumo-tint;
+  color: @text-kumo-default;
+}
+
+QWidget[designSurface="banner"] QToolButton:hover,
+QWidget[designSurface="banner"] QToolButton:pressed {
+  background: @kumo-fill;
+}
+
+QToolButton:checked {
+  background: @kumo-tint;
+  color: @text-kumo-default;
+}
+
+QToolButton:checked:hover {
+  background: @kumo-tint;
 }
 
 QToolButton:disabled {
-  color: @fg-disabled;
+  color: @text-kumo-inactive;
+  background: transparent;
 }
 
 QToolButton[designRole="menuButton"] {
-  padding-right: 21px;
-  background: @surface;
+  padding-right: @space-6;
+  background: @kumo-base;
+  border-color: @kumo-line;
 }
 
-QToolButton[designRole="menuButton"]:hover, QToolButton[designRole="menuButton"]:pressed, QToolButton[designRole="menuButton"]:checked {
-  background: @surface-raised;
+QToolButton[designRole="menuButton"]:hover {
+  background: @kumo-tint;
+}
+
+QToolButton[designRole="menuButton"]:pressed, QToolButton[designRole="menuButton"]:checked {
+  background: @kumo-base;
 }
 
 QToolButton[designRole="menuButton"]::menu-indicator {
-  width: 8px;
-  height: 8px;
+  width: @icon-size-sm;
+  height: @icon-size-sm;
   subcontrol-origin: padding;
   subcontrol-position: right center;
-  right: 9px;
+  right: @space-2;
 }

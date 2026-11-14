@@ -1,17 +1,25 @@
 QSplitter::handle {
-  background: @border;
+  background: @kumo-hairline;
 }
 
-QSplitter::handle:hover, QSplitter::handle:pressed {
-  background: @ring;
+QSplitter::handle:hover {
+  background: @kumo-brand;
+}
+
+QSplitter::handle:pressed {
+  background: @kumo-brand-hover;
 }
 
 QMainWindow::separator {
-  background: @border;
-  width: 3px;
-  height: 3px;
+  background: @kumo-hairline;
+  width: @space-1;
+  height: @space-1;
 }
 
-QMainWindow::separator:hover, QMainWindow::separator:pressed {
-  background: @ring;
+QMainWindow::separator:hover {
+  background: @kumo-brand;
+}
+
+QMainWindow::separator:pressed {
+  background: @kumo-brand-hover;
 }

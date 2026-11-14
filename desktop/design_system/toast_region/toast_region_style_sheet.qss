@@ -1,24 +1,24 @@
 QLabel#toastRegion, QLabel#progressToast {
-  background-color: @surface-raised;
-  color: @fg-muted;
-  border: 1px solid @border;
-  border-radius: @radius-md;
+  background-color: @kumo-base;
+  color: @text-kumo-default;
+  border: 1px solid @kumo-line;
+  border-radius: @radius-xl;
   padding: 0;
 }
 
 QLabel#toastRegion[variant="success"] {
-  background-color: @success-surface;
-  color: @success;
+  background-color: @toast-success-fill;
+  border-color: @toast-success-ring;
 }
 
 QLabel#toastRegion[variant="warning"] {
-  background-color: @warning-surface;
-  color: @warning;
+  background-color: @toast-warning-fill;
+  border-color: @toast-warning-ring;
 }
 
 QLabel#toastRegion[variant="danger"] {
-  background-color: @danger-surface;
-  color: @danger;
+  background-color: @toast-danger-fill;
+  border-color: @toast-danger-ring;
 }
 
 QProgressBar#toastProgress {

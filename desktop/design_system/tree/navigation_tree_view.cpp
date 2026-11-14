@@ -51,19 +51,20 @@ bool NavigationTreeView::viewportEvent(QEvent* event) {
 }
 
 void NavigationTreeView::paintHighlight(QPainter* painter, int top, int height, bool selected,
-                                        bool outline) const {
+                                        bool hovered, bool outline) const {
     const auto theme = resolvedThemeForWidget(*this);
     const auto& colors = theme.colors;
     const qreal gap = layoutMetrics().navigationHighlightGap;
-    const int rounding = radius(Radius::Medium);
+    const int rounding = radius(Radius::Large);
     const QRectF highlight(0, top + gap / 2, viewport()->width() - spacing(Spacing::One),
                            height - gap);
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(outline && theme.forcedContrast && selected
-                        ? QPen(colors.ring, focusSpec().ringWidth)
+                        ? QPen(colors.brand, focusSpec().ringWidth)
                         : QPen(Qt::NoPen));
-    painter->setBrush(selected ? colors.sidebarSelection : colors.sidebarHover);
+    const auto base = selected ? colors.tint : colors.elevated;
+    painter->setBrush(hovered ? composite(colors.tint, base) : base);
     painter->drawRoundedRect(highlight, rounding, rounding);
     painter->restore();
 }
@@ -76,7 +77,7 @@ void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& 
         QTreeView::drawRow(painter, option, index);
         return;
     }
-    paintHighlight(painter, option.rect.top(), option.rect.height(), selected, true);
+    paintHighlight(painter, option.rect.top(), option.rect.height(), selected, hovered, true);
     QStyleOptionViewItem unselected(option);
     unselected.state &= ~(QStyle::State_Selected | QStyle::State_MouseOver);
     QTreeView::drawRow(painter, unselected, index);
@@ -85,10 +86,11 @@ void NavigationTreeView::drawRow(QPainter* painter, const QStyleOptionViewItem& 
 void NavigationTreeView::drawBranches(QPainter* painter, const QRect& rect,
                                       const QModelIndex& index) const {
     const bool selected = selectionModel() && selectionModel()->isSelected(index);
-    if (selected || hoveredIndex_ == index) {
+    const bool hovered = hoveredIndex_ == index;
+    if (selected || hovered) {
         painter->save();
         painter->setClipRect(rect);
-        paintHighlight(painter, rect.top(), rect.height(), selected, false);
+        paintHighlight(painter, rect.top(), rect.height(), selected, hovered, false);
         painter->restore();
     }
     QTreeView::drawBranches(painter, rect, index);
