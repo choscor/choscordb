@@ -38,6 +38,8 @@ DESIGN_CONTROLS = {
     "NavigationTreeView",
     "RightSheet",
     "JsonTextView",
+    "Spinner",
+    "KeyHints",
 }
 DESIGN_COMPOSITES = {
     "ButtonGroup",
@@ -48,6 +50,7 @@ DESIGN_COMPOSITES = {
     "QuickSearchDialog",
     "NavigationProfileDelegate",
     "RecentHistoryRowDelegate",
+    "SegmentedControl",
     "StatusLine",
     "TabAddCorner",
 }

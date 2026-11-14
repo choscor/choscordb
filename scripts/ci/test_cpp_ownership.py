@@ -86,6 +86,22 @@ class OwnershipTests(unittest.TestCase):
             },
         )
 
+    def test_panel_state_text_comes_from_the_rust_panel_machine(self):
+        for source in [
+            'auto* e = design::createPanelStateText(tr("No rows yet."), host);',
+            'auto* e = design::createPanelStateText(\n    tr("Welcome\\n" "Pick one."), host);',
+            'auto* e = createPanelStateText(QStringLiteral("Empty"), host);',
+        ]:
+            with self.subTest(source=source):
+                self.assertIn("panel-state-literal", self.rules(source))
+        for source in [
+            "auto* e = design::createPanelStateText({}, host);",
+            "auto* e = design::createPanelStateText(\n"
+            "    EngineAdapter::panelPresentation(PanelKind::Welcome, PanelState::Empty).message, host);",
+        ]:
+            with self.subTest(source=source):
+                self.assertNotIn("panel-state-literal", self.rules(source))
+
     def test_screen_states_come_from_the_rust_state_machines(self):
         for source in [
             'if (summary->property("state") != "failed") return;',

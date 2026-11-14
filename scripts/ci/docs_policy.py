@@ -11,7 +11,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 ROOT_PAGES = ("README.md", "CONTRIBUTING.md", "CLAUDE.md")
-PAGE_TREES = ("docs", "user-guide")
+PAGE_TREES = ("docs",)
 MAP_PAGE = "docs/README.md"
 STEP_LIMIT = 20
 SENTENCE_LIMIT = 25
@@ -23,9 +23,13 @@ MAP_FENCE = re.compile(r"^\s*```docs-map\s*$")
 LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 LINK = re.compile(r"!?\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 INLINE_CODE = re.compile(r"`[^`]*`")
-BARE_PATH = re.compile(r"(?<![\w./-])((?:docs|user-guide)/[\w./-]*[\w/])")
+BARE_PATH = re.compile(r"(?<![\w./-])(docs/[\w./-]*[\w/])")
 HTML_COMMENT = re.compile(r"<!--.*?-->")
 SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+COLOR_SOURCE = "desktop/design_system/colors/colors.cpp"
+COLOR_PAGE = "docs/design-system.md"
+COLOR_TOKEN = re.compile(r'\{QStringLiteral\("([a-z-]+)"\),\s*colors\.')
+COLOR_ROW = re.compile(r"^\|\s*((?:`[a-z-]+`\s*/?\s*)+)\|")
 ESCAPE = re.compile(r"^Docs: none needed, *(\S.*)$", re.MULTILINE)
 
 
@@ -219,6 +223,45 @@ def map_findings(root):
     ]
 
 
+def color_findings(root):
+    source = root / COLOR_SOURCE
+    page = root / COLOR_PAGE
+    if not source.is_file() or not page.is_file():
+        return []
+    tokens = COLOR_TOKEN.findall(source.read_text(encoding="utf-8"))
+    listed = {}
+    inside = False
+    for number, line in enumerate(page.read_text(encoding="utf-8").splitlines(), 1):
+        if line.startswith("## "):
+            inside = line == "## Colors"
+            continue
+        row = COLOR_ROW.match(line) if inside else None
+        if row:
+            for name in re.findall(r"`([a-z-]+)`", row.group(1)):
+                listed.setdefault(name, number)
+    found = [
+        finding(
+            COLOR_PAGE,
+            1,
+            "color tokens",
+            f"`{name}` is a color token but the table does not list it",
+        )
+        for name in tokens
+        if name not in listed
+    ]
+    found += [
+        finding(
+            COLOR_PAGE,
+            number,
+            "color tokens",
+            f"`{name}` is in the table but is not a color token",
+        )
+        for name, number in listed.items()
+        if name not in tokens
+    ]
+    return found
+
+
 def violations(root=ROOT):
     found = []
     for path in pages(root):
@@ -228,6 +271,7 @@ def violations(root=ROOT):
         found += link_findings(root, path, relative, lines)
         found += sentence_findings(relative, lines)
     found += map_findings(root)
+    found += color_findings(root)
     return sorted(found, key=lambda item: (item["path"], item["line"], item["rule"]))
 
 

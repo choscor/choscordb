@@ -21,7 +21,6 @@ SOURCE_ROOTS = (
     "docs",
     "scripts",
     "tests",
-    "user-guide",
 )
 ROOT_FILES = (
     ".clang-format",

@@ -8,7 +8,7 @@
   {
     "path": "desktop/design_system/json_text_view/json_text_view.cpp",
     "rule": "domain-parsing",
-    "sha256": "470195c30985304366250dce110451eb05730e9de26e3449ff004daeb2a83a9c",
+    "sha256": "1b5f44440b3b669350a9d8c66606acacd7e3f6a34820c004273ea43f49622e25",
     "reason": "Regular expressions select syntax highlighting spans; they do not validate or transform backend results."
   },
   {
@@ -26,19 +26,19 @@
   {
     "path": "desktop/tools/preview/preview_standard.cpp",
     "rule": "sql-text",
-    "sha256": "76059ff3a2b980560ee97bb55911bb797aa170f89f68d8a0825cdd5ba30b1553",
+    "sha256": "917bceb77260d24856941b13359db1106ffe34d5089cb4ff6ad6453736ac3e33",
     "reason": "The CREATE TABLE literal populates a synthetic read-only SQL-editor specimen. This developer gallery does not execute it or derive application SQL from it."
   },
   {
     "path": "desktop/tools/preview/preview_window.cpp",
     "rule": "sql-text",
-    "sha256": "8774e1a4409db8200936c59486685b0f1b1dfc2a4ee1026512ae84094f55809b",
+    "sha256": "b7632ea9662a28c2ae00f0eed9e33c307b7c61e77fdc65ecde2be30479d191da",
     "reason": "The SELECT literal is synthetic content for the SQL-editor gallery specimen in Light and Dark themes. The gallery does not execute it or generate database requests."
   },
   {
     "path": "desktop/app/object_kind_icon.h",
     "rule": "object-kind-literal",
-    "sha256": "8bac622af46654375d5d387c854fdf3b96418b75c7ca8ec299cf98234e8a677b",
+    "sha256": "422b76f201b199e14822c779b1c290b7a6e68cd7f73b5f46373e6047ccdcc851",
     "reason": "The shared presentation map from object kinds to icons, navigator row styles and translated labels. It chooses appearance only; behavior that depends on a kind uses Rust ObjectKindTraits through EngineAdapter::objectKindTraits."
   }
 ]

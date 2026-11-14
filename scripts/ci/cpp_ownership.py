@@ -166,6 +166,9 @@ SCREEN_STATE_CHOICE = re.compile(
     r"\?\s*(?:Query|Panel|Export|ProfileTest)State::\w+\s*:"
     r"|:\s*(?:Query|Panel|Export|ProfileTest)State::\w+\s*[;,)]"
 )
+PANEL_STATE_LITERAL = re.compile(
+    rf"\bcreatePanelStateText\s*\(\s*(?:(?:{STRING_WRAPPER}|(?:\w+\s*::\s*)?tr)\s*\(\s*)?\""
+)
 UI_BUDGET_MARKER = re.compile(r"//\s*ui-budget:\s*\S")
 NUMBER = re.compile(r"(?<![\w.'])\d[\d']*(?:\s*\*\s*\d[\d']*)*(?![\w.'])")
 
@@ -274,6 +277,7 @@ def scan(path, source, limits=None):
             ("driver-literal", DRIVER_LITERAL),
             ("screen-state-literal", SCREEN_STATE_LITERAL),
             ("screen-state-choice", SCREEN_STATE_CHOICE),
+            ("panel-state-literal", PANEL_STATE_LITERAL),
         ):
             for match in pattern.finditer(uncommented):
                 around = uncommented[max(0, match.start() - 64) : match.end()]

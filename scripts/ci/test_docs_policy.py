@@ -8,7 +8,7 @@ import docs_policy
 MAP = (
     "# Documentation\n\n"
     "```docs-map\n"
-    "crates/driver-*/** -> user-guide/connections.md\n"
+    "crates/driver-*/** -> docs/connections.md\n"
     "scripts/release/** -> docs/release-macos.md, docs/release-windows-linux.md\n"
     "```\n"
 )
@@ -23,7 +23,7 @@ class DocsPolicyTest(unittest.TestCase):
             "docs/README.md": MAP,
             "docs/release-macos.md": "# macOS\n",
             "docs/release-windows-linux.md": "# Windows and Linux\n",
-            "user-guide/connections.md": "# Connections\n\n## Add a profile\n",
+            "docs/connections.md": "# Connections\n\n## Add a profile\n",
             "crates/driver-sqlite/src/lib.rs": "",
             "scripts/release/stage.py": "",
             **files,
@@ -37,13 +37,44 @@ class DocsPolicyTest(unittest.TestCase):
     def rules(self, files):
         return [item["rule"] for item in docs_policy.violations(self.tree(files))]
 
+    def test_color_table_must_list_exactly_the_color_tokens(self):
+        colors = (
+            '{QStringLiteral("bg"), colors.bg},\n'
+            '{QStringLiteral("hover"), colors.hover},\n'
+        )
+        page = (
+            "# Design system\n\n## Colors\n\n"
+            "| Token | Use | Light | Dark |\n| --- | --- | --- | --- |\n"
+            "| `bg` | Canvas | `#fff` | `#000` |\n"
+            "| `ring` | Focus | `#fff` | `#000` |\n\n## Type\n\n"
+            "| `Body` | Text |\n"
+        )
+        found = docs_policy.violations(
+            self.tree(
+                {
+                    "desktop/design_system/colors/colors.cpp": colors,
+                    "docs/design-system.md": page,
+                }
+            )
+        )
+        self.assertEqual(
+            [(item["rule"], item["message"]) for item in found],
+            [
+                (
+                    "color tokens",
+                    "`hover` is a color token but the table does not list it",
+                ),
+                ("color tokens", "`ring` is in the table but is not a color token"),
+            ],
+        )
+
     def test_rejects_missing_link_targets_paths_and_anchors(self):
         found = docs_policy.violations(
             self.tree(
                 {
-                    "README.md": "See [the guide](user-guide/missing.md).\n"
+                    "README.md": "See [the guide](docs/missing.md).\n"
                     "Read `docs/gone.md` first.\n"
-                    "See [profiles](user-guide/connections.md#remove-a-profile).\n"
+                    "See [profiles](docs/connections.md#remove-a-profile).\n"
                 }
             )
         )
@@ -60,7 +91,7 @@ class DocsPolicyTest(unittest.TestCase):
         self.assertEqual(
             self.rules(
                 {
-                    "README.md": "See [profiles](user-guide/connections.md#add-a-profile).\n"
+                    "README.md": "See [profiles](docs/connections.md#add-a-profile).\n"
                     "Read `docs/release-macos.md` and [Qt](https://www.qt.io).\n",
                     "docs/build.md": "# Build\n\nSee [the index](README.md).\n",
                 }
@@ -153,7 +184,7 @@ class DocsPolicyTest(unittest.TestCase):
             self.tree(
                 {
                     "docs/README.md": MAP.replace(
-                        "```\n", "desktop/missing/** -> user-guide/gone.md\n```\n", 1
+                        "```\n", "desktop/missing/** -> docs/gone.md\n```\n", 1
                     )
                 }
             )
@@ -192,7 +223,7 @@ class ChangedDocsTest(unittest.TestCase):
         for name in [
             "docs/release-macos.md",
             "docs/release-windows-linux.md",
-            "user-guide/connections.md",
+            "docs/connections.md",
             "crates/driver-sqlite/src/lib.rs",
             "scripts/release/stage.py",
             "desktop/app/main.cpp",
@@ -225,11 +256,11 @@ class ChangedDocsTest(unittest.TestCase):
         found = self.changed()
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0]["rule"], "doc not updated")
-        self.assertIn("user-guide/connections.md", found[0]["message"])
+        self.assertIn("docs/connections.md", found[0]["message"])
 
     def test_owning_doc_change_or_unmapped_change_passes(self):
         self.write("crates/driver-sqlite/src/lib.rs", "changed\n")
-        self.write("user-guide/connections.md", "updated\n")
+        self.write("docs/connections.md", "updated\n")
         self.write("scripts/release/stage.py", "changed\n")
         self.write("docs/release-windows-linux.md", "updated\n")
         self.write("desktop/app/main.cpp", "changed\n")

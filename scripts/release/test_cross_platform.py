@@ -38,6 +38,31 @@ class PackagingSafetyTests(unittest.TestCase):
                     cross_platform.download_linux_tools(Path(directory))
             self.assertFalse(list(Path(directory).glob("*.AppImage")))
 
+    def test_install_requires_each_bundled_font_and_icon_notice(self):
+        notices = [
+            "LICENSE",
+            "OFL.txt",
+            "SOURCE-INTER.json",
+            "LICENSE-PHOSPHOR",
+            "SOURCE-PHOSPHOR.json",
+            "LICENSE-DEVICON",
+            "SOURCE-DATABASE-LOGOS.json",
+        ]
+        for missing in notices:
+            with (
+                self.subTest(missing=missing),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                prefix = Path(directory)
+                licenses = prefix / "share/licenses/choscordb"
+                licenses.mkdir(parents=True)
+                for name in notices:
+                    if name != missing:
+                        (licenses / name).write_text(name)
+                with patch("cross_platform.run"):
+                    with self.assertRaisesRegex(ValueError, missing):
+                        cross_platform.install(prefix / "build", prefix)
+
     def test_inventory_rejects_symlink_leaving_package(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

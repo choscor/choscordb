@@ -107,6 +107,10 @@ def cpp_size():
     run_command([PYTHON, "scripts/ci/cpp_size.py"])
 
 
+def qt_test_policy():
+    run_command([PYTHON, "scripts/ci/qt_test_policy.py"])
+
+
 def cpp_ownership():
     run_command([PYTHON, "scripts/ci/cpp_ownership.py"])
 
@@ -175,7 +179,7 @@ def actionlint():
 
 
 def python_tests():
-    for directory in ("scripts/ci", "scripts/release"):
+    for directory in ("scripts/ci", "scripts/design", "scripts/release"):
         run_command(
             [
                 PYTHON,
@@ -309,6 +313,7 @@ def native_tests():
 STAGES = {
     "cpp-format": cpp_format,
     "cpp-size": cpp_size,
+    "qt-test-policy": qt_test_policy,
     "cpp-ownership": cpp_ownership,
     "qss-lint": qss_lint,
     "ui-policy": ui_policy,
@@ -336,6 +341,7 @@ STAGES = {
 FAST_STAGES = (
     "cpp-format",
     "cpp-size",
+    "qt-test-policy",
     "cpp-ownership",
     "qss-lint",
     "ui-policy",

@@ -90,10 +90,23 @@ def require_inputs(build, qt, qsci, output):
         raise ValueError("QScintilla provenance differs from release pins")
 
 
+INSTALLED_NOTICES = (
+    "LICENSE",
+    "OFL.txt",
+    "SOURCE-INTER.json",
+    "LICENSE-PHOSPHOR",
+    "SOURCE-PHOSPHOR.json",
+    "LICENSE-DEVICON",
+    "SOURCE-DATABASE-LOGOS.json",
+)
+
+
 def install(build, prefix):
     run(["cmake", "--install", build, "--prefix", prefix], cwd=ROOT)
-    if not (prefix / "share/licenses/choscordb/LICENSE").is_file():
-        raise ValueError("Installed application license is missing")
+    licenses = prefix / "share/licenses/choscordb"
+    for name in INSTALLED_NOTICES:
+        if not (licenses / name).is_file():
+            raise ValueError(f"Installed notice {name} is missing")
 
 
 def add_notices(prefix, qsci, qt_notices, cargo_target):

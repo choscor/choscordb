@@ -66,9 +66,9 @@ class NoticesTest(unittest.TestCase):
         repository = Path(__file__).resolve().parents[2]
         icons = repository / "desktop/resources/icons"
         for name in [
-            "LICENSE-LUCIDE",
+            "LICENSE-PHOSPHOR",
             "LICENSE-DEVICON",
-            "SOURCE-LUCIDE.json",
+            "SOURCE-PHOSPHOR.json",
             "SOURCE-DATABASE-LOGOS.json",
         ]:
             payload["choscordb.app/Contents/Resources/licenses/" + name] = (
@@ -79,7 +79,7 @@ class NoticesTest(unittest.TestCase):
                 icon.read_bytes()
             )
         fonts = repository / "desktop/resources/fonts"
-        for name in ["OFL.txt", "SOURCE-GEIST.json"]:
+        for name in ["OFL.txt", "SOURCE-INTER.json"]:
             payload["choscordb.app/Contents/Resources/licenses/" + name] = (
                 fonts / name
             ).read_bytes()
@@ -252,40 +252,42 @@ class NoticesTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.generate("files-missing")
 
-    def test_embedded_geist_has_license_and_verified_source_hashes(self):
+    def test_embedded_inter_has_license_and_verified_source_hashes(self):
         document = json.loads((self.generate() / "sbom.spdx.json").read_text())
-        geist = [p for p in document["packages"] if p["name"] == "Geist"]
-        self.assertEqual(len(geist), 1)
-        self.assertEqual(
-            geist[0]["versionInfo"], "10dc7658f13c38a474cde201bb09a4617267545b"
-        )
-        self.assertEqual(geist[0]["licenseDeclared"], "OFL-1.1")
+        inter = [p for p in document["packages"] if p["name"] == "Inter"]
+        self.assertEqual(len(inter), 1)
+        self.assertEqual(inter[0]["versionInfo"], "v4.1")
+        self.assertEqual(inter[0]["licenseDeclared"], "OFL-1.1")
         self.assertIn(
-            "85a1c6b18a6b0a06dfe9fd4f6d6a5d4979f74ec861eaef4bc7868b5492b8a117",
-            geist[0]["sourceInfo"],
+            "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82",
+            inter[0]["sourceInfo"],
+        )
+        self.assertIn(
+            "9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e",
+            inter[0]["sourceInfo"],
         )
         source = json.loads(self.source.read_text())
         for entry in source["files"]:
-            if entry["path"] == "desktop/resources/fonts/Geist-Bold.ttf":
+            if entry["path"] == "desktop/resources/fonts/Inter-Bold.ttf":
                 entry["sha256"] = "0" * 64
         self.source.write_text(json.dumps(source))
         self.refresh_manifest()
-        with self.assertRaisesRegex(ValueError, "Geist"):
+        with self.assertRaisesRegex(ValueError, "Inter"):
             self.generate("changed-font")
 
     def test_reviewed_icon_and_font_notices_reject_changed_payload_bytes(self):
         for relative, diagnostic in [
-            ("icons/eye-off.svg", "Icon"),
+            ("icons/eye-slash.svg", "Icon"),
             ("icons/postgresql.svg", "Icon"),
             ("icons/sqlite.svg", "Icon"),
             ("icons/mysql.svg", "Icon"),
             ("icons/mariadb.svg", "Icon"),
             ("licenses/SOURCE-DATABASE-LOGOS.json", "Database logo"),
-            ("licenses/SOURCE-LUCIDE.json", "Lucide"),
-            ("licenses/LICENSE-LUCIDE", "Lucide"),
+            ("licenses/SOURCE-PHOSPHOR.json", "Phosphor"),
+            ("licenses/LICENSE-PHOSPHOR", "Phosphor"),
             ("licenses/LICENSE-DEVICON", "devicon"),
-            ("licenses/SOURCE-GEIST.json", "Geist"),
-            ("licenses/OFL.txt", "Geist"),
+            ("licenses/SOURCE-INTER.json", "Inter"),
+            ("licenses/OFL.txt", "Inter"),
         ]:
             with self.subTest(relative=relative):
                 path = self.stage / "choscordb.app/Contents/Resources" / relative
@@ -319,7 +321,7 @@ class NoticesTest(unittest.TestCase):
     def test_nested_duplicate_icon_cannot_hide_from_inventory(self):
         icons = self.stage / "choscordb.app/Contents/Resources/icons"
         (icons / "a").mkdir()
-        (icons / "a/eye-off.svg").write_bytes((icons / "eye-off.svg").read_bytes())
+        (icons / "a/eye-slash.svg").write_bytes((icons / "eye-slash.svg").read_bytes())
         self.refresh_manifest()
         with self.assertRaisesRegex(ValueError, "icon inventory"):
             self.generate()
@@ -361,11 +363,15 @@ class NoticesTest(unittest.TestCase):
             if r["relationshipType"] == "CONTAINS"
             and "/icons/" in files[r["relatedSpdxElement"]]
         }
-        self.assertEqual(len(icons), 31)
-        self.assertEqual(icons["grid-2x2.svg"], "Lucide Icons")
-        self.assertEqual(icons["refresh-cw.svg"], "Lucide Icons")
-        self.assertEqual(icons["eye-off.svg"], "Lucide Icons")
-        self.assertEqual(icons["code.svg"], "Lucide Icons")
+        self.assertEqual(len(icons), 38)
+        self.assertEqual(icons["caret-up-down.svg"], "Phosphor Icons")
+        self.assertEqual(icons["grid-four.svg"], "Phosphor Icons")
+        self.assertEqual(icons["arrow-up.svg"], "Phosphor Icons")
+        self.assertEqual(icons["arrow-down.svg"], "Phosphor Icons")
+        self.assertEqual(icons["trash.svg"], "Phosphor Icons")
+        self.assertEqual(icons["arrow-clockwise.svg"], "Phosphor Icons")
+        self.assertEqual(icons["eye-slash.svg"], "Phosphor Icons")
+        self.assertEqual(icons["code.svg"], "Phosphor Icons")
         self.assertEqual(icons["app-mark.svg"], "ChoscorDB")
         self.assertEqual(icons["postgresql.svg"], "ChoscorDB")
         self.assertEqual(icons["sqlite.svg"], "ChoscorDB")
@@ -481,16 +487,21 @@ class NoticesTest(unittest.TestCase):
                 "ChoscorDB",
                 "Qt",
                 "QScintilla",
-                "Lucide Icons",
-                "Geist",
+                "Phosphor Icons",
+                "Inter",
                 "devicon",
                 "dependency",
             },
         )
-        lucide = next(p for p in document["packages"] if p["name"] == "Lucide Icons")
-        self.assertEqual(lucide["versionInfo"], "1.61.0")
-        self.assertEqual(lucide["licenseDeclared"], "ISC AND MIT")
-        self.assertIn("c29c276f16590cf017126671535ad8c792be64d8", lucide["sourceInfo"])
+        phosphor = next(
+            p for p in document["packages"] if p["name"] == "Phosphor Icons"
+        )
+        self.assertEqual(phosphor["versionInfo"], "2.1.1")
+        self.assertEqual(phosphor["licenseDeclared"], "MIT")
+        self.assertIn(
+            "313332be6190b724da24107addd781799b48bf76b13963f24501112ffe1baadd",
+            phosphor["sourceInfo"],
+        )
         devicon = next(p for p in document["packages"] if p["name"] == "devicon")
         self.assertEqual(devicon["licenseDeclared"], "MIT")
         self.assertEqual(

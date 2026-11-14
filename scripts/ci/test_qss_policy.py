@@ -130,6 +130,59 @@ class QssPolicyTest(unittest.TestCase):
             )
             self.assertFalse(any("literal border-radius" in item for item in found))
 
+    def test_rejects_item_padding_without_a_drawable_property(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._component(
+                root,
+                {
+                    "table/table_item_style_sheet.qss": "QTableView::item {\n"
+                    "  padding: 0 @space-3;\n"
+                    "}\n"
+                    "QTreeView::item {\n"
+                    "  border: none;\n"
+                    "  padding: 0 @space-3;\n"
+                    "}\n"
+                    "QMenu::item {\n"
+                    "  padding: 0 @space-3;\n"
+                    "}\n"
+                },
+            )
+            found = qss_policy.violations(root)
+            self.assertEqual(
+                [item for item in found if "item padding" in item],
+                [
+                    "desktop/design_system/table/table_item_style_sheet.qss: "
+                    "QTableView::item: item padding needs a border or background "
+                    "(Qt 6.8 ignores it otherwise)"
+                ],
+            )
+
+    def test_rejects_literal_lengths_other_than_hairlines(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._component(
+                root,
+                {
+                    "button/button_style_sheet.qss": "QPushButton {\n"
+                    "  padding: 0 12px;\n"
+                    "  min-width: 243px;\n"
+                    "  border: 1px solid @border;\n"
+                    "  margin: 0px;\n"
+                    "}\n"
+                },
+            )
+            found = [
+                item for item in qss_policy.violations(root) if "literal length" in item
+            ]
+            self.assertEqual(len(found), 2)
+            self.assertTrue(
+                found[0].endswith(":2: literal length 12px; use a size @token")
+            )
+            self.assertTrue(
+                found[1].endswith(":3: literal length 243px; use a size @token")
+            )
+
     def test_accepts_named_tokens(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

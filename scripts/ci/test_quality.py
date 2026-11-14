@@ -37,6 +37,7 @@ class QualityCommandTest(unittest.TestCase):
             commands[1:],
             [
                 [quality.PYTHON, "scripts/ci/cpp_size.py"],
+                [quality.PYTHON, "scripts/ci/qt_test_policy.py"],
                 [quality.PYTHON, "scripts/ci/cpp_ownership.py"],
                 [quality.PYTHON, "scripts/ci/qss_policy.py"],
                 [quality.PYTHON, "scripts/ci/ui_policy.py"],
@@ -55,6 +56,16 @@ class QualityCommandTest(unittest.TestCase):
                     "discover",
                     "-s",
                     "scripts/ci",
+                    "-p",
+                    "test_*.py",
+                ],
+                [
+                    quality.PYTHON,
+                    "-m",
+                    "unittest",
+                    "discover",
+                    "-s",
+                    "scripts/design",
                     "-p",
                     "test_*.py",
                 ],
@@ -127,7 +138,7 @@ class QualityCommandTest(unittest.TestCase):
 
     def test_each_gate_is_a_focused_stage(self):
         expected = {
-            "python-tests": 2,
+            "python-tests": 3,
             "rust-format": 1,
             "rust-check": 1,
             "rust-clippy": 1,
@@ -136,6 +147,7 @@ class QualityCommandTest(unittest.TestCase):
             "python-format": 1,
             "cpp-format": 1,
             "cpp-size": 1,
+            "qt-test-policy": 1,
             "cpp-ownership": 1,
             "actionlint": 1,
             "cargo-deny": 1,

@@ -12,6 +12,8 @@ POSITIONAL = re.compile(r"%\d")
 LITERAL_SIZE = re.compile(
     r"^\s*(font-size|(?:border(?:-[a-z]+)*-)?radius)\s*:\s*(?!0(?:px)?\s*;)\d", re.M
 )
+LITERAL_LENGTH = re.compile(r"(?<![\w@-])(\d+px)\b")
+HAIRLINE = {"0px", "1px"}
 CASCADE_ENTRY = re.compile(r'u"([a-z0-9_/]+\.qss)"')
 CASCADE_SOURCE = "desktop/design_system/style/stylesheet.cpp"
 COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -28,6 +30,22 @@ def declarations(content):
             for name in names:
                 if name:
                     yield name, prop
+
+
+ITEM_VIEW = re.compile(r"Q(?:List|Tree|Table)(?:View|Widget)\b")
+
+
+def item_rules(content):
+    for selectors, body in RULE.findall(COMMENT.sub("", content)):
+        props = {
+            declaration.split(":", 1)[0].strip()
+            for declaration in body.split(";")
+            if ":" in declaration
+        }
+        for selector in selectors.split(","):
+            name = " ".join(selector.split())
+            if name.endswith("::item") and ITEM_VIEW.match(name):
+                yield name, props
 
 
 def duplicate_definitions(root):
@@ -118,9 +136,20 @@ def violations(root=ROOT):
                 problems.append(
                     f"{relative}:{number}: put declarations on separate lines"
                 )
+            for length in LITERAL_LENGTH.findall(line):
+                if length not in HAIRLINE:
+                    problems.append(
+                        f"{relative}:{number}: literal length {length}; use a size @token"
+                    )
             if POSITIONAL.search(line):
                 problems.append(
                     f"{relative}:{number}: use a named @token, not a positional placeholder"
+                )
+        for selector, props in item_rules(content):
+            if "padding" in props and not props & {"border", "background"}:
+                problems.append(
+                    f"{relative}: {selector}: item padding needs a border or background "
+                    "(Qt 6.8 ignores it otherwise)"
                 )
         for match in LITERAL_SIZE.finditer(content):
             number = content.count("\n", 0, match.start()) + 1

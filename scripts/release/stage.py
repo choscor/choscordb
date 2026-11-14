@@ -141,12 +141,12 @@ class MacOSAdapter:
         notices = app / "Contents/Resources/licenses"
         if not (notices / "LICENSE").is_file():
             raise ValueError("Installed ChoscorDB license is missing")
-        if not (notices / "LICENSE-LUCIDE").is_file():
-            raise ValueError("Installed Lucide icon license is missing")
-        if not (notices / "SOURCE-LUCIDE.json").is_file():
-            raise ValueError("Installed Lucide icon provenance is missing")
+        if not (notices / "LICENSE-PHOSPHOR").is_file():
+            raise ValueError("Installed Phosphor icon license is missing")
+        if not (notices / "SOURCE-PHOSPHOR.json").is_file():
+            raise ValueError("Installed Phosphor icon provenance is missing")
         icons = app / "Contents/Resources/icons"
-        for name in ["app-mark.svg", "play.svg", "square.svg", "plus.svg"]:
+        for name in ["app-mark.svg", "play.svg", "stop.svg", "plus.svg"]:
             if not (icons / name).is_file():
                 raise ValueError(f"Installed application icon missing: {name}")
         source_notices = qsci / "share/licenses/QScintilla"

@@ -12,11 +12,11 @@ import uuid
 from prepare_qt_notices import SHA256 as QTBASE_SHA256, SVG_SHA256 as QTSVG_SHA256
 
 QT_SOURCE_HASHES = {"qtbase": QTBASE_SHA256, "qtsvg": QTSVG_SHA256}
-LUCIDE_SOURCE_SHA256 = (
-    "d648a8c0ac860e32f1d48a43d8b501f6afe5d6dd540e8388d9409ec1ea185295"
+PHOSPHOR_SOURCE_SHA256 = (
+    "9aa344f7c7f81dafbb29eb24d90b5b37faef89c974a18cbde47fe83de0e59de3"
 )
 
-GEIST_SOURCE_SHA256 = "6cd982f83ab1f9c4f1a4746789fdcdb5087a8e235a18dd310c2790e267813eba"
+INTER_SOURCE_SHA256 = "2193ffad3edc5f1641a3c186dd72b396cdcd24495dd1ffeffae42e2855f9fd0b"
 
 DATABASE_LOGOS_SOURCE_SHA256 = (
     "c6e1f8bb033b0ae8baaa96e248f16c369ab54489c5ccaaab6d5b97dfb0ddbdb8"
@@ -261,35 +261,38 @@ def generate(
     ]
     if len(app_licenses) != 1:
         raise ValueError("ChoscorDB license is missing or ambiguous")
-    lucide_licenses = [
-        name for name in payload if name.endswith("/Resources/licenses/LICENSE-LUCIDE")
-    ]
-    if len(lucide_licenses) != 1:
-        raise ValueError("Lucide icon license is missing or ambiguous")
-    lucide_sources = [
+    phosphor_licenses = [
         name
         for name in payload
-        if name.endswith("/Resources/licenses/SOURCE-LUCIDE.json")
+        if name.endswith("/Resources/licenses/LICENSE-PHOSPHOR")
     ]
-    if len(lucide_sources) != 1:
-        raise ValueError("Lucide icon provenance is missing or ambiguous")
-    if digest(payload[lucide_sources[0]]) != LUCIDE_SOURCE_SHA256:
-        raise ValueError("Lucide icon provenance does not match the reviewed source")
-    lucide_record = json.loads(payload[lucide_sources[0]])
-    if digest(payload[lucide_licenses[0]]) != lucide_record["licenseSha256"]:
-        raise ValueError("Lucide icon license does not match reviewed source")
-    lucide_icons = lucide_record["icons"]
+    if len(phosphor_licenses) != 1:
+        raise ValueError("Phosphor icon license is missing or ambiguous")
+    phosphor_sources = [
+        name
+        for name in payload
+        if name.endswith("/Resources/licenses/SOURCE-PHOSPHOR.json")
+    ]
+    if len(phosphor_sources) != 1:
+        raise ValueError("Phosphor icon provenance is missing or ambiguous")
+    if digest(payload[phosphor_sources[0]]) != PHOSPHOR_SOURCE_SHA256:
+        raise ValueError("Phosphor icon provenance does not match the reviewed source")
+    phosphor_record = json.loads(payload[phosphor_sources[0]])
+    if digest(payload[phosphor_licenses[0]]) != phosphor_record["licenseSha256"]:
+        raise ValueError("Phosphor icon license does not match reviewed source")
+    phosphor_icons = phosphor_record["icons"]
     local_icons = {
-        name: record["sha256"] for name, record in lucide_record["adaptations"].items()
+        name: record["sha256"]
+        for name, record in phosphor_record["adaptations"].items()
     }
     source_hashes = {entry["path"]: entry["sha256"] for entry in source["files"]}
     for path, expected in [
-        ("desktop/resources/icons/SOURCE-LUCIDE.json", LUCIDE_SOURCE_SHA256),
-        ("desktop/resources/icons/LICENSE-LUCIDE", lucide_record["licenseSha256"]),
+        ("desktop/resources/icons/SOURCE-PHOSPHOR.json", PHOSPHOR_SOURCE_SHA256),
+        ("desktop/resources/icons/LICENSE-PHOSPHOR", phosphor_record["licenseSha256"]),
     ]:
         if source_hashes.get(path) != expected:
             raise ValueError(
-                "Lucide icon source snapshot does not match reviewed provenance"
+                "Phosphor icon source snapshot does not match reviewed provenance"
             )
     database_sources = [
         name
@@ -307,7 +310,7 @@ def generate(
     database_icons = {
         name: record["sha256"] for name, record in database_record["icons"].items()
     }
-    icon_hashes = {**lucide_icons, **local_icons, **database_icons}
+    icon_hashes = {**phosphor_icons, **local_icons, **database_icons}
     icon_prefix = app_licenses[0].removesuffix("licenses/LICENSE") + "icons/"
     staged_icons = {icon: icon_prefix + icon for icon in icon_hashes}
     actual_icon_paths = {name for name in payload if "/Resources/icons/" in name}
@@ -332,25 +335,25 @@ def generate(
             )
         return matches[0]
 
-    geist_source = reviewed_asset("SOURCE-GEIST.json", GEIST_SOURCE_SHA256, "Geist")
-    geist_record = json.loads(payload[geist_source])
+    inter_source = reviewed_asset("SOURCE-INTER.json", INTER_SOURCE_SHA256, "Inter")
+    inter_record = json.loads(payload[inter_source])
     if (
-        source_hashes.get("desktop/resources/fonts/SOURCE-GEIST.json")
-        != GEIST_SOURCE_SHA256
+        source_hashes.get("desktop/resources/fonts/SOURCE-INTER.json")
+        != INTER_SOURCE_SHA256
     ):
-        raise ValueError("Geist source snapshot does not match reviewed provenance")
-    for entry in geist_record["files"]:
+        raise ValueError("Inter source snapshot does not match reviewed provenance")
+    for entry in inter_record["files"]:
         if (
             source_hashes.get("desktop/resources/fonts/" + entry["local"])
             != entry["sha256"]
         ):
             raise ValueError(
-                "Geist embedded font/source hashes do not match reviewed source"
+                "Inter embedded font/source hashes do not match reviewed source"
             )
-    geist_license = reviewed_asset(
+    inter_license = reviewed_asset(
         "OFL.txt",
-        "c683bfbcc7e087f5d37a54ef628f10387c451a83ddc459b151403a164ac46c90",
-        "Geist",
+        "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a",
+        "Inter",
     )
 
     devicon_license = reviewed_asset(
@@ -429,29 +432,36 @@ def generate(
         text_files(stage / PurePosixPath(qsci_path).parent),
         qsci_record.get("url"),
     )
-    lucide_id = package(
-        "lucide-icons",
-        "Lucide Icons",
-        lucide_record["version"],
-        lucide_record["license"],
-        {"LICENSE": payload[lucide_licenses[0]]},
-        "https://github.com/lucide-icons/lucide",
-    )
-    packages[-1]["sourceInfo"] = "Reviewed source commit " + lucide_record["commit"]
-    geist_id = package(
-        "geist",
-        "Geist",
-        geist_record["revision"],
-        "OFL-1.1",
-        {"OFL.txt": payload[geist_license]},
-        geist_record["repository"],
+    phosphor_id = package(
+        "phosphor-icons",
+        "Phosphor Icons",
+        phosphor_record["version"],
+        phosphor_record["license"],
+        {"LICENSE": payload[phosphor_licenses[0]]},
+        phosphor_record["source"],
     )
     packages[-1]["sourceInfo"] = (
-        "Embedded Qt font resources; reviewed revision "
-        + geist_record["revision"]
+        "Reviewed npm tarball "
+        + phosphor_record["tarball"]
+        + " SHA256 "
+        + phosphor_record["tarballSha256"]
+    )
+    inter_id = package(
+        "inter",
+        "Inter",
+        inter_record["release"],
+        "OFL-1.1",
+        {"OFL.txt": payload[inter_license]},
+        inter_record["repository"],
+    )
+    packages[-1]["sourceInfo"] = (
+        "Embedded Qt font resources; reviewed release "
+        + inter_record["release"]
+        + " archive SHA256 "
+        + inter_record["archiveSha256"]
         + "; source SHA256: "
         + ", ".join(
-            entry["local"] + "=" + entry["sha256"] for entry in geist_record["files"]
+            entry["local"] + "=" + entry["sha256"] for entry in inter_record["files"]
         )
     )
     devicon_id = package(
@@ -634,8 +644,8 @@ def generate(
     for package_id in [
         qt_id,
         qsci_id,
-        lucide_id,
-        geist_id,
+        phosphor_id,
+        inter_id,
         devicon_id,
         *([sparkle_id] if sparkle_id else []),
         *cargo_ids,
@@ -670,15 +680,15 @@ def generate(
             raise ValueError("Unknown Qt plugin ownership: " + name)
         if name.endswith(
             (
-                "/Resources/licenses/LICENSE-LUCIDE",
-                "/Resources/licenses/SOURCE-LUCIDE.json",
+                "/Resources/licenses/LICENSE-PHOSPHOR",
+                "/Resources/licenses/SOURCE-PHOSPHOR.json",
             )
-        ) or name in {staged_icons[icon] for icon in lucide_icons}:
-            owner = lucide_id
+        ) or name in {staged_icons[icon] for icon in phosphor_icons}:
+            owner = phosphor_id
         elif name in {devicon_license, staged_icons["mysql.svg"]}:
             owner = devicon_id
-        elif name in {geist_source, geist_license}:
-            owner = geist_id
+        elif name in {inter_source, inter_license}:
+            owner = inter_id
         elif "/Sparkle.framework/" in name or "/licenses/Sparkle/" in name:
             if sparkle_id is None:
                 raise ValueError("Sparkle notice has no matching runtime")
