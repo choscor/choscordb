@@ -650,8 +650,10 @@ class PinningFlowTest : public QObject {
         QTRY_VERIFY(findColumn().isValid());
         const auto column = findColumn();
         QCOMPARE(column.data(Qt::DisplayRole).toString(), QString("id"));
-        QTest::mouseClick(pins->viewport(), Qt::LeftButton, Qt::NoModifier,
-                          pins->visualRect(column).center());
+        const auto columnCenter = [&] { return pins->visualRect(column).center(); };
+        QTRY_COMPARE(restored.childAt(pins->viewport()->mapTo(&restored, columnCenter())),
+                     pins->viewport());
+        QTest::mouseClick(pins->viewport(), Qt::LeftButton, Qt::NoModifier, columnCenter());
         QTRY_COMPARE(tabs->count(), tabCount + 1);
         QCOMPARE(pinCount(pins), 1);
         QString pinError;

@@ -362,6 +362,9 @@ void ModernUiTest::rejectedSidebarOpenKeepsOtherRootsAndShowsOneReason() {
 
 void ModernUiTest::removedPendingSidebarOpenCannotRestoreItsRoot() {
     choscordb::MainWindow window;
+    auto* theme = window.findChild<choscordb::design::ThemeManager*>();
+    QVERIFY(theme);
+    theme->setReducedMotion(false);
     window.show();
     auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
     auto* profiles = window.findChild<QListWidget*>("savedConnections");
