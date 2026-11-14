@@ -11,6 +11,9 @@ pub const MIN_WINDOW_WIDTH: u32 = 960;
 pub const MIN_WINDOW_HEIGHT: u32 = 640;
 pub const MAX_WINDOW_DIMENSION: u32 = 16_384;
 const MAX_COORDINATE_MAGNITUDE: i32 = 1_000_000;
+pub const MAX_RESULT_COLUMN_WIDTHS: usize = 16;
+pub const MAX_RESULT_COLUMN_NAME_BYTES: usize = 64;
+const RESULT_COLUMN_WIDTH_RANGE: std::ops::RangeInclusive<u32> = 24..=2048;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -32,6 +35,47 @@ impl ThemeMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SidebarTab {
+    #[default]
+    Connections,
+    SavedQueries,
+    QueryHistory,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResultColumnWidth {
+    pub name: String,
+    pub width: u32,
+}
+
+impl ResultColumnWidth {
+    pub fn remembered(entries: impl IntoIterator<Item = (String, u32)>) -> Vec<Self> {
+        let mut valid: Vec<Self> = entries
+            .into_iter()
+            .map(|(name, width)| Self {
+                name,
+                width: width.clamp(
+                    *RESULT_COLUMN_WIDTH_RANGE.start(),
+                    *RESULT_COLUMN_WIDTH_RANGE.end(),
+                ),
+            })
+            .filter(Self::is_valid)
+            .collect();
+        valid.drain(..valid.len().saturating_sub(MAX_RESULT_COLUMN_WIDTHS));
+        valid
+    }
+
+    fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && self.name.len() <= MAX_RESULT_COLUMN_NAME_BYTES
+            && !self.name.contains('\0')
+            && RESULT_COLUMN_WIDTH_RANGE.contains(&self.width)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceLayout {
@@ -40,6 +84,10 @@ pub struct WorkspaceLayout {
     pub history_height: u32,
     pub navigator_visible: bool,
     pub history_visible: bool,
+    #[serde(default)]
+    pub sidebar_tab: SidebarTab,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub result_column_widths: Vec<ResultColumnWidth>,
 }
 
 impl Default for WorkspaceLayout {
@@ -50,6 +98,8 @@ impl Default for WorkspaceLayout {
             history_height: 220,
             navigator_visible: true,
             history_visible: false,
+            sidebar_tab: SidebarTab::Connections,
+            result_column_widths: Vec::new(),
         }
     }
 }
@@ -95,6 +145,12 @@ impl AppearanceLayout {
             || !(100..=900).contains(&self.layout.editor_results_split)
             || !(80..=4096).contains(&self.layout.history_height)
             || !self.geometry.is_valid()
+            || self.layout.result_column_widths.len() > MAX_RESULT_COLUMN_WIDTHS
+            || !self
+                .layout
+                .result_column_widths
+                .iter()
+                .all(ResultColumnWidth::is_valid)
         {
             return Err(StorageError::InvalidAppearance);
         }

@@ -216,3 +216,15 @@ fn duration_bucket(value: u16) -> Option<DurationBucket> {
         _ => return None,
     })
 }
+
+pub fn diagnostics_watchdog_tick_milliseconds() -> u32 {
+    choscordb_diagnostics::WATCHDOG_TICK_MILLISECONDS
+}
+
+pub fn diagnostics_hang_threshold_milliseconds() -> u32 {
+    choscordb_diagnostics::HANG_THRESHOLD_MILLISECONDS
+}
+
+pub fn diagnostics_cancel_poll_milliseconds() -> u32 {
+    choscordb_diagnostics::CANCEL_POLL_MILLISECONDS
+}

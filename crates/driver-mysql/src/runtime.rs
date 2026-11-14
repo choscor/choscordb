@@ -161,7 +161,7 @@ pub(super) async fn start(
                 {
                     return Err(error(
                         ErrorKind::Disconnected,
-                        "MySQL transaction state recovery failed; connection closed",
+                        "Could not recover the MySQL transaction state. The connection is closed.",
                     ));
                 }
                 worker_shared.idle.reconcile(conn.connection());

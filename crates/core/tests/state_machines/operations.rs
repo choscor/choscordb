@@ -55,7 +55,38 @@ fn a_failed_update_check_shows_a_toast_and_a_placeholder() {
         failed.message,
         "Update failed: feed signature is invalid. Retry."
     );
-    assert_eq!(failed.toast.unwrap().text, failed.message);
+    let toast = failed.toast.unwrap();
+    assert_eq!(toast.text, failed.message);
+    assert_eq!(toast.title, "Update failed");
+}
+
+#[test]
+fn success_toasts_name_their_result() {
+    use profile_test_machine::{ProfileOperation, ProfileTestState, present, present_operation};
+    let title = |shown: choscordb_driver_api::Presentation| shown.toast.unwrap().title;
+    assert_eq!(
+        title(present(&ProfileTestState::Succeeded, "")),
+        "Connection test succeeded"
+    );
+    assert_eq!(
+        title(present_operation(ProfileOperation::Saved, "")),
+        "Connection saved"
+    );
+    assert_eq!(
+        title(present_operation(ProfileOperation::Deleted, "")),
+        "Connection deleted"
+    );
+    assert_eq!(
+        title(present_operation(ProfileOperation::Connected, "")),
+        "Connected"
+    );
+    assert_eq!(
+        title(present_operation(
+            ProfileOperation::Saved,
+            "The keychain is locked."
+        )),
+        "Connection saved"
+    );
 }
 
 #[test]
@@ -86,7 +117,7 @@ fn ssh_trust_and_grid_edit_notes_are_engine_owned() {
     assert_eq!(
         ssh_trust_note(SshTrustNote::ApprovalStale),
         format!(
-            "The approval request finished for the previous settings. {}",
+            "The approval request finished for the previous connection values. {}",
             recovery_hint(RecoveryHint::InspectSshServer)
         )
     );
@@ -98,6 +129,7 @@ fn ssh_trust_and_grid_edit_notes_are_engine_owned() {
         note(GridEditNote::PlanUnfinished),
         "The change check did not finish."
     );
+    assert_eq!(note(GridEditNote::ReadOnly), "This result is read only.");
     assert_eq!(
         updater_machine::present(&updater_machine::UpdaterState::ReadyToInstall, "").message,
         "The update is downloaded. Choose Install Downloaded Update from the Updates menu when \

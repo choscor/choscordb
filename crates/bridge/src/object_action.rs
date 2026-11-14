@@ -164,6 +164,54 @@ pub fn panel_notice_milliseconds() -> u32 {
     choscordb_driver_api::PANEL_NOTICE_MILLISECONDS
 }
 
+pub fn filter_delay_milliseconds() -> u32 {
+    choscordb_driver_api::FILTER_DELAY_MILLISECONDS
+}
+
+pub fn layout_save_delay_milliseconds() -> u32 {
+    choscordb_driver_api::LAYOUT_SAVE_DELAY_MILLISECONDS
+}
+
+pub fn tab_count_sample_milliseconds() -> u32 {
+    choscordb_driver_api::TAB_COUNT_SAMPLE_MILLISECONDS
+}
+
+pub fn pin_reveal_retry_milliseconds() -> u32 {
+    choscordb_driver_api::PIN_REVEAL_RETRY_MILLISECONDS
+}
+
+pub fn recovery_save_delay_milliseconds() -> u32 {
+    choscordb_driver_api::RECOVERY_SAVE_DELAY_MILLISECONDS
+}
+
+pub fn completion_delay_milliseconds() -> u32 {
+    choscordb_driver_api::COMPLETION_DELAY_MILLISECONDS
+}
+
+pub fn json_menu_retry_milliseconds() -> u32 {
+    choscordb_driver_api::JSON_MENU_RETRY_MILLISECONDS
+}
+
+pub fn trust_validity_poll_milliseconds() -> u32 {
+    choscordb_driver_api::TRUST_VALIDITY_POLL_MILLISECONDS
+}
+
+pub fn signal_coalesce_milliseconds() -> u32 {
+    choscordb_driver_api::SIGNAL_COALESCE_MILLISECONDS
+}
+
+pub fn startup_poll_milliseconds() -> u32 {
+    choscordb_driver_api::STARTUP_POLL_MILLISECONDS
+}
+
+pub fn history_page_rows() -> u32 {
+    choscordb_driver_api::HISTORY_PAGE_ROWS
+}
+
+pub fn recent_history_rows() -> u32 {
+    choscordb_driver_api::RECENT_HISTORY_ROWS
+}
+
 pub fn navigator_search_budget() -> ffi::NavigatorSearchBudgetDto {
     let budget = choscordb_driver_api::NAVIGATOR_SEARCH_BUDGET;
     ffi::NavigatorSearchBudgetDto {

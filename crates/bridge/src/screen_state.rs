@@ -23,9 +23,10 @@ fn unknown(what: &str, repr: u8) -> String {
 }
 
 fn presentation(shown: Presentation) -> ffi::PresentationDto {
-    let (has_toast, toast, toast_variant) = match shown.toast {
+    let (has_toast, toast_title, toast, toast_variant) = match shown.toast {
         Some(toast) => (
             true,
+            toast.title,
             toast.text,
             match toast.variant {
                 ToastVariant::Error => ffi::ToastVariantDto::Error,
@@ -33,7 +34,12 @@ fn presentation(shown: Presentation) -> ffi::PresentationDto {
                 ToastVariant::Warning => ffi::ToastVariantDto::Warning,
             },
         ),
-        None => (false, String::new(), ffi::ToastVariantDto::Error),
+        None => (
+            false,
+            String::new(),
+            String::new(),
+            ffi::ToastVariantDto::Error,
+        ),
     };
     ffi::PresentationDto {
         tone: match shown.tone {
@@ -60,6 +66,7 @@ fn presentation(shown: Presentation) -> ffi::PresentationDto {
         },
         message: shown.message,
         has_toast,
+        toast_title,
         toast,
         toast_variant,
     }
@@ -173,6 +180,9 @@ fn panel_kind(dto: ffi::PanelKindDto) -> Result<PanelKind, String> {
         D::ObjectDetails => PanelKind::ObjectDetails,
         D::Diagram => PanelKind::Diagram,
         D::QuickSearch => PanelKind::QuickSearch,
+        D::Connections => PanelKind::Connections,
+        D::Welcome => PanelKind::Welcome,
+        D::ObjectSelection => PanelKind::ObjectSelection,
         _ => return Err(unknown("panel kind", dto.repr)),
     })
 }
@@ -590,6 +600,7 @@ pub fn grid_edit_note(note: ffi::GridEditNoteDto) -> String {
         Dto::PlanUnfinished => Note::PlanUnfinished,
         Dto::SubmitFailed => Note::SubmitFailed,
         Dto::WorkspaceClosed => Note::WorkspaceClosed,
+        Dto::ReadOnly => Note::ReadOnly,
         _ => return format!("Unknown grid edit note {}.", note.repr),
     };
     grid_edit_machine::note(note).to_owned()
@@ -631,7 +642,7 @@ pub fn profile_operation_presentation(
         Dto::ConnectionClosed => Operation::ConnectionClosed,
         Dto::ProfileMissing => Operation::ProfileMissing,
         Dto::ListRefreshFailed => Operation::ListRefreshFailed,
-        _ => return invalid(format!("Unknown profile operation {}.", operation.repr)),
+        _ => return invalid(format!("Unknown connection operation {}.", operation.repr)),
     };
     presentation(present_operation(operation, detail))
 }

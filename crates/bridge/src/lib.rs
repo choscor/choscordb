@@ -92,11 +92,12 @@ use std::{
 pub use update::{
     RustUpdateSession, update_check_interval_seconds, update_consent_load,
     update_consent_load_legacy_ini, update_consent_load_native, update_consent_migrate,
-    update_consent_save, update_run_linux_helper, update_session_begin_check,
-    update_session_cancel, update_session_check, update_session_discard_staged,
-    update_session_download, update_session_install, update_session_new,
-    update_session_new_failure_fixture, update_session_progress,
-    update_take_windows_failure_marker, update_write_readiness,
+    update_consent_save, update_progress_poll_milliseconds, update_run_linux_helper,
+    update_session_begin_check, update_session_cancel, update_session_check,
+    update_session_discard_staged, update_session_download, update_session_install,
+    update_session_new, update_session_new_failure_fixture, update_session_progress,
+    update_startup_check_delay_milliseconds, update_take_windows_failure_marker,
+    update_write_readiness,
 };
 // SAFETY: cxx generates the unsafe ABI glue for this one declarative boundary. The bridge's
 // generated static assertions validate the shared layouts and signatures, while transport tests
@@ -703,6 +704,7 @@ pub mod ffi {
         retry: RowRetryDto,
         message: String,
         has_toast: bool,
+        toast_title: String,
         toast: String,
         toast_variant: ToastVariantDto,
     }
@@ -756,6 +758,9 @@ pub mod ffi {
         ObjectDetails,
         Diagram,
         QuickSearch,
+        Connections,
+        Welcome,
+        ObjectSelection,
     }
     #[derive(Debug)]
     enum PanelStateDto {
@@ -887,6 +892,7 @@ pub mod ffi {
         PlanUnfinished,
         SubmitFailed,
         WorkspaceClosed,
+        ReadOnly,
     }
     #[derive(Debug)]
     enum ProfileOperationDto {
@@ -1026,6 +1032,9 @@ pub mod ffi {
         history_height: u32,
         navigator_visible: bool,
         history_visible: bool,
+        sidebar_tab: u8,
+        result_column_names: Vec<String>,
+        result_column_widths: Vec<u32>,
         x: i32,
         y: i32,
         width: u32,
@@ -1372,6 +1381,8 @@ pub mod ffi {
     extern "Rust" {
         fn update_consent_load(directory: &str) -> UpdateConsentDto;
         fn update_check_interval_seconds() -> u64;
+        fn update_progress_poll_milliseconds() -> u32;
+        fn update_startup_check_delay_milliseconds() -> u32;
         fn update_consent_load_native(directory: &str) -> UpdateConsentDto;
         fn update_consent_load_legacy_ini(directory: &str, paths: Vec<String>) -> UpdateConsentDto;
         fn update_consent_migrate(
@@ -1521,6 +1532,9 @@ pub mod ffi {
         fn diagnostics_folder_path(service: &RustDiagnostics) -> String;
         fn diagnostics_warning(service: &RustDiagnostics) -> String;
         fn diagnostics_new_cancellation() -> Box<DiagnosticCancellation>;
+        fn diagnostics_watchdog_tick_milliseconds() -> u32;
+        fn diagnostics_hang_threshold_milliseconds() -> u32;
+        fn diagnostics_cancel_poll_milliseconds() -> u32;
         fn diagnostics_cancel(cancellation: &DiagnosticCancellation);
         fn diagnostics_attach_engine(engine: &mut BridgeEngine, service: &RustDiagnostics);
         fn diagnostics_observe_command_failure(service: &RustDiagnostics);
@@ -1599,6 +1613,18 @@ pub mod ffi {
         fn transaction_guard_policy(transaction_active: bool) -> TransactionGuardDto;
         fn row_status_policy(cause: RowStatusCauseDto, detail: &str) -> RowStatusDto;
         fn panel_notice_milliseconds() -> u32;
+        fn filter_delay_milliseconds() -> u32;
+        fn layout_save_delay_milliseconds() -> u32;
+        fn tab_count_sample_milliseconds() -> u32;
+        fn pin_reveal_retry_milliseconds() -> u32;
+        fn recovery_save_delay_milliseconds() -> u32;
+        fn completion_delay_milliseconds() -> u32;
+        fn json_menu_retry_milliseconds() -> u32;
+        fn trust_validity_poll_milliseconds() -> u32;
+        fn signal_coalesce_milliseconds() -> u32;
+        fn startup_poll_milliseconds() -> u32;
+        fn history_page_rows() -> u32;
+        fn recent_history_rows() -> u32;
         fn query_presentation(state: QueryStateDto, detail: &str) -> PresentationDto;
         fn query_transition(state: QueryStateDto, event: QueryEventDto) -> QueryTransitionDto;
         fn query_result_state(has_columns: bool, rows: u64) -> QueryStateDto;
@@ -1770,7 +1796,8 @@ pub mod ffi {
         fn profile_port_for_driver(port: u16, driver: &str) -> u16;
         fn profile_driver_form(driver: &str) -> ProfileDriverFormDto;
         fn profile_has_saved_credentials(profile: &ProfileDto) -> bool;
-        fn ssh_known_hosts_path_valid(path: &str) -> bool;
+        fn ssh_known_hosts_path_error(path: &str) -> String;
+        fn ssh_known_hosts_path_rule() -> String;
         fn ssh_private_key_text_error(text: &str) -> String;
         fn profile_secret_max_bytes() -> u32;
         fn profile_save_credentials(
@@ -2190,7 +2217,7 @@ pub fn execute_with_profile(
 ) -> ffi::Submit {
     submit(engine, |e| {
         if profile_id.len() > 256 {
-            return Err("Invalid profile identifier".into());
+            return Err("Invalid connection identifier".into());
         }
         e.execute_with_profile(
             unpack(connection),
@@ -2484,7 +2511,9 @@ pub fn release_page_lease(engine: &mut BridgeEngine, lease: u64) -> ffi::Submit 
             .lock()
             .map_err(|_| "Page lease table failed".to_string())?
             .remove(unpack(lease))
-            .ok_or_else(|| "Page lease is stale".to_string())?;
+            .ok_or_else(|| {
+                "The result page is no longer available. Run the query again.".to_string()
+            })?;
         Ok(lease)
     })
 }
@@ -2497,7 +2526,9 @@ pub fn shrink_page_lease(engine: &mut BridgeEngine, lease: u64, payload_bytes: u
             .lock()
             .map_err(|_| "Page lease table failed".to_string())?
             .get_mut(unpack(lease))
-            .ok_or_else(|| "Page lease is stale".to_string())?
+            .ok_or_else(|| {
+                "The result page is no longer available. Run the query again.".to_string()
+            })?
             .shrink_to(bytes)
             .map_err(|e| e.message)?;
         Ok(lease)
@@ -2673,7 +2704,7 @@ fn ssh_options(value: &str) -> std::result::Result<choscordb_driver_api::SshOpti
     let mut basic = options.clone();
     basic.connect_timeout_seconds = defaults.connect_timeout_seconds;
     if basic != defaults {
-        return Err("Advanced SSH tunnel settings are no longer supported".into());
+        return Err("Advanced SSH tunnel options are no longer supported".into());
     }
     Ok(options)
 }
@@ -2798,7 +2829,7 @@ fn profile_with_session_timeout(
                     .then_some(dto.root_certificate),
             },
         },
-        _ => return Err("Unknown profile driver".into()),
+        _ => return Err("Unknown connection driver".into()),
     };
     let mut profile = ConnectionProfile {
         id: dto.id,
@@ -2878,7 +2909,7 @@ fn profile_with_session_timeout(
     }
     profile
         .validate()
-        .map_err(|_| "Invalid profile".to_string())?;
+        .map_err(|_| "Invalid connection".to_string())?;
     Ok(profile)
 }
 pub fn profile_list(engine: &mut BridgeEngine, token: u64) -> ffi::Submit {
@@ -3694,8 +3725,14 @@ pub fn ssh_private_key_text_error(text: &str) -> String {
         .unwrap_or_default()
         .into()
 }
-pub fn ssh_known_hosts_path_valid(path: &str) -> bool {
-    choscordb_driver_api::validate_known_hosts_path(path).is_ok()
+pub fn ssh_known_hosts_path_rule() -> String {
+    choscordb_driver_api::KNOWN_HOSTS_PATH_RULE.into()
+}
+pub fn ssh_known_hosts_path_error(path: &str) -> String {
+    match choscordb_driver_api::validate_known_hosts_path(path) {
+        Ok(()) => String::new(),
+        Err(error) => error.message,
+    }
 }
 
 pub fn approve_ssh_host_key(

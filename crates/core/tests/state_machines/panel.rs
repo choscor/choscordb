@@ -1,5 +1,5 @@
 use choscordb_core::panel_machine::{PanelEvent, PanelKind, PanelState, present, step};
-use choscordb_driver_api::{Body, ToastVariant, Tone};
+use choscordb_driver_api::{Body, Tone};
 
 #[test]
 fn step_matches_the_spec_transition_table() {
@@ -15,7 +15,7 @@ fn presentation_matches_the_spec_table_for_every_panel() {
 }
 
 #[test]
-fn a_failed_load_shows_a_toast_and_a_placeholder_that_ends_with_a_hint() {
+fn a_failed_load_shows_only_a_placeholder_that_ends_with_a_hint() {
     let failed = present(PanelKind::History, &PanelState::Failed, "disk is full");
     assert_eq!(failed.tone, Tone::Error);
     assert_eq!(failed.body, Body::FailedPlaceholder);
@@ -23,9 +23,7 @@ fn a_failed_load_shows_a_toast_and_a_placeholder_that_ends_with_a_hint() {
         failed.message,
         "Could not load query history: disk is full. Retry from Query history."
     );
-    let toast = failed.toast.unwrap();
-    assert_eq!(toast.variant, ToastVariant::Error);
-    assert_eq!(toast.text, failed.message);
+    assert_eq!(failed.toast, None);
 }
 
 #[test]
@@ -55,6 +53,27 @@ fn empty_and_no_match_have_different_texts_for_each_collection() {
     for (kind, empty, no_match) in golden {
         assert_eq!(present(kind, &PanelState::Empty, "").message, empty);
         assert_eq!(present(kind, &PanelState::NoMatch, "").message, no_match);
+    }
+}
+
+#[test]
+fn screens_without_content_show_an_engine_owned_hint() {
+    let golden = [
+        (
+            PanelKind::Connections,
+            "No saved connections yet.\nUse + to add a database connection.",
+        ),
+        (
+            PanelKind::Welcome,
+            "Welcome to ChoscorDB\nSelect a connection in the sidebar or create a new one.",
+        ),
+        (
+            PanelKind::ObjectSelection,
+            "Select a table or view in the sidebar to inspect it.",
+        ),
+    ];
+    for (kind, empty) in golden {
+        assert_eq!(present(kind, &PanelState::Empty, "").message, empty);
     }
 }
 
@@ -91,20 +110,33 @@ fn a_disconnected_panel_keeps_the_caller_context_or_uses_the_panel_text() {
     );
     assert_eq!(
         present(PanelKind::Diagram, &PanelState::Disconnected, "").message,
-        "Disconnected. Reconnect to load the diagram."
+        "Connection lost.\nReconnect to load the diagram."
+    );
+    assert_eq!(
+        present(PanelKind::ObjectDetails, &PanelState::Disconnected, "").message,
+        "Connection lost.\nReconnect to load this object."
+    );
+    assert_eq!(
+        present(PanelKind::Objects, &PanelState::Disconnected, "").message,
+        "No connection selected.\nSelect a connection to browse its schemas and objects."
     );
 }
 
 #[test]
-fn quick_search_loading_says_searching_and_other_panels_say_loading() {
-    assert_eq!(
-        present(PanelKind::QuickSearch, &PanelState::Loading, "").message,
-        "Searching…"
-    );
-    assert_eq!(
-        present(PanelKind::History, &PanelState::Loading, "").message,
-        "Loading…"
-    );
+fn each_panel_names_what_it_loads() {
+    let golden = [
+        (PanelKind::QuickSearch, "Searching…"),
+        (PanelKind::History, "Loading query history…"),
+        (PanelKind::SavedSql, "Loading saved queries…"),
+        (PanelKind::Pins, "Loading pinned objects…"),
+        (PanelKind::Objects, "Loading objects…"),
+        (PanelKind::Diagram, "Loading the diagram…"),
+    ];
+    for (kind, loading) in golden {
+        let shown = present(kind, &PanelState::Loading, "");
+        assert_eq!(shown.message, loading);
+        assert!(shown.busy);
+    }
 }
 
 #[test]
@@ -185,7 +217,7 @@ fn panel_facts_choose_the_detail_for_work_and_paged_views() {
             work: Some(PanelWork::Loading),
             ..loaded
         }),
-        "Loading…"
+        "Loading query history…"
     );
     assert_eq!(
         message(PanelFacts {

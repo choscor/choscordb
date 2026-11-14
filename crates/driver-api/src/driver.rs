@@ -255,7 +255,7 @@ pub trait Connection: Send {
             if self.transaction_state().await? != Some(false) {
                 return Err(DriverError::new(
                     ErrorKind::Unsupported,
-                    "SQL keepalive requires a session without a pending transaction",
+                    "SQL keepalive requires a connection without a pending transaction",
                 ));
             }
             let mut cursor = self

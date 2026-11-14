@@ -54,8 +54,9 @@ pub use choscordb_storage::{
     MAX_EDITOR_FONT_SIZE, MAX_FONT_FAMILY_BYTES, MAX_QUERY_TIMEOUT_SECONDS, MAX_SCREEN_NAME_BYTES,
     MAX_SHORTCUT_SEQUENCE_BYTES, MAX_SQL_BYTES, MAX_WINDOW_DIMENSION, MAX_WORKSPACE_DOCUMENTS,
     MIN_EDITOR_FONT_SIZE, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, ObjectTab, PostgresTls,
-    ProfileConfiguration, QUERY_PREFERENCES_VERSION, QueryPreferences, ShortcutCommand,
-    ShortcutOverride, ThemeMode, WindowGeometry, WorkspaceLayout, WorkspaceSnapshot, WorkspaceTab,
+    ProfileConfiguration, QUERY_PREFERENCES_VERSION, QueryPreferences, ResultColumnWidth,
+    ShortcutCommand, ShortcutOverride, SidebarTab, ThemeMode, WindowGeometry, WorkspaceLayout,
+    WorkspaceSnapshot, WorkspaceTab,
 };
 mod store;
 use choscordb_diagnostics::{EngineBoundaryEvent, Service as DiagnosticsService};

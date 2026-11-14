@@ -29,7 +29,7 @@ pub struct SocksProxy {
 fn invalid() -> DriverError {
     DriverError::new(
         ErrorKind::InvalidInput,
-        "Invalid SOCKS proxy settings or destination",
+        "Invalid SOCKS proxy options or destination",
     )
 }
 impl SocksProxy {

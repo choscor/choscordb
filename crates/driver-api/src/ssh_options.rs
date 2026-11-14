@@ -64,7 +64,7 @@ impl SshTunnel {
         {
             return Err(DriverError::new(
                 ErrorKind::InvalidInput,
-                "Invalid SSH tunnel settings",
+                "Invalid SSH tunnel options",
             ));
         }
         Ok(())
@@ -231,7 +231,7 @@ impl SshOptions {
         self == &Self::default()
     }
     pub fn validate(&self) -> Result<()> {
-        let invalid = || DriverError::new(ErrorKind::InvalidInput, "Invalid advanced SSH settings");
+        let invalid = || DriverError::new(ErrorKind::InvalidInput, "Invalid advanced SSH options");
         self.local_address()?;
         if !(1..=300).contains(&self.connect_timeout_seconds)
             || self.server_alive_interval_seconds > 86_400
@@ -320,7 +320,7 @@ pub(crate) fn configure_ssh_transport(
     }) {
         return Err(DriverError::new(
             ErrorKind::InvalidInput,
-            "Independent SSH hop settings require isolated forwarding",
+            "Independent SSH hop options require isolated forwarding",
         ));
     }
     command.args([

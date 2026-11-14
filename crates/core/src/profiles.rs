@@ -155,7 +155,7 @@ pub(crate) fn start(
                             if recovery {
                                 "Could not open local workspace storage"
                             } else {
-                                "Could not open local profile storage"
+                                "Could not open local connection storage"
                             },
                         );
                         if let Command::Resolve(_, reply) = command {
@@ -195,10 +195,15 @@ fn credential_error(error: choscordb_credentials::CredentialError) -> DriverErro
 }
 fn storage_error(error: StorageError) -> DriverError {
     let (kind, message) = match error {
-        StorageError::InvalidProfile => (ErrorKind::InvalidInput, "Profile fields are invalid"),
-        StorageError::ResourceLimit => (ErrorKind::ResourceLimit, "Profile storage limit reached"),
-        StorageError::ProfileMissing => (ErrorKind::StaleHandle, "Profile no longer exists"),
-        _ => (ErrorKind::Io, "Could not complete local profile operation"),
+        StorageError::InvalidProfile => (ErrorKind::InvalidInput, "Connection fields are invalid"),
+        StorageError::ResourceLimit => {
+            (ErrorKind::ResourceLimit, "Connection storage limit reached")
+        }
+        StorageError::ProfileMissing => (ErrorKind::StaleHandle, "Connection no longer exists"),
+        _ => (
+            ErrorKind::Io,
+            "Could not complete local connection operation",
+        ),
     };
     DriverError::new(kind, message)
 }
@@ -240,7 +245,7 @@ fn cleanup(storage: &mut Storage, credentials: &dyn CredentialStore) -> Result<(
     if failed {
         Err(DriverError::new(
             ErrorKind::Io,
-            "Saved profile changes, but credential cleanup is pending",
+            "Saved connection changes, but credential cleanup is pending",
         ))
     } else {
         Ok(())
@@ -408,7 +413,7 @@ fn execute(
             }
             let warning = cleanup(storage, credentials)
                 .err()
-                .map(|_| "Profile saved; credential cleanup will be retried".into());
+                .map(|_| "Connection saved; credential cleanup will be retried".into());
             Ok(Event::ProfileSaved {
                 request_token,
                 profile,
@@ -428,7 +433,7 @@ fn execute(
             storage.delete_profile(&id).map_err(storage_error)?;
             let warning = cleanup(storage, credentials)
                 .err()
-                .map(|_| "Profile deleted; credential cleanup will be retried".into());
+                .map(|_| "Connection deleted; credential cleanup will be retried".into());
             Ok(Event::ProfileDeleted {
                 request_token,
                 id,
@@ -1295,7 +1300,7 @@ fn acquire_lock<'a>(
             Err(_) => {
                 return Err(DriverError::new(
                     ErrorKind::Io,
-                    "Could not lock profile credentials",
+                    "Could not lock connection credentials",
                 ));
             }
         }

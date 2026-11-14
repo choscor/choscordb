@@ -33,7 +33,7 @@ pub enum SubmitError {
     InvalidInput,
     #[error("too many pending requests; retry after pending requests finish")]
     QueueFull,
-    #[error("handle is stale")]
+    #[error("The result is no longer available. Run the query again.")]
     StaleHandle,
     #[error("connection is disconnected")]
     Disconnected,

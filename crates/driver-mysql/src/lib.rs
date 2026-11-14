@@ -194,7 +194,7 @@ fn normalize(e: mysql_async::Error) -> DriverError {
         }
         _ => error(
             ErrorKind::Connection,
-            "MySQL communication failed; check server, network, and TLS settings",
+            "Could not communicate with MySQL. Check the server, the network and the TLS options.",
         ),
     }
 }
@@ -320,7 +320,7 @@ async fn connect_native(
     {
         return Err(error(
             ErrorKind::InvalidInput,
-            "Invalid MySQL connection settings",
+            "Invalid MySQL connection options",
         ));
     }
     if let Some(proxy) = &proxy {

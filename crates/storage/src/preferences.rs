@@ -33,9 +33,14 @@ pub enum ShortcutCommand {
     GridEditCell,
     GridApplyEdits,
     GridDiscardEdits,
+    CloseTab,
+    EditorTabs,
+    MinimizeWindow,
+    Refresh,
+    ToggleSidebar,
 }
 impl ShortcutCommand {
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 28] = [
         Self::NewQuery,
         Self::ChoscorDBFile,
         Self::SaveSqlFile,
@@ -59,6 +64,11 @@ impl ShortcutCommand {
         Self::GridEditCell,
         Self::GridApplyEdits,
         Self::GridDiscardEdits,
+        Self::CloseTab,
+        Self::EditorTabs,
+        Self::MinimizeWindow,
+        Self::Refresh,
+        Self::ToggleSidebar,
     ];
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

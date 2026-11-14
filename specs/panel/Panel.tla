@@ -32,7 +32,7 @@ Body(s) == CASE s \in {"Ready", "Incomplete"} -> "Content"
              [] s = "NoMatch" -> "NoMatch"
              [] s = "Failed" -> "FailedPlaceholder"
              [] OTHER -> "None"
-Toast(s) == s = "Failed"
+Toast(s) == FALSE
 Presentation == {<<s, Tone(s), Busy(s), Body(s), "Unchanged", Toast(s)>> : s \in States}
 
 VARIABLES state, failed
@@ -51,7 +51,7 @@ Spec == Init /\ [][Next]_vars /\ WF_vars(Finish)
 EmptyNeverFailed == ~(Body(state) = "Empty" /\ Tone(state) = "Error")
 BusyNeutral == Busy(state) => Tone(state) = "Neutral"
 FailureNeverShowsEmpty == failed => state = "Failed" /\ Body(state) = "FailedPlaceholder"
-FailureShowsToast == state = "Failed" => Toast(state)
+OutcomeHasOneLocation == ~Toast(state)
 NoMatchIsNotEmpty == state = "NoMatch" => Body(state) # "Empty"
 LoadingEnds == state = "Loading" ~> state # "Loading"
 ====

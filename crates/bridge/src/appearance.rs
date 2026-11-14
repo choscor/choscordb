@@ -1,5 +1,7 @@
 use crate::{BridgeEngine, ffi, submit};
-use choscordb_core::{AppearanceLayout, ThemeMode, WindowGeometry, WorkspaceLayout};
+use choscordb_core::{
+    AppearanceLayout, ResultColumnWidth, SidebarTab, ThemeMode, WindowGeometry, WorkspaceLayout,
+};
 
 fn theme(value: &str) -> Result<ThemeMode, String> {
     ThemeMode::parse_choice(value).ok_or_else(|| "Unknown appearance theme".into())
@@ -14,6 +16,12 @@ pub fn appearance_theme_valid(value: &str) -> bool {
 }
 
 pub(crate) fn dto(value: AppearanceLayout) -> ffi::AppearanceLayoutDto {
+    let (result_column_names, result_column_widths) = value
+        .layout
+        .result_column_widths
+        .into_iter()
+        .map(|column| (column.name, column.width))
+        .unzip();
     ffi::AppearanceLayoutDto {
         version: value.version,
         theme: match value.theme {
@@ -27,6 +35,13 @@ pub(crate) fn dto(value: AppearanceLayout) -> ffi::AppearanceLayoutDto {
         history_height: value.layout.history_height,
         navigator_visible: value.layout.navigator_visible,
         history_visible: value.layout.history_visible,
+        sidebar_tab: match value.layout.sidebar_tab {
+            SidebarTab::Connections => 0,
+            SidebarTab::SavedQueries => 1,
+            SidebarTab::QueryHistory => 2,
+        },
+        result_column_names,
+        result_column_widths,
         x: value.geometry.x,
         y: value.geometry.y,
         width: value.geometry.width,
@@ -38,6 +53,9 @@ pub(crate) fn dto(value: AppearanceLayout) -> ffi::AppearanceLayoutDto {
 }
 
 fn model(value: ffi::AppearanceLayoutDto) -> Result<AppearanceLayout, String> {
+    if value.result_column_names.len() != value.result_column_widths.len() {
+        return Err("Result column names and widths do not match".into());
+    }
     Ok(AppearanceLayout {
         version: value.version,
         theme: theme(&value.theme)?,
@@ -47,6 +65,18 @@ fn model(value: ffi::AppearanceLayoutDto) -> Result<AppearanceLayout, String> {
             history_height: value.history_height,
             navigator_visible: value.navigator_visible,
             history_visible: value.history_visible,
+            sidebar_tab: match value.sidebar_tab {
+                0 => SidebarTab::Connections,
+                1 => SidebarTab::SavedQueries,
+                2 => SidebarTab::QueryHistory,
+                _ => return Err("Unknown sidebar tab".into()),
+            },
+            result_column_widths: ResultColumnWidth::remembered(
+                value
+                    .result_column_names
+                    .into_iter()
+                    .zip(value.result_column_widths),
+            ),
         },
         geometry: WindowGeometry {
             x: value.x,

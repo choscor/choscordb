@@ -47,7 +47,7 @@ pub(crate) fn key(
         &serde_json::to_vec(&settings).map_err(|_| {
             crate::DriverError::new(
                 crate::ErrorKind::InvalidInput,
-                "Invalid SSH sharing settings",
+                "Invalid SSH sharing options",
             )
         })?,
     );

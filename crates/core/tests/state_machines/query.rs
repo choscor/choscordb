@@ -44,10 +44,7 @@ fn a_failed_query_is_a_result_in_the_messages_pane_without_a_toast() {
     assert_eq!(failed.pane, Pane::Messages);
     assert_ne!(failed.body, Body::Empty);
     assert_eq!(failed.toast, None);
-    assert_eq!(
-        failed.message,
-        "Failed: syntax error near FROM. Retry the query."
-    );
+    assert_eq!(failed.message, "Failed. Retry the query.");
 }
 
 #[test]

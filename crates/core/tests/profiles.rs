@@ -89,6 +89,13 @@ fn initialization_failure_is_async_and_redacted() {
             error,
         } => {
             assert!(!error.message.contains(&dir.path().display().to_string()));
+            assert!(
+                error
+                    .message
+                    .starts_with("Could not open local connection storage"),
+                "{}",
+                error.message
+            );
             assert_eq!(error.kind, choscordb_driver_api::ErrorKind::Io);
         }
         other => panic!("unexpected {other:?}"),
@@ -150,4 +157,27 @@ fn invalid_profiles_are_rejected_before_queueing() {
         engine.profile_delete("x".repeat(65537), 2),
         Err(choscordb_core::SubmitError::ResourceLimit)
     );
+}
+
+#[test]
+fn a_missing_connection_error_names_the_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = Engine::new(
+        EngineConfig {
+            storage_path: Some(dir.path().join("meta.sqlite")),
+            ..Default::default()
+        },
+        vec![],
+    )
+    .unwrap();
+    engine
+        .profile_duplicate("missing".into(), "copy".into(), "Copy".into(), 7)
+        .unwrap();
+    match event(&mut engine) {
+        Event::ProfileFailed {
+            request_token: 7,
+            error,
+        } => assert_eq!(error.message, "Connection no longer exists"),
+        other => panic!("unexpected {other:?}"),
+    }
 }

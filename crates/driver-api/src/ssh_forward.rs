@@ -34,7 +34,7 @@ pub fn validate_ssh_chain_authentication_with_keys(
     if settings.options.share_tunnels && !cfg!(unix) {
         return Err(DriverError::new(
             ErrorKind::Unsupported,
-            "SSH session sharing requires private Unix control sockets",
+            "SSH connection sharing requires private Unix control sockets",
         ));
     }
     crate::ssh_identity::validate(settings.identity_source, private_key)?;

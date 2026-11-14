@@ -170,7 +170,7 @@ pub fn present(state: &QueryState, detail: &str) -> Presentation {
         S::Failed => Presentation {
             body: Body::None,
             pane: Pane::Messages,
-            ..Presentation::failed("Failed", detail, RecoveryHint::RetryQuery)
+            ..Presentation::failed("Failed", "", RecoveryHint::RetryQuery)
         },
         S::Cancelled => Presentation::idle(detail_or(detail, "Cancelled")),
         S::Disconnected => Presentation::idle(detail_or(

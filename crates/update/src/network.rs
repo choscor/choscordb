@@ -19,7 +19,7 @@ pub enum NetworkError {
     FeedPolicy,
     #[error("The update feed is unavailable. Please try again later.")]
     FeedUnavailable,
-    #[error("Download failed. Please try again.")]
+    #[error("Could not download the update. Try again.")]
     DownloadFailed,
     #[error("Update download was cancelled")]
     Cancelled,

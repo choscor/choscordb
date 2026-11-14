@@ -154,6 +154,7 @@ pub enum GridEditNote {
     PlanUnfinished,
     SubmitFailed,
     WorkspaceClosed,
+    ReadOnly,
 }
 
 pub fn note(note: GridEditNote) -> &'static str {
@@ -161,5 +162,6 @@ pub fn note(note: GridEditNote) -> &'static str {
         GridEditNote::PlanUnfinished => "The change check did not finish.",
         GridEditNote::SubmitFailed => "The changes could not be submitted.",
         GridEditNote::WorkspaceClosed => "The workspace closed.",
+        GridEditNote::ReadOnly => "This result is read only.",
     }
 }

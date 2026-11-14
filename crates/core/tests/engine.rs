@@ -404,3 +404,11 @@ fn full_command_queues_tell_the_user_to_retry() {
         "{message}"
     );
 }
+
+#[test]
+fn a_stale_handle_error_uses_user_words() {
+    assert_eq!(
+        choscordb_core::SubmitError::StaleHandle.to_string(),
+        "The result is no longer available. Run the query again."
+    );
+}

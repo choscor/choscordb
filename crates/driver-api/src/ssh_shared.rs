@@ -28,7 +28,10 @@ pub(crate) struct Master {
     user: String,
 }
 fn failure() -> DriverError {
-    DriverError::new(ErrorKind::Connection, "Cannot establish shared SSH session")
+    DriverError::new(
+        ErrorKind::Connection,
+        "Could not establish a shared SSH connection",
+    )
 }
 impl Master {
     fn path(&self) -> std::path::PathBuf {
@@ -81,7 +84,7 @@ pub(crate) async fn acquire(
     if !cfg!(unix) {
         return Err(DriverError::new(
             ErrorKind::Unsupported,
-            "SSH session sharing requires private Unix control sockets",
+            "SSH connection sharing requires private Unix control sockets",
         ));
     }
     let slot = {
@@ -96,7 +99,7 @@ pub(crate) async fn acquire(
             if pool.len() >= 128 {
                 return Err(DriverError::new(
                     ErrorKind::ResourceLimit,
-                    "SSH shared session limit reached",
+                    "SSH shared connection limit reached",
                 ));
             }
             let slot = Arc::new(tokio::sync::Mutex::new(Weak::new()));
@@ -111,7 +114,10 @@ pub(crate) async fn acquire(
         return Ok(master);
     }
     let admission = MASTERS.try_acquire().map_err(|_| {
-        DriverError::new(ErrorKind::ResourceLimit, "SSH shared session limit reached")
+        DriverError::new(
+            ErrorKind::ResourceLimit,
+            "SSH shared connection limit reached",
+        )
     })?;
     let mut target = destinations.pop().ok_or_else(failure)?;
     let route = if destinations.is_empty() {

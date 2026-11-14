@@ -17,7 +17,7 @@ fn error(error: StoreError) -> DriverError {
             ErrorKind::Io
         },
         format!(
-            "Original result storage failed: {error}. SQL was already executed; do not retry a write automatically."
+            "Could not store the original result: {error}. SQL was already executed; do not retry a write automatically."
         ),
     )
 }

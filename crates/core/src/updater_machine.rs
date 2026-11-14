@@ -113,8 +113,7 @@ pub fn present(state: &UpdaterState, detail: &str) -> Presentation {
         S::Installing => Presentation::busy(detail_or(detail, "Installing the update…")),
         S::Cancelling => Presentation::busy(detail_or(detail, "Cancelling the update…")),
         S::Cancelled => Presentation::idle(detail_or(detail, "Update cancelled.")),
-        S::Failed => {
-            Presentation::failed("Update failed", detail, RecoveryHint::Retry).with_error_toast()
-        }
+        S::Failed => Presentation::failed("Update failed", detail, RecoveryHint::Retry)
+            .with_error_toast("Update failed"),
     }
 }

@@ -9,6 +9,9 @@ pub enum PanelKind {
     ObjectDetails,
     Diagram,
     QuickSearch,
+    Connections,
+    Welcome,
+    ObjectSelection,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,7 +41,7 @@ pub enum PanelEvent {
 }
 
 impl PanelKind {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 10] = [
         Self::SavedSql,
         Self::History,
         Self::Pins,
@@ -46,6 +49,9 @@ impl PanelKind {
         Self::ObjectDetails,
         Self::Diagram,
         Self::QuickSearch,
+        Self::Connections,
+        Self::Welcome,
+        Self::ObjectSelection,
     ];
 }
 
@@ -115,7 +121,7 @@ fn texts(kind: PanelKind) -> Texts {
     match kind {
         PanelKind::SavedSql => Texts {
             subject: "saved queries",
-            loading: "Loading…",
+            loading: "Loading saved queries…",
             empty: "No saved queries yet.\nSave a query as a SQL file in the default folder to find it here.",
             no_match: "No matching saved queries.\nTry a different filter or clear the search.",
             disconnected: "No saved queries yet.\nSave a query as a SQL file in the default folder to find it here.",
@@ -123,7 +129,7 @@ fn texts(kind: PanelKind) -> Texts {
         },
         PanelKind::History => Texts {
             subject: "query history",
-            loading: "Loading…",
+            loading: "Loading query history…",
             empty: "No query history yet.\nRun a query to see it here.",
             no_match: "No matching query history.\nTry a different filter or clear the search.",
             disconnected: "No query history yet.\nRun a query to see it here.",
@@ -131,7 +137,7 @@ fn texts(kind: PanelKind) -> Texts {
         },
         PanelKind::Pins => Texts {
             subject: "pinned objects",
-            loading: "Loading…",
+            loading: "Loading pinned objects…",
             empty: "No pinned objects yet.\nPin a schema or object from its menu.",
             no_match: "No matching pinned objects.\nTry a different filter or clear the search.",
             disconnected: "No pinned objects yet.\nPin a schema or object from its menu.",
@@ -139,26 +145,26 @@ fn texts(kind: PanelKind) -> Texts {
         },
         PanelKind::Objects => Texts {
             subject: "objects",
-            loading: "Loading…",
+            loading: "Loading objects…",
             empty: "No objects to show.\nRefresh to check for schemas and objects.",
             no_match: "No matching objects.\nTry a different filter or clear the search.",
-            disconnected: "No database selected.\nSelect a connection to browse its schemas and objects.",
+            disconnected: "No connection selected.\nSelect a connection to browse its schemas and objects.",
             hint: RecoveryHint::RefreshNavigator,
         },
         PanelKind::ObjectDetails => Texts {
             subject: "object details",
-            loading: "Loading…",
+            loading: "Loading object details…",
             empty: "No details for this object.",
             no_match: FILTER,
-            disconnected: "Disconnected. Reconnect to load object details.",
+            disconnected: "Connection lost.\nReconnect to load this object.",
             hint: RecoveryHint::ReconnectAndRefresh,
         },
         PanelKind::Diagram => Texts {
             subject: "the diagram",
-            loading: "Loading…",
+            loading: "Loading the diagram…",
             empty: "No foreign-key relationships.",
             no_match: FILTER,
-            disconnected: "Disconnected. Reconnect to load the diagram.",
+            disconnected: "Connection lost.\nReconnect to load the diagram.",
             hint: RecoveryHint::ReconnectAndRefresh,
         },
         PanelKind::QuickSearch => Texts {
@@ -168,6 +174,30 @@ fn texts(kind: PanelKind) -> Texts {
             no_match: "No results. Try another search.",
             disconnected: "Connect to search database objects.",
             hint: RecoveryHint::RefineOrRetry,
+        },
+        PanelKind::Connections => Texts {
+            subject: "saved connections",
+            loading: "Loading saved connections…",
+            empty: "No saved connections yet.\nUse + to add a database connection.",
+            no_match: "No matching connections.\nTry a different filter or clear the search.",
+            disconnected: "No saved connections yet.\nUse + to add a database connection.",
+            hint: RecoveryHint::Refresh,
+        },
+        PanelKind::Welcome => Texts {
+            subject: "the start screen",
+            loading: "Loading…",
+            empty: "Welcome to ChoscorDB\nSelect a connection in the sidebar or create a new one.",
+            no_match: FILTER,
+            disconnected: "Welcome to ChoscorDB\nSelect a connection in the sidebar or create a new one.",
+            hint: RecoveryHint::Refresh,
+        },
+        PanelKind::ObjectSelection => Texts {
+            subject: "the object",
+            loading: "Loading…",
+            empty: "Select a table or view in the sidebar to inspect it.",
+            no_match: FILTER,
+            disconnected: "Select a table or view in the sidebar to inspect it.",
+            hint: RecoveryHint::RefreshNavigator,
         },
     }
 }
@@ -189,8 +219,7 @@ pub fn present(kind: PanelKind, state: &PanelState, detail: &str) -> Presentatio
             &format!("Could not load {}", texts.subject),
             detail,
             texts.hint,
-        )
-        .with_error_toast(),
+        ),
         S::Disconnected => {
             Presentation::idle(detail_or(detail, texts.disconnected)).with_body(Body::Empty)
         }

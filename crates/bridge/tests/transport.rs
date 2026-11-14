@@ -650,8 +650,11 @@ fn appearance_transport_preserves_typed_values_missing_and_reset() {
         navigator_width: 312,
         editor_results_split: 575,
         history_height: 244,
-        navigator_visible: true,
+        navigator_visible: false,
         history_visible: true,
+        sidebar_tab: 2,
+        result_column_names: vec!["customer_name".into(), String::new()],
+        result_column_widths: vec![240, 120],
         x: -720,
         y: 48,
         width: 1440,
@@ -669,6 +672,37 @@ fn appearance_transport_preserves_typed_values_missing_and_reset() {
     assert_eq!(saved.appearance_layout.editor_results_split, 575);
     assert_eq!(saved.appearance_layout.x, -720);
     assert_eq!(saved.appearance_layout.screen_name, "Left display");
+    assert!(!saved.appearance_layout.navigator_visible);
+    assert_eq!(saved.appearance_layout.sidebar_tab, 2);
+    assert_eq!(
+        saved.appearance_layout.result_column_names,
+        vec!["customer_name".to_owned()]
+    );
+    assert_eq!(saved.appearance_layout.result_column_widths, vec![240]);
+    let mismatched_widths = ffi::AppearanceLayoutDto {
+        version: 2,
+        theme: "dark".into(),
+        navigator_width: 312,
+        editor_results_split: 575,
+        history_height: 244,
+        result_column_names: vec!["id".into()],
+        width: 1440,
+        height: 960,
+        ..Default::default()
+    };
+    assert!(!appearance_layout_set(&mut engine, mismatched_widths, 905).accepted);
+    let unknown_tab = ffi::AppearanceLayoutDto {
+        version: 2,
+        theme: "dark".into(),
+        navigator_width: 312,
+        editor_results_split: 575,
+        history_height: 244,
+        sidebar_tab: 3,
+        width: 1440,
+        height: 960,
+        ..Default::default()
+    };
+    assert!(!appearance_layout_set(&mut engine, unknown_tab, 904).accepted);
 
     let invalid = ffi::AppearanceLayoutDto {
         version: 2,
@@ -1211,7 +1245,7 @@ fn query_presentation_and_transition_are_typed() {
     assert!(failed.tone == ffi::ToneDto::Error);
     assert!(failed.pane == ffi::PaneDto::Messages);
     assert!(!failed.has_toast);
-    assert_eq!(failed.message, "Failed: syntax error. Retry the query.");
+    assert_eq!(failed.message, "Failed. Retry the query.");
     let running = query_presentation(ffi::QueryStateDto::Running, "");
     assert!(running.busy && running.tone == ffi::ToneDto::Neutral);
     let kept = query_transition(ffi::QueryStateDto::Failed, ffi::QueryEventDto::Disconnect);
@@ -1236,16 +1270,16 @@ fn query_presentation_and_transition_are_typed() {
 }
 
 #[test]
-fn panel_presentation_carries_the_toast_and_the_placeholder() {
+fn a_failed_panel_shows_its_error_only_in_the_placeholder() {
     let failed = panel_presentation(
         ffi::PanelKindDto::SavedSql,
         ffi::PanelStateDto::Failed,
         "permission denied",
     );
     assert!(failed.body == ffi::BodyDto::FailedPlaceholder);
-    assert!(failed.has_toast);
+    assert!(!failed.has_toast);
     assert_eq!(
-        failed.toast,
+        failed.message,
         "Could not load saved queries: permission denied. Refresh to retry."
     );
     let missed = panel_transition(ffi::PanelStateDto::Ready, ffi::PanelEventDto::FilterMissed);
@@ -1320,6 +1354,20 @@ fn row_status_policy_carries_kind_retry_and_message() {
     assert!(saved.kind == ffi::RowStatusKindDto::Failed);
     assert!(saved.message.starts_with("Showing saved children."));
     assert_eq!(panel_notice_milliseconds(), 6_000);
+    assert_eq!(filter_delay_milliseconds(), 150);
+    assert_eq!(layout_save_delay_milliseconds(), 300);
+    assert_eq!(tab_count_sample_milliseconds(), 1_000);
+    assert_eq!(pin_reveal_retry_milliseconds(), 50);
+    assert_eq!(recovery_save_delay_milliseconds(), 350);
+    assert_eq!(completion_delay_milliseconds(), 60);
+    assert_eq!(json_menu_retry_milliseconds(), 20);
+    assert_eq!(trust_validity_poll_milliseconds(), 50);
+    assert_eq!(update_progress_poll_milliseconds(), 50);
+    assert_eq!(update_startup_check_delay_milliseconds(), 5_000);
+    assert_eq!(signal_coalesce_milliseconds(), 200);
+    assert_eq!(startup_poll_milliseconds(), 10);
+    assert_eq!(history_page_rows(), 100);
+    assert_eq!(recent_history_rows(), 50);
     assert_eq!(
         recovery_hint_text(ffi::RecoveryHintDto::RefineOrRetry),
         "Refine the text or retry."

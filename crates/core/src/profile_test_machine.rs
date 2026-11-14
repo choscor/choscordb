@@ -82,7 +82,7 @@ pub fn present(state: &ProfileTestState, detail: &str) -> Presentation {
         S::Testing => Presentation::busy(detail_or(detail, "Testing the connection…")),
         S::Succeeded => Presentation::idle(detail_or(detail, "Connection test succeeded."))
             .with_tone(Tone::Success)
-            .with_toast(ToastVariant::Success),
+            .with_toast(ToastVariant::Success, "Connection test succeeded"),
         S::Failed => Presentation {
             body: Body::None,
             ..Presentation::failed(
@@ -117,7 +117,7 @@ pub fn ssh_trust_note(note: SshTrustNote) -> String {
     match note {
         SshTrustNote::Inspecting => "Inspecting SSH host keys…".to_owned(),
         SshTrustNote::SettingsChanged => {
-            "Connection settings changed. Inspect the host keys again.".to_owned()
+            "The connection profile changed. Inspect the host keys again.".to_owned()
         }
         SshTrustNote::NoHostKeys => "No SSH host keys were returned.".to_owned(),
         SshTrustNote::KeysInspected => {
@@ -125,7 +125,7 @@ pub fn ssh_trust_note(note: SshTrustNote) -> String {
         }
         SshTrustNote::ApprovalUnknown => "SSH host key approval outcome is unknown.".to_owned(),
         SshTrustNote::ApprovalStale => format!(
-            "The approval request finished for the previous settings. {}",
+            "The approval request finished for the previous connection values. {}",
             recovery_hint(RecoveryHint::InspectSshServer)
         ),
     }
@@ -152,15 +152,15 @@ pub enum ProfileOperation {
 pub fn present_operation(operation: ProfileOperation, detail: &str) -> Presentation {
     use ProfileOperation as O;
     match operation {
-        O::Loading => Presentation::busy("Loading profiles…"),
-        O::Saving => Presentation::busy("Saving profile…"),
-        O::Duplicating => Presentation::busy("Duplicating profile…"),
-        O::Deleting => Presentation::busy("Deleting profile…"),
+        O::Loading => Presentation::busy("Loading connections…"),
+        O::Saving => Presentation::busy("Saving connection…"),
+        O::Duplicating => Presentation::busy("Duplicating connection…"),
+        O::Deleting => Presentation::busy("Deleting connection…"),
         O::Connecting => Presentation::busy("Connecting…"),
         O::Listed => Presentation::idle(""),
-        O::Saved => finished("Profile saved.", detail),
-        O::Deleted => finished("Profile deleted.", detail),
-        O::Connected => finished("Connected.", ""),
+        O::Saved => finished("Connection saved", detail),
+        O::Deleted => finished("Connection deleted", detail),
+        O::Connected => finished("Connected", ""),
         O::Failed => Presentation::idle(detail.trim()).with_tone(Tone::Error),
         O::ConnectUnsubmitted => {
             Presentation::idle("Connection could not be submitted.").with_tone(Tone::Error)
@@ -171,11 +171,11 @@ pub fn present_operation(operation: ProfileOperation, detail: &str) -> Presentat
         ))
         .with_tone(Tone::Error),
         O::ProfileMissing => Presentation::idle(
-            "The saved profile is no longer available. Refresh the profile list.",
+            "The saved connection is no longer available. Refresh the connection list.",
         )
         .with_tone(Tone::Error),
         O::ListRefreshFailed => Presentation::idle(format!(
-            "The change is stored, but the profile list could not refresh: {}. {}",
+            "The change is stored, but the connection list could not refresh: {}. {}",
             detail.trim().trim_end_matches('.'),
             recovery_hint(RecoveryHint::Refresh)
         ))
@@ -183,13 +183,13 @@ pub fn present_operation(operation: ProfileOperation, detail: &str) -> Presentat
     }
 }
 
-fn finished(done: &str, warning: &str) -> Presentation {
+fn finished(title: &str, warning: &str) -> Presentation {
     let warning = warning.trim();
     if warning.is_empty() {
-        Presentation::idle(done)
+        Presentation::idle(format!("{title}."))
             .with_tone(Tone::Success)
-            .with_toast(ToastVariant::Success)
+            .with_toast(ToastVariant::Success, title)
     } else {
-        Presentation::idle(format!("{done} {warning}")).with_toast(ToastVariant::Warning)
+        Presentation::idle(format!("{title}. {warning}")).with_toast(ToastVariant::Warning, title)
     }
 }

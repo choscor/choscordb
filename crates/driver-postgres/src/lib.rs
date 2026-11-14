@@ -430,7 +430,7 @@ impl PostgresDriver {
         {
             return Err(DriverError::new(
                 ErrorKind::InvalidInput,
-                "Invalid PostgreSQL connection settings",
+                "Invalid PostgreSQL connection options",
             ));
         }
         if let Some(settings) = &ssh {
@@ -517,9 +517,9 @@ async fn open_session(endpoint: Arc<Endpoint>) -> Result<PostgresConnection> {
                     ErrorKind::Connection
                 },
                 if e.ssh.is_some() {
-                    "PostgreSQL connection through SSH failed; check SSH host trust, key or agent authentication, forwarding, and database TLS settings"
+                    "Could not connect to PostgreSQL through SSH. Check the SSH host trust, the key or agent authentication, the forwarding and the database TLS options."
                 } else {
-                    "PostgreSQL connection failed; check server, network, and TLS settings"
+                    "Could not connect to PostgreSQL. Check the server, the network and the TLS options."
                 },
             )
         }

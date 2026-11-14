@@ -638,7 +638,7 @@ pub(crate) async fn run(
             Ok::<_, DriverError>((mode, transaction_active))
         }) => Some(
             result.unwrap_or_else(|_| Err(DriverError::new(
-                ErrorKind::Timeout, "Initial session state query timed out",
+                ErrorKind::Timeout, "The initial connection state query timed out",
             )))
         ),
     };

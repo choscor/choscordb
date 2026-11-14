@@ -7,6 +7,9 @@ mod zip;
 pub use service::Service;
 
 pub const MEMORY_SAMPLE_INTERVAL_SECONDS: u64 = 60;
+pub const WATCHDOG_TICK_MILLISECONDS: u32 = 250;
+pub const HANG_THRESHOLD_MILLISECONDS: u32 = 2_000;
+pub const CANCEL_POLL_MILLISECONDS: u32 = 5;
 
 pub fn export_destination(path: &str) -> String {
     let path = path.trim();

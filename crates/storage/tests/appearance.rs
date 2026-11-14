@@ -1,6 +1,6 @@
 use choscordb_storage::{
-    APPEARANCE_LAYOUT_VERSION, AppearanceLayout, Storage, StorageError, ThemeMode, WindowGeometry,
-    WorkspaceLayout,
+    APPEARANCE_LAYOUT_VERSION, AppearanceLayout, MAX_RESULT_COLUMN_WIDTHS, ResultColumnWidth,
+    SidebarTab, Storage, StorageError, ThemeMode, WindowGeometry, WorkspaceLayout,
 };
 
 fn customized() -> AppearanceLayout {
@@ -11,8 +11,13 @@ fn customized() -> AppearanceLayout {
             navigator_width: 312,
             editor_results_split: 575,
             history_height: 244,
-            navigator_visible: true,
+            navigator_visible: false,
             history_visible: true,
+            sidebar_tab: SidebarTab::QueryHistory,
+            result_column_widths: vec![ResultColumnWidth {
+                name: "customer_name".into(),
+                width: 240,
+            }],
         },
         geometry: WindowGeometry {
             x: -720,
@@ -137,7 +142,12 @@ fn version_one_record_drops_density_and_accent_and_saves_as_version_two() {
         AppearanceLayout {
             version: 2,
             theme: ThemeMode::Dark,
-            layout: customized().layout,
+            layout: WorkspaceLayout {
+                navigator_visible: true,
+                sidebar_tab: SidebarTab::Connections,
+                result_column_widths: Vec::new(),
+                ..customized().layout
+            },
             geometry: WindowGeometry::default(),
         }
     );
@@ -298,4 +308,98 @@ fn default_workspace_layout_is_the_shipped_desktop_layout() {
     assert_eq!(layout.history_height, 220);
     assert!(layout.navigator_visible);
     assert!(!layout.history_visible);
+}
+
+#[test]
+fn a_record_without_a_sidebar_tab_opens_the_connections_tab() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("appearance.sqlite");
+    let mut storage = Storage::open(&path).unwrap();
+    let mut value = customized();
+    value.layout.sidebar_tab = SidebarTab::SavedQueries;
+    storage.set_appearance_layout(&value).unwrap();
+    assert_eq!(
+        storage
+            .appearance_layout()
+            .unwrap()
+            .unwrap()
+            .layout
+            .sidebar_tab,
+        SidebarTab::SavedQueries
+    );
+    assert_eq!(
+        WorkspaceLayout::default().sidebar_tab,
+        SidebarTab::Connections
+    );
+    let stored: WorkspaceLayout = serde_json::from_str(
+        r#"{"navigator_width":280,"editor_results_split":600,"history_height":220,"navigator_visible":true,"history_visible":false}"#,
+    )
+    .unwrap();
+    assert_eq!(stored.sidebar_tab, SidebarTab::Connections);
+}
+
+#[test]
+fn result_column_widths_survive_a_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("appearance.sqlite");
+    Storage::open(&path)
+        .unwrap()
+        .set_appearance_layout(&customized())
+        .unwrap();
+    let restored = Storage::open(&path)
+        .unwrap()
+        .appearance_layout()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        restored.layout.result_column_widths,
+        vec![ResultColumnWidth {
+            name: "customer_name".into(),
+            width: 240,
+        }]
+    );
+}
+
+#[test]
+fn remembered_result_column_widths_clamp_each_width_to_the_supported_range() {
+    let kept = ResultColumnWidth::remembered([("wide".to_owned(), 5000), ("narrow".to_owned(), 4)]);
+    assert_eq!(
+        kept,
+        vec![
+            ResultColumnWidth {
+                name: "wide".into(),
+                width: 2048
+            },
+            ResultColumnWidth {
+                name: "narrow".into(),
+                width: 24
+            },
+        ]
+    );
+}
+
+#[test]
+fn remembered_result_column_widths_keep_the_latest_valid_entries_up_to_the_cap() {
+    let mut entries = vec![
+        ("".to_owned(), 120),
+        ("too_narrow".to_owned(), 4),
+        ("x".repeat(65), 120),
+        ("nul\0name".to_owned(), 120),
+    ];
+    for index in 0..MAX_RESULT_COLUMN_WIDTHS + 4 {
+        entries.push((format!("column_{index:02}"), 100 + index as u32));
+    }
+    let kept = ResultColumnWidth::remembered(entries);
+    assert_eq!(kept.len(), MAX_RESULT_COLUMN_WIDTHS);
+    assert_eq!(kept[0].name, "column_04");
+    assert_eq!(kept[0].width, 104);
+    assert_eq!(kept[MAX_RESULT_COLUMN_WIDTHS - 1].name, "column_19");
+    let mut layout = customized();
+    layout.layout.result_column_widths = kept;
+    assert!(layout.validate().is_ok());
+    layout.layout.result_column_widths.push(ResultColumnWidth {
+        name: "extra".into(),
+        width: 100,
+    });
+    assert!(layout.validate().is_err());
 }

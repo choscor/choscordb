@@ -400,6 +400,14 @@ pub fn update_take_windows_failure_marker() -> bool {
     choscordb_update::take_windows_install_failure_marker()
 }
 
+pub fn update_progress_poll_milliseconds() -> u32 {
+    choscordb_update::PROGRESS_POLL_MILLISECONDS
+}
+
+pub fn update_startup_check_delay_milliseconds() -> u32 {
+    choscordb_update::STARTUP_CHECK_DELAY_MILLISECONDS
+}
+
 pub fn update_check_interval_seconds() -> u64 {
     choscordb_update::AUTOMATIC_CHECK_INTERVAL_SECONDS
 }

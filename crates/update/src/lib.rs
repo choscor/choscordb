@@ -23,6 +23,8 @@ use std::{fs::File, io::Read, path::Path};
 
 const MAX_FEED_BYTES: usize = 32_768;
 pub const AUTOMATIC_CHECK_INTERVAL_SECONDS: u64 = 24 * 60 * 60;
+pub const PROGRESS_POLL_MILLISECONDS: u32 = 50;
+pub const STARTUP_CHECK_DELAY_MILLISECONDS: u32 = 5_000;
 const MAX_NOTES_UTF16_UNITS: usize = 8_192;
 const MAX_EXACT_JSON_INTEGER: f64 = 9_007_199_254_740_991.0;
 

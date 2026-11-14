@@ -275,7 +275,7 @@ fn error(field: DraftField, message: &str) -> Option<DraftFieldError> {
 
 pub fn field_error(draft: &ProfileDraft, secrets: &DraftSecrets<'_>) -> Option<DraftFieldError> {
     if draft.name.trim().is_empty() {
-        return error(DraftField::Name, "Enter a profile name.");
+        return error(DraftField::Name, "Enter a connection name.");
     }
     if draft.name.len() > MAX_NAME_BYTES || draft.name.contains('\0') {
         return error(DraftField::Name, "Connection name is invalid or too long.");

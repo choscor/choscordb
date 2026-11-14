@@ -1,5 +1,7 @@
 use choscordb_bridge::{
-    diagnostics_new, diagnostics_preview, diagnostics_record, ffi::DiagnosticRecordDto,
+    diagnostics_cancel_poll_milliseconds, diagnostics_hang_threshold_milliseconds, diagnostics_new,
+    diagnostics_preview, diagnostics_record, diagnostics_watchdog_tick_milliseconds,
+    ffi::DiagnosticRecordDto,
 };
 
 #[test]
@@ -55,4 +57,11 @@ fn attached_engine_reports_connection_before_event_drain() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     choscordb_bridge::diagnostics_stop(&service);
+}
+
+#[test]
+fn diagnostics_bridge_exposes_the_watchdog_intervals() {
+    assert_eq!(diagnostics_watchdog_tick_milliseconds(), 250);
+    assert_eq!(diagnostics_hang_threshold_milliseconds(), 2_000);
+    assert_eq!(diagnostics_cancel_poll_milliseconds(), 5);
 }

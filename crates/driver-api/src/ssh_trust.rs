@@ -180,6 +180,8 @@ pub enum SshHostKeyApproval {
     Approved,
     OutcomeUnknown,
 }
+pub const KNOWN_HOSTS_PATH_RULE: &str = "Use an absolute, normalized file path with forward slashes and no `.`, `..`, `~`, `$`, `%`, quote or control characters.";
+
 pub fn validate_known_hosts_path(literal: &str) -> Result<()> {
     let path = Path::new(literal);
     let normalized: std::path::PathBuf = path.components().collect();
@@ -205,7 +207,7 @@ pub fn validate_known_hosts_path(literal: &str) -> Result<()> {
     {
         return Err(DriverError::new(
             ErrorKind::InvalidInput,
-            "Select an absolute normalized SSH known hosts path without expansion tokens or quote characters",
+            KNOWN_HOSTS_PATH_RULE,
         ));
     }
     Ok(())

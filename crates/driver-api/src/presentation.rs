@@ -34,6 +34,7 @@ pub enum ToastVariant {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToastSpec {
     pub variant: ToastVariant,
+    pub title: String,
     pub text: String,
 }
 
@@ -89,14 +90,18 @@ impl Presentation {
         }
     }
 
-    pub fn with_error_toast(self) -> Self {
-        self.with_toast(ToastVariant::Error)
+    pub fn with_error_toast(self, title: &str) -> Self {
+        self.with_toast(ToastVariant::Error, title)
     }
 
-    pub fn with_toast(self, variant: ToastVariant) -> Self {
+    pub fn with_toast(self, variant: ToastVariant, title: &str) -> Self {
         let text = self.message.clone();
         Self {
-            toast: Some(ToastSpec { variant, text }),
+            toast: Some(ToastSpec {
+                variant,
+                title: title.to_owned(),
+                text,
+            }),
             ..self
         }
     }

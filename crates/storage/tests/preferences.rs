@@ -166,6 +166,20 @@ fn run_all_is_a_configurable_command() {
     );
 }
 #[test]
+fn window_commands_with_default_keys_are_configurable() {
+    for (id, command) in [
+        ("close_tab", "\"close_tab\""),
+        ("editor_tabs", "\"editor_tabs\""),
+        ("minimize_window", "\"minimize_window\""),
+        ("refresh", "\"refresh\""),
+        ("toggle_sidebar", "\"toggle_sidebar\""),
+    ] {
+        let parsed: ShortcutCommand = serde_json::from_str(command).unwrap();
+        assert!(ShortcutCommand::ALL.contains(&parsed), "{id}");
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), command);
+    }
+}
+#[test]
 fn grid_commands_use_their_snake_case_ids_and_round_trip() {
     let grid = [
         (ShortcutCommand::GridAddRow, "grid_add_row"),
@@ -177,7 +191,7 @@ fn grid_commands_use_their_snake_case_ids_and_round_trip() {
         (ShortcutCommand::GridApplyEdits, "grid_apply_edits"),
         (ShortcutCommand::GridDiscardEdits, "grid_discard_edits"),
     ];
-    assert_eq!(ShortcutCommand::ALL.len(), 23);
+    assert_eq!(ShortcutCommand::ALL.len(), 28);
     for (command, id) in grid {
         assert!(ShortcutCommand::ALL.contains(&command));
         assert_eq!(

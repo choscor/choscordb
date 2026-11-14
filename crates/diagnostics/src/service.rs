@@ -561,10 +561,10 @@ impl Service {
         }
         let destination = destination.as_ref();
         let Some(parent) = destination.parent() else {
-            return self.failed("Could not open the selected ZIP destination.");
+            return self.failed("Could not open the selected destination.");
         };
         let Ok(mut temp) = NamedTempFile::new_in(parent) else {
-            return self.failed("Could not open the selected ZIP destination.");
+            return self.failed("Could not open the selected destination.");
         };
         private_permissions(temp.path(), false);
         for chunk in archive.chunks(64 * 1024) {
@@ -572,14 +572,14 @@ impl Service {
                 return self.cancelled();
             }
             if temp.write_all(chunk).is_err() {
-                return self.failed("Could not write the diagnostics ZIP.");
+                return self.failed("Could not write the diagnostics bundle.");
             }
         }
         if is_cancelled(cancel) {
             return self.cancelled();
         }
         if temp.flush().is_err() || temp.persist(destination).is_err() {
-            return self.failed("Could not save the diagnostics ZIP.");
+            return self.failed("Could not save the diagnostics bundle.");
         }
         self.record(Record {
             event: Event::ExportSucceeded,

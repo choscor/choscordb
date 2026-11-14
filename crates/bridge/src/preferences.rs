@@ -25,6 +25,11 @@ fn command_id(command: ShortcutCommand) -> &'static str {
         ShortcutCommand::GridEditCell => "grid_edit_cell",
         ShortcutCommand::GridApplyEdits => "grid_apply_edits",
         ShortcutCommand::GridDiscardEdits => "grid_discard_edits",
+        ShortcutCommand::CloseTab => "close_tab",
+        ShortcutCommand::EditorTabs => "editor_tabs",
+        ShortcutCommand::MinimizeWindow => "minimize_window",
+        ShortcutCommand::Refresh => "refresh",
+        ShortcutCommand::ToggleSidebar => "toggle_sidebar",
     }
 }
 pub(crate) fn dto(value: EditorPreferences) -> ffi::EditorPreferencesDto {
