@@ -43,6 +43,27 @@ class QtTestPolicyTest(unittest.TestCase):
         result = self.check("QTRY_VERIFY(peer.canReadLine());\n")
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_rejects_a_spinner_assertion_without_a_motion_policy(self):
+        result = self.check(
+            "MainWindow window;\nwindow.show();\nQVERIFY(busy->isTurning());\n"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            result.stderr.splitlines(),
+            [
+                "tests/desktop/sample_test.cpp:3: isTurning depends on the host "
+                "reduced-motion setting (set ThemeManager::setReducedMotion or the theme "
+                "reducedMotion field)"
+            ],
+        )
+
+    def test_accepts_a_spinner_assertion_with_an_explicit_motion_policy(self):
+        result = self.check(
+            "window.findChild<ThemeManager*>()->setReducedMotion(false);\n"
+            "QVERIFY(busy->isTurning());\n"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
