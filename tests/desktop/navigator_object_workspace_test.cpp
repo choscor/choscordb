@@ -944,6 +944,15 @@ void NavigatorSqlWorkspaceTest::generationOpensDraftOnExistingSavedConnectionWit
         ddlObject->findChild<QPlainTextEdit*>("objectDdl")->toPlainText().contains("CREATE TABLE"));
     QCOMPARE(choscordb::design::DialogPresentation::activeDialog(), nullptr);
     tabs->tabCloseRequested(tabs->currentIndex());
+    QMenu schemaMenu;
+    navigator->populateContextMenu(&schemaMenu, schema);
+    QVERIFY(!menu.findChild<QAction*>("showSchemaDiagram"));
+    schemaMenu.findChild<QAction*>("showSchemaDiagram")->trigger();
+    auto* diagram = qobject_cast<choscordb::ObjectExplorer*>(tabs->currentWidget());
+    QCOMPARE(diagram->paneIndex(), 4);
+    auto* erd = diagram->findChild<choscordb::ObjectErdWidget*>("objectErd");
+    QTRY_COMPARE(erd->graph().tables.size(), 1);
+    tabs->tabCloseRequested(tabs->currentIndex());
     tabs->setCurrentWidget(original);
     auto* connectionNotice = window.findChild<choscordb::ToastRegion*>("toastRegion");
     QVERIFY(connectionNotice);

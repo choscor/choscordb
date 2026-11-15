@@ -1,11 +1,13 @@
 #include "widgets/object_erd_widget.h"
 
+#include "bridge/text_filter.h"
 #include "design_system/button/button.h"
 #include "design_system/colors/colors.h"
 #include "design_system/kbd/key_hints.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include "widgets/filter_field/filter_field.h"
 #include <QEvent>
 #include <QGraphicsPathItem>
 #include <QGraphicsRectItem>
@@ -15,6 +17,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QMap>
 #include <QMouseEvent>
 #include <QNativeGestureEvent>
 #include <QPainter>
@@ -32,8 +35,8 @@ constexpr int tableNameRole = 1;
 
 class ErdTableBox final : public QGraphicsRectItem {
   public:
-    ErdTableBox(const QRectF& rect, const design::Colors& colors, bool central)
-        : QGraphicsRectItem(rect), colors_(colors), central_(central) {
+    ErdTableBox(const QRectF& rect, const design::Colors& colors, bool central, QColor accent)
+        : QGraphicsRectItem(rect), colors_(colors), central_(central), accent_(accent) {
         setAcceptHoverEvents(true);
         setCursor(Qt::PointingHandCursor);
         setFlag(QGraphicsItem::ItemIsSelectable);
@@ -54,6 +57,9 @@ class ErdTableBox final : public QGraphicsRectItem {
                              marked ? focus.ringWidth : focus.borderWidth));
         painter->setBrush(fill);
         painter->drawRect(rect());
+        if (accent_.isValid())
+            painter->fillRect(QRectF(rect().topLeft(), QSizeF(rect().width(), focus.ringWidth * 2)),
+                              accent_);
     }
 
   protected:
@@ -66,6 +72,7 @@ class ErdTableBox final : public QGraphicsRectItem {
   private:
     design::Colors colors_;
     bool central_;
+    QColor accent_;
     bool pressed_ = false;
 };
 
@@ -122,6 +129,19 @@ ObjectErdWidget::ObjectErdWidget(QWidget* parent)
     hints->setObjectName("objectErdKeyHints");
     hints->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     controls->addWidget(hints, 1);
+    search_ = new FilterField(this);
+    search_->setObjectName("objectErdSearch");
+    search_->setPlaceholderText(tr("Find a table…"));
+    search_->setAccessibleName(tr("Find a table in the diagram"));
+    search_->hide();
+    controls->addWidget(search_, 1);
+    auto* matches = new design::Text({}, this);
+    matches->setTextStyle(design::TextStyle::Callout);
+    matches_ = matches;
+    matches_->setObjectName("objectErdMatches");
+    matches_->hide();
+    controls->addWidget(matches_);
+    connect(search_, &FilterField::filterChanged, this, &ObjectErdWidget::search);
     const auto addZoomButton = [this, controls](const QString& name, const QString& text,
                                                 const QString& label) {
         auto* button = new design::Button(text, this);
@@ -169,6 +189,11 @@ void ObjectErdWidget::clearGraph() {
 void ObjectErdWidget::setGraph(const ObjectGraph& graph, const QString& selectedId) {
     graph_ = graph;
     selectedId_ = selectedId;
+    schema_ = selectedId.isEmpty();
+    search_->setVisible(schema_);
+    matches_->setVisible(schema_);
+    search_->clear();
+    matches_->clear();
     userNavigated_ = false;
     minZoom_ = 0.1;
     render();
@@ -324,7 +349,7 @@ bool ObjectErdWidget::eventFilter(QObject* watched, QEvent* event) {
         }
         if (event->type() == QEvent::Resize)
             QTimer::singleShot(0, this, [this] {
-                if (!graph_.tables.isEmpty() && !denseLayout_ &&
+                if (!graph_.tables.isEmpty() && !schema_ && !denseLayout_ &&
                     (view_->viewport()->width() < horizontalWidth_) != stacked_) {
                     render();
                     initialView();
@@ -424,10 +449,11 @@ void ObjectErdWidget::render() {
             neighborHeight += headerHeight + qMax(1, table.columns.size()) * rowHeight;
         }
     horizontalWidth_ = centerWidth + neighborWidth + gap;
-    denseLayout_ = ordered.size() > 6 ||
-                   neighborHeight >
-                       qMax(centerHeight * 3, design::dimension(design::Dimension::Control) * 18.0);
-    stacked_ = !denseLayout_ && view_->viewport()->width() < horizontalWidth_;
+    denseLayout_ =
+        !schema_ && (ordered.size() > 6 ||
+                     neighborHeight > qMax(centerHeight * 3,
+                                           design::dimension(design::Dimension::Control) * 18.0));
+    stacked_ = !schema_ && !denseLayout_ && view_->viewport()->width() < horizontalWidth_;
     const auto place = [&](const ObjectGraphTable& table, qreal x, qreal y) {
         Placement placement;
         placement.rect =
@@ -437,7 +463,27 @@ void ObjectErdWidget::render() {
                                      y + headerHeight + (row + 0.5) * rowHeight);
         placed.insert(table.id, placement);
     };
-    if (denseLayout_) {
+    if (schema_) {
+        const qreal rowGap = design::spacing(design::Spacing::Four) * 2;
+        QMap<int, qreal> columnWidths, rowHeights;
+        for (const auto& table : ordered) {
+            columnWidths[table.column] = qMax(columnWidths.value(table.column), widthFor(table));
+            rowHeights[table.row] = qMax(rowHeights.value(table.row),
+                                         headerHeight + qMax(1, table.columns.size()) * rowHeight);
+        }
+        QHash<int, qreal> columnX, rowY;
+        qreal x = 0, y = 0;
+        for (auto it = columnWidths.cbegin(); it != columnWidths.cend(); ++it) {
+            columnX.insert(it.key(), x);
+            x += it.value() + gap;
+        }
+        for (auto it = rowHeights.cbegin(); it != rowHeights.cend(); ++it) {
+            rowY.insert(it.key(), y);
+            y += it.value() + rowGap;
+        }
+        for (const auto& table : ordered)
+            place(table, columnX.value(table.column), rowY.value(table.row));
+    } else if (denseLayout_) {
         const qreal rowGap = design::spacing(design::Spacing::Four) * 2;
         const qreal laneHeight =
             qMax(centerHeight * 2, design::dimension(design::Dimension::Control) * 18.0);
@@ -597,8 +643,12 @@ void ObjectErdWidget::render() {
     }
     for (const auto& table : ordered) {
         const auto placement = placed.value(table.id);
-        const bool central = table.id == selectedId_;
-        auto* box = new ErdTableBox(placement.rect, colors, central);
+        const bool central = !schema_ && table.id == selectedId_;
+        const QList<QColor> groupColors{colors.brand,   colors.codeString,  colors.codeNumber,
+                                        colors.codeKey, colors.codeKeyword, colors.textWarning};
+        auto* box = new ErdTableBox(
+            placement.rect, colors, central,
+            table.group >= 0 ? groupColors.at(table.group % groupColors.size()) : QColor());
         scene_->addItem(box);
         box->setData(tableIdRole, table.id);
         box->setData(tableNameRole, table.qualifiedName);
@@ -629,6 +679,26 @@ void ObjectErdWidget::render() {
     }
     const qreal margin = stacked_ ? pad * 2 : gap / 2;
     scene_->setSceneRect(scene_->itemsBoundingRect().adjusted(-margin, -margin, margin, margin));
+}
+
+void ObjectErdWidget::search(const QString& text) {
+    const TextFilter filter(text);
+    QString first;
+    int count = 0;
+    for (const auto& table : graph_.tables) {
+        const bool hit = !filter.blank() && filter.matches(table.qualifiedName);
+        if (auto* box = boxes_.value(table.id))
+            box->setSelected(hit);
+        if (hit && first.isEmpty())
+            first = table.id;
+        count += hit ? 1 : 0;
+    }
+    matches_->setText(filter.blank() ? QString() : tr("%n table(s) match", nullptr, count));
+    if (first.isEmpty())
+        return;
+    selectedId_ = first;
+    userNavigated_ = true;
+    view_->centerOn(boxes_.value(first));
 }
 
 }

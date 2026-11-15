@@ -45,7 +45,13 @@ namespace choscordb {
 namespace {
 bool basicObject(const QString& kind) {
     const auto traits = EngineAdapter::objectKindTraits(kind);
-    return traits.opensObjectTab && !traits.relation;
+    return (traits.opensObjectTab || traits.schemaDiagram) && !traits.relation;
+}
+bool paneVisible(const QString& kind, int pane) {
+    const auto traits = EngineAdapter::objectKindTraits(kind);
+    if (pane == 4)
+        return traits.diagram || traits.schemaDiagram;
+    return !basicObject(kind) || pane == 3;
 }
 constexpr int objectIconRole = Qt::UserRole + 1;
 class DdlEditor final : public QPlainTextEdit {
@@ -467,8 +473,7 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
     const bool basic = basicObject(kind);
     tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
     for (int i = 1; i < tabs_->count(); ++i)
-        tabs_->setTabVisible(i, (!basic || i == 3) &&
-                                    (i != 4 || EngineAdapter::objectKindTraits(kind).diagram));
+        tabs_->setTabVisible(i, paneVisible(kind, i));
     requestToken_ = 0;
     const QSignalBlocker blocker(tabs_);
     tabs_->setCurrentIndex(0);
@@ -498,8 +503,7 @@ void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QStr
     const bool basic = basicObject(kind);
     tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
     for (int i = 1; i < tabs_->count(); ++i)
-        tabs_->setTabVisible(i, (!basic || i == 3) &&
-                                    (i != 4 || EngineAdapter::objectKindTraits(kind).diagram));
+        tabs_->setTabVisible(i, paneVisible(kind, i));
     reconnect_->setEnabled(!connection_);
     updateActions();
     updateFooter();
@@ -754,7 +758,9 @@ void ObjectExplorer::renderGraph(const ObjectGraph& graph) {
         applyPanelEvent(graphEvent_, graphMessage_);
         return;
     }
-    if (std::none_of(graph.tables.begin(), graph.tables.end(),
+    const bool schemaDiagram = EngineAdapter::objectKindTraits(kind_).schemaDiagram;
+    if (!schemaDiagram &&
+        std::none_of(graph.tables.begin(), graph.tables.end(),
                      [this](const ObjectGraphTable& table) { return table.id == object_; })) {
         erd_->clearGraph();
         graphEvent_ = PanelEvent::LoadedPartial;
@@ -763,14 +769,24 @@ void ObjectExplorer::renderGraph(const ObjectGraph& graph) {
         applyPanelEvent(graphEvent_, graphMessage_);
         return;
     }
-    erd_->setGraph(graph, object_);
-    if (graph.availability == MetadataAvailability::Unavailable || !graph.warnings.isEmpty()) {
+    erd_->setGraph(graph, schemaDiagram ? QString() : object_);
+    if (schemaDiagram && graph.tables.isEmpty()) {
+        graphEvent_ = PanelEvent::LoadedNone;
+        graphMessage_ = tr("%1 · No tables").arg(label_);
+    } else if (graph.availability == MetadataAvailability::Unavailable ||
+               !graph.warnings.isEmpty()) {
         graphEvent_ = PanelEvent::LoadedPartial;
         QStringList details;
         if (!graph.reason.isEmpty())
             details.append(graph.reason);
         details.append(graph.warnings);
         graphMessage_ = tr("%1 · ERD incomplete: %2").arg(label_, details.join("; "));
+    } else if (schemaDiagram) {
+        graphEvent_ = PanelEvent::LoadedRows;
+        graphMessage_ = tr("%1 · %2 tables, %3 foreign keys")
+                            .arg(label_)
+                            .arg(graph.tables.size())
+                            .arg(graph.edges.size());
     } else if (graph.edges.isEmpty()) {
         graphEvent_ = PanelEvent::LoadedNone;
         graphMessage_ = tr("%1 · No foreign-key relationships").arg(label_);

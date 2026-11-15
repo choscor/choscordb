@@ -700,6 +700,7 @@ pub mod ffi {
         initial_pane: u8,
         repeats_across_parents: bool,
         object_actions: bool,
+        schema_diagram: bool,
     }
     struct DriverWorkflowDto {
         inspect_after_result: bool,
@@ -1301,6 +1302,9 @@ pub mod ffi {
         id: String,
         qualified_name: String,
         columns: Vec<GraphColumnDto>,
+        column: u32,
+        row: u32,
+        group: i64,
     }
     #[derive(Default)]
     struct GraphEdgeDto {

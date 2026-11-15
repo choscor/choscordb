@@ -1,6 +1,6 @@
 use choscordb_driver_api::{
-    DriverError, ErrorKind, MetadataAvailability, ObjectGraph, ObjectGraphColumn, ObjectGraphEdge,
-    ObjectGraphTable, ObjectId, Result,
+    DriverError, ErrorKind, MAX_SCHEMA_GRAPH_TABLES, MetadataAvailability, ObjectGraph,
+    ObjectGraphColumn, ObjectGraphEdge, ObjectGraphTable, ObjectId, Result, SchemaGraphBuilder,
 };
 use std::collections::{BTreeSet, HashMap};
 use tokio_postgres::GenericClient;
@@ -17,10 +17,95 @@ fn incomplete(graph: &mut ObjectGraph, reason: String) {
     }
 }
 
+fn quoted(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+async fn schema_graph<C: GenericClient + Sync>(
+    client: &C,
+    schema: Option<u32>,
+) -> Result<ObjectGraph> {
+    let limit = i64::try_from(MAX_SCHEMA_GRAPH_TABLES + 1).map_err(|_| {
+        DriverError::new(
+            ErrorKind::ResourceLimit,
+            "The diagram table limit is too large",
+        )
+    })?;
+    let tables = client
+        .query(
+            "SELECT c.oid, n.nspname::text, c.relname::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE (c.relnamespace=$1 OR ($1 IS NULL AND n.nspname NOT LIKE 'pg\\_%' AND n.nspname <> 'information_schema')) AND c.relkind IN ('r','p') AND NOT c.relispartition ORDER BY n.nspname, c.relname LIMIT $2",
+            &[&schema, &limit],
+        )
+        .await
+        .map_err(crate::normalize)?;
+    let mut graph = SchemaGraphBuilder::default();
+    let mut kept = Vec::new();
+    for row in &tables {
+        let oid: u32 = row.get(0);
+        let name = format!("{}.{}", quoted(row.get(1)), quoted(row.get(2)));
+        if !graph.table(ObjectId(format!("pg:relation:{oid}")), name) {
+            break;
+        }
+        kept.push(oid);
+    }
+    let columns = client
+        .query(
+            "SELECT a.attrelid, a.attname::text, pg_catalog.format_type(a.atttypid,a.atttypmod), EXISTS (SELECT 1 FROM pg_catalog.pg_constraint p WHERE p.conrelid=a.attrelid AND p.contype='p' AND a.attnum=ANY(p.conkey)) FROM pg_catalog.pg_attribute a WHERE a.attrelid=ANY($1) AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attrelid, a.attnum",
+            &[&kept],
+        )
+        .await
+        .map_err(crate::normalize)?;
+    for row in columns {
+        let table: u32 = row.get(0);
+        graph.column(
+            &format!("pg:relation:{table}"),
+            row.get(1),
+            row.get(2),
+            row.get(3),
+        );
+    }
+    let keys = client
+        .query(
+            "SELECT k.oid, k.conrelid, k.confrelid, s.attname::text, t.attname::text FROM pg_catalog.pg_constraint k CROSS JOIN LATERAL unnest(k.conkey, k.confkey) WITH ORDINALITY AS u(source_number, target_number, position) JOIN pg_catalog.pg_attribute s ON s.attrelid=k.conrelid AND s.attnum=u.source_number JOIN pg_catalog.pg_attribute t ON t.attrelid=k.confrelid AND t.attnum=u.target_number WHERE k.contype='f' AND k.conrelid=ANY($1) ORDER BY k.oid, u.position",
+            &[&kept],
+        )
+        .await
+        .map_err(crate::normalize)?;
+    for row in keys {
+        let constraint: u32 = row.get(0);
+        let source: u32 = row.get(1);
+        let target: u32 = row.get(2);
+        graph.foreign_key(
+            &format!("pg:constraint:{constraint}"),
+            &format!("pg:relation:{source}"),
+            row.get(3),
+            &format!("pg:relation:{target}"),
+            row.get(4),
+        );
+    }
+    Ok(graph.finish())
+}
+
 pub(crate) async fn load_object_graph<C: GenericClient + Sync>(
     client: &C,
     object: &ObjectId,
 ) -> Result<ObjectGraph> {
+    for (prefix, whole_database) in [("pg:schema:", false), ("pg:database:", true)] {
+        let Some(raw) = object.0.strip_prefix(prefix) else {
+            continue;
+        };
+        let oid = raw
+            .parse::<u32>()
+            .ok()
+            .filter(|oid| *oid != 0 && raw == oid.to_string())
+            .ok_or_else(|| {
+                DriverError::new(
+                    ErrorKind::InvalidInput,
+                    "Invalid PostgreSQL schema identifier",
+                )
+            })?;
+        return schema_graph(client, (!whole_database).then_some(oid)).await;
+    }
     let Some(raw) = object.0.strip_prefix("pg:relation:") else {
         return Err(DriverError::new(
             ErrorKind::InvalidInput,

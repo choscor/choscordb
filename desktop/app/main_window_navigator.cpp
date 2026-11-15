@@ -221,6 +221,11 @@ void MainWindow::connectNavigator(const Ui& ui) {
                    const QString& kind, const QVariantList& properties) {
                 openObjectTab(connection, objectId, label, kind, properties, 3);
             });
+    connect(navigatorController, &NavigatorController::diagramRequested, this,
+            [this](quint64 connection, const QString& objectId, const QString& label,
+                   const QString& kind, const QVariantList& properties) {
+                openObjectTab(connection, objectId, label, kind, properties, 4);
+            });
     objectSection_ = objectSection;
     connect(navigatorController, &NavigatorController::searchBusyChanged, this, [this](bool busy) {
         objectSearchBusy_ = busy;

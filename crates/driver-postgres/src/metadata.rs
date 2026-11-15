@@ -1047,6 +1047,8 @@ mod live_tests {
             .into_iter()
             .find(|o| o.name == "metadata odd")
             .unwrap();
+        let schema_graph = crate::graph::load_object_graph(&client, &schema.id).await.unwrap();
+        assert!(schema_graph.tables.iter().any(|table| table.qualified_name == "\"metadata odd\".\"a\"\"b\""));
         let groups = load_metadata(&client, Some(schema.id)).await.unwrap();
         assert_eq!(groups.iter().map(|o| o.name.as_str()).collect::<Vec<_>>(), vec!["Tables", "Views", "Indexes", "Sequences", "Functions"]);
         let relations = load_metadata(&client, Some(groups[0].id.clone())).await.unwrap();

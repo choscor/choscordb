@@ -43,6 +43,8 @@ mod database_action;
 pub use database_action::{
     DatabaseActionFields, DatabaseActionKind, DatabaseActionRequest, plan_database_action,
 };
+mod schema_graph_layout;
+pub use schema_graph_layout::{GraphCell, schema_graph_layout};
 mod trigger_script;
 pub use trigger_script::{TriggerScript, TriggerScriptRequest, trigger_script};
 mod value_preview;

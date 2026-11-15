@@ -145,6 +145,7 @@ pub fn object_kind_traits_policy(kind: &str) -> ffi::ObjectKindTraitsDto {
         has_initial_pane: traits.initial_pane.is_some(),
         initial_pane: traits.initial_pane.unwrap_or_default(),
         repeats_across_parents: traits.repeats_across_parents,
+        schema_diagram: traits.schema_diagram,
         object_actions: traits.object_actions,
     }
 }

@@ -18,6 +18,8 @@ mod options;
 mod presentation;
 mod row_import;
 mod row_status;
+mod schema_graph;
+pub use schema_graph::{MAX_SCHEMA_GRAPH_COLUMNS, MAX_SCHEMA_GRAPH_TABLES, SchemaGraphBuilder};
 mod socks;
 mod sqlite_uri;
 mod ssh_askpass;

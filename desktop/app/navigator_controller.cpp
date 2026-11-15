@@ -567,6 +567,18 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                               index.data(NavigatorModel::KindRole).toString(),
                               index.data(NavigatorModel::PropertiesRole).toList());
     });
+    if (traits.schemaDiagram) {
+        auto* diagram = menu->addAction(tr("Show ER diagram"));
+        diagram->setObjectName("showSchemaDiagram");
+        connect(diagram, &QAction::triggered, this, [this, index] {
+            if (index.isValid())
+                emit diagramRequested(index.data(NavigatorModel::ConnectionRole).toULongLong(),
+                                      index.data(NavigatorModel::ObjectIdRole).toString(),
+                                      index.data(Qt::DisplayRole).toString(),
+                                      index.data(NavigatorModel::KindRole).toString(),
+                                      index.data(NavigatorModel::PropertiesRole).toList());
+        });
+    }
     if (traits.searchDescends && !traits.relation && !traits.connection &&
         index.data(NavigatorModel::ChildrenLoadedRole).toBool()) {
         auto* exportTables = menu->addAction(tr("Export tables…"));

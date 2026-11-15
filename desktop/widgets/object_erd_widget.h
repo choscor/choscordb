@@ -11,6 +11,10 @@ class QGraphicsScene;
 class QLabel;
 
 namespace choscordb {
+class FilterField;
+}
+
+namespace choscordb {
 
 class ObjectErdWidget final : public QWidget {
     Q_OBJECT
@@ -37,15 +41,19 @@ class ObjectErdWidget final : public QWidget {
     void zoomAt(qreal factor, const QPoint& anchor);
     void activate(const QString& id);
     void showZoomLevel();
+    void search(const QString& text);
     ObjectGraph graph_;
     QString selectedId_;
     QGraphicsView* view_;
     QGraphicsScene* scene_;
     QLabel* zoomLevel_ = nullptr;
+    FilterField* search_ = nullptr;
+    QLabel* matches_ = nullptr;
     QHash<QString, QGraphicsRectItem*> boxes_;
     qreal horizontalWidth_ = 0;
     qreal minZoom_ = 0.1;
     bool stacked_ = false;
+    bool schema_ = false;
     bool denseLayout_ = false;
     bool userNavigated_ = false;
     bool panning_ = false;

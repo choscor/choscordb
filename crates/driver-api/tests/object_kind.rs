@@ -123,6 +123,16 @@ fn only_tables_open_on_data_and_offer_diagrams() {
 }
 
 #[test]
+fn schemas_and_databases_offer_a_schema_diagram() {
+    for kind in ["schema", "database"] {
+        assert!(object_kind_traits(kind).schema_diagram, "{kind}");
+    }
+    for kind in ["table", "view", "group", "connection"] {
+        assert!(!object_kind_traits(kind).schema_diagram, "{kind}");
+    }
+}
+
+#[test]
 fn relations_and_sequences_offer_object_actions_but_only_relations_offer_sql_templates() {
     for kind in ["table", "view", "sequence"] {
         assert!(object_kind_traits(kind).object_actions, "{kind}");

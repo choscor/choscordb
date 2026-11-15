@@ -15,6 +15,7 @@ pub struct ObjectKindTraits {
     pub diagram: bool,
     pub initial_pane: Option<u8>,
     pub repeats_across_parents: bool,
+    pub schema_diagram: bool,
 }
 
 fn key(kind: &str) -> bool {
@@ -52,6 +53,7 @@ pub fn object_kind_traits(kind: &str) -> ObjectKindTraits {
         diagram: kind == "table",
         initial_pane: (kind == "table").then_some(5),
         repeats_across_parents: kind == "index",
+        schema_diagram: matches!(kind, "schema" | "database"),
     }
 }
 

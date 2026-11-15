@@ -14,6 +14,9 @@ ObjectGraph objectGraph(const ObjectGraphDto& dto) {
         ObjectGraphTable table;
         table.id = fromRust(source.id);
         table.qualifiedName = fromRust(source.qualified_name);
+        table.column = int(source.column);
+        table.row = int(source.row);
+        table.group = int(source.group);
         for (const auto& column : source.columns)
             table.columns.append({fromRust(column.name), fromRust(column.database_type),
                                   column.primary_key, column.foreign_key});

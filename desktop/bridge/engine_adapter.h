@@ -305,7 +305,7 @@ struct ObjectKindTraits {
     bool connection = false, column = false, diagram = false;
     int initialPane = -1;
     bool repeatsAcrossParents = false;
-    bool objectActions = false;
+    bool objectActions = false, schemaDiagram = false;
 };
 struct DriverWorkflow {
     bool inspectAfterResult = false, sqlModeBeforeExecution = false;
@@ -639,6 +639,7 @@ struct ObjectGraphColumn {
 struct ObjectGraphTable {
     QString id, qualifiedName;
     QList<ObjectGraphColumn> columns;
+    int column = 0, row = 0, group = -1;
 };
 struct ObjectGraphEdge {
     QString id, sourceId, targetId;

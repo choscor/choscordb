@@ -1623,3 +1623,47 @@ async fn table_children_list_triggers_with_timing_event_and_definition() {
         ]
     );
 }
+#[tokio::test]
+async fn schema_graph_lists_every_table_and_foreign_key() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT)",
+        false,
+    )
+    .await;
+    run(
+        &mut c,
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES Customers)",
+        false,
+    )
+    .await;
+    run(&mut c, "CREATE TABLE notes (body TEXT)", false).await;
+    let graph = c
+        .load_object_graph(&ObjectId(r#"["main"]"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(graph.availability, MetadataAvailability::Available);
+    assert_eq!(
+        graph
+            .tables
+            .iter()
+            .map(|table| table.qualified_name.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "\"main\".\"customers\"",
+            "\"main\".\"notes\"",
+            "\"main\".\"orders\""
+        ]
+    );
+    assert_eq!(graph.edges.len(), 1);
+    let edge = &graph.edges[0];
+    assert_eq!(edge.source_id.0, r#"["main","orders"]"#);
+    assert_eq!(edge.target_id.0, r#"["main","customers"]"#);
+    assert_eq!(
+        (edge.source_columns.clone(), edge.target_columns.clone()),
+        (vec!["customer_id".to_string()], vec!["id".to_string()])
+    );
+    assert!(graph.tables[2].columns[1].foreign_key);
+    assert!(graph.tables[0].columns[0].primary_key);
+}

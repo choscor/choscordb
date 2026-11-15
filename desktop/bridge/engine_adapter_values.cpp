@@ -227,7 +227,8 @@ ObjectKindTraits EngineAdapter::objectKindTraits(const QString& kind) {
                             dto.diagram,
                             dto.has_initial_pane ? int(dto.initial_pane) : -1,
                             dto.repeats_across_parents,
-                            dto.object_actions};
+                            dto.object_actions,
+                            dto.schema_diagram};
     cache.insert(kind, traits);
     return traits;
 }

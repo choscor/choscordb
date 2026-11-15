@@ -596,6 +596,13 @@ async fn metadata_ddl_and_independent_object_cursor() {
         .into_iter()
         .find(|o| o.name == "choscordb_test")
         .unwrap();
+    let schema_graph = conn.load_object_graph(&db.id).await.unwrap();
+    assert!(
+        schema_graph
+            .tables
+            .iter()
+            .any(|table| table.qualified_name == "`choscordb_test`.`mysql``browse`")
+    );
     let table = conn
         .load_metadata(Some(db.id))
         .await

@@ -946,6 +946,7 @@ pub fn event(
             e.id = pack(connection);
             e.object = object.0;
             e.request_token = request_token;
+            let cells = choscordb_core::schema_graph_layout(&graph);
             e.graph = ffi::ObjectGraphDto {
                 availability: match graph.availability {
                     MetadataAvailability::Available => ffi::GraphAvailabilityDto::Available,
@@ -957,7 +958,11 @@ pub fn event(
                 tables: graph
                     .tables
                     .into_iter()
-                    .map(|table| ffi::GraphTableDto {
+                    .zip(cells)
+                    .map(|(table, cell)| ffi::GraphTableDto {
+                        column: cell.column,
+                        row: cell.row,
+                        group: cell.group.map_or(-1, i64::from),
                         id: table.id.0,
                         qualified_name: table.qualified_name,
                         columns: table

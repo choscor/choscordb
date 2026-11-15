@@ -1,7 +1,7 @@
 use crate::{Flavor, error, id, normalize, parse_table, quote};
 use choscordb_driver_api::{
     ErrorKind, MetadataAvailability, ObjectGraph, ObjectGraphColumn, ObjectGraphEdge,
-    ObjectGraphTable, ObjectId, Result,
+    ObjectGraphTable, ObjectId, Result, SchemaGraphBuilder,
 };
 use mysql_async::{Conn, prelude::Queryable};
 use std::collections::{BTreeMap, BTreeSet};
@@ -154,11 +154,69 @@ async fn table_columns(
     })
 }
 
+type SchemaKeyRow = (String, String, String, String, String, String);
+
+async fn schema_graph(conn: &mut Conn, flavor: Flavor, schema: &str) -> Result<ObjectGraph> {
+    let tables: Vec<(String, String)> = conn
+        .exec(
+            "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME",
+            (schema,),
+        )
+        .await
+        .map_err(normalize)?;
+    let mut graph = SchemaGraphBuilder::default();
+    for (name, table_type) in tables {
+        if flavor.base_table(&table_type)
+            && !graph.table(
+                id(&[schema, &name]),
+                format!("{}.{}", quote(schema), quote(&name)),
+            )
+        {
+            break;
+        }
+    }
+    let columns: Vec<(String, String, String, String)> = conn
+        .exec(
+            "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION",
+            (schema,),
+        )
+        .await
+        .map_err(normalize)?;
+    for (table, name, database_type, key) in columns {
+        graph.column(
+            &id(&[schema, &table]).0,
+            &name,
+            &database_type,
+            key == "PRI",
+        );
+    }
+    let keys: Vec<SchemaKeyRow> = conn
+        .exec(
+            "SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION",
+            (schema,),
+        )
+        .await
+        .map_err(normalize)?;
+    for (constraint, table, column, target_schema, target_table, target_column) in keys {
+        graph.foreign_key(
+            &constraint,
+            &id(&[schema, &table]).0,
+            &column,
+            &id(&[&target_schema, &target_table]).0,
+            &target_column,
+        );
+    }
+    Ok(graph.finish())
+}
+
 pub(crate) async fn object_graph(
     conn: &mut Conn,
     flavor: Flavor,
     object: &ObjectId,
 ) -> Result<ObjectGraph> {
+    if let Ok([schema]) = serde_json::from_str::<[String; 1]>(&object.0) {
+        return schema_graph(conn, flavor, &schema).await;
+    }
     let (schema, table) = parse_table(object)?;
     let kind: Option<String> = conn
         .exec_first(

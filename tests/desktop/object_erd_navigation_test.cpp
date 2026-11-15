@@ -11,19 +11,102 @@
 #include <QGraphicsView>
 #include <QInputDevice>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMap>
 #include <QNativeGestureEvent>
 #include <QPainterPath>
 #include <QPainterPathStroker>
 #include <QPointingDevice>
 #include <QPushButton>
+#include <QTabBar>
 #include <QTest>
 #include <QWheelEvent>
 #include <iterator>
+#include <tuple>
 using namespace choscordb;
 class ObjectErdNavigationTest final : public QObject {
     Q_OBJECT
   private slots:
+    void schemaDiagramShowsEveryTableOnTheRustGridAndFindsTables() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        int expected = 0;
+        for (const auto& sql :
+             {QString("CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT)"),
+              QString("CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER "
+                      "REFERENCES customers(id))"),
+              QString("CREATE TABLE notes(body TEXT)")}) {
+            const auto query = adapter.execute(*connection, sql);
+            QVERIFY(query);
+            adapter.fetchPage(*query);
+            ++expected;
+            QTRY_COMPARE(finished, expected);
+        }
+        ObjectExplorer explorer(&adapter);
+        explorer.resize(900, 600);
+        explorer.show();
+        explorer.openObject(*connection, R"(["main"])", "main", "database");
+        auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
+        QCOMPARE(tabs->tabText(0), QString("Details"));
+        QVERIFY(tabs->isTabVisible(3));
+        QVERIFY(tabs->isTabVisible(4));
+        for (const int hidden : {1, 2, 5, 6})
+            QVERIFY2(!tabs->isTabVisible(hidden), qPrintable(QString::number(hidden)));
+        explorer.selectPane(4);
+        auto* erd = explorer.findChild<ObjectErdWidget*>("objectErd");
+        QTRY_COMPARE(erd->graph().tables.size(), 3);
+        QCOMPARE(erd->graph().edges.size(), 1);
+        auto* status = explorer.findChild<QLabel*>("objectStatus");
+        QTRY_VERIFY(status->text().contains("3 tables, 1 foreign keys"));
+        QHash<QString, ObjectGraphTable> tables;
+        for (const auto& table : erd->graph().tables)
+            tables.insert(table.qualifiedName, table);
+        const auto customers = tables.value(R"("main"."customers")");
+        const auto orders = tables.value(R"("main"."orders")");
+        const auto notes = tables.value(R"("main"."notes")");
+        QCOMPARE(std::tuple(customers.column, customers.row, customers.group), std::tuple(0, 0, 0));
+        QCOMPARE(std::tuple(orders.column, orders.row, orders.group), std::tuple(1, 0, 0));
+        QCOMPARE(std::tuple(notes.column, notes.row, notes.group), std::tuple(0, 1, -1));
+        auto* view = erd->findChild<QGraphicsView*>("objectErdView");
+        auto boxFor = [&](const QString& id) -> QGraphicsRectItem* {
+            for (auto* item : view->scene()->items())
+                if (auto* box = qgraphicsitem_cast<QGraphicsRectItem*>(item);
+                    box && box->data(0).toString() == id)
+                    return box;
+            return nullptr;
+        };
+        auto* customersBox = boxFor(customers.id);
+        auto* ordersBox = boxFor(orders.id);
+        auto* notesBox = boxFor(notes.id);
+        QVERIFY(customersBox && ordersBox && notesBox);
+        QVERIFY(ordersBox->rect().left() > customersBox->rect().right());
+        QCOMPARE(notesBox->rect().left(), customersBox->rect().left());
+        QVERIFY(notesBox->rect().top() > customersBox->rect().bottom());
+        auto* search = erd->findChild<QLineEdit*>("objectErdSearch");
+        QVERIFY(search && search->isVisible());
+        auto* matches = erd->findChild<QLabel*>("objectErdMatches");
+        QTest::keyClicks(search, "ord");
+        QTRY_COMPARE(matches->text(), QString("1 table(s) match"));
+        QVERIFY(ordersBox->isSelected());
+        QVERIFY(!customersBox->isSelected());
+        search->clear();
+        QTRY_COMPARE(matches->text(), QString());
+        QVERIFY(!ordersBox->isSelected());
+        explorer.openObject(*connection, R"(["main","orders"])", "main.orders", "table");
+        explorer.selectPane(4);
+        QTRY_COMPARE(erd->graph().tables.size(), 2);
+        QVERIFY(!search->isVisible());
+    }
     void erdReportsMissingRelatedTableAsIncomplete() {
         EngineAdapter adapter;
         bool connected = false;

@@ -169,6 +169,18 @@ A binary value gets the image format from its first bytes. The desktop frontend 
 A PDF document gets a summary with the version and the page count. ChoscorDB does not render PDF pages.
 A geometry type gets WKT from WKB, EWKB or hexadecimal EWKB. A MySQL SRID prefix and an EWKB SRID become `SRID=n;`.
 
+### Schema ER diagram
+
+`load_object_graph` accepts a schema or a database identifier. Then the driver returns all tables and foreign keys of that schema.
+A PostgreSQL database identifier gives the tables of all user schemas.
+`SchemaGraphBuilder` in `driver-api` enforces `MAX_SCHEMA_GRAPH_TABLES` (500) and `MAX_SCHEMA_GRAPH_COLUMNS` (20,000).
+It reports foreign keys to tables outside the diagram as a warning.
+`schema_graph_layout` in `core` gives each table a grid column, a grid row and a relation group.
+Each group of connected tables gets layers in the foreign-key direction. A referenced table is to the left of the table that refers to it.
+The groups fill shelves that are about the square root of the table count wide. A table without relations has no group.
+The bridge adds the cells to each graph table. The desktop frontend sizes the columns and the rows and colors each group with a theme token.
+The navigator shows "Show ER diagram" for each kind with the `schema_diagram` trait. The diagram has search, zoom and fit.
+
 ### Triggers
 
 Each driver lists the triggers of a table or a view as `ObjectKind::Trigger` children of the relation.

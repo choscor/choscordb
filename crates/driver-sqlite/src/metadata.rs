@@ -171,8 +171,96 @@ fn graph_table(
     ))
 }
 
+fn schema_graph(db: &Connection, schema: &str) -> Result<ObjectGraph> {
+    let mut graph = SchemaGraphBuilder::default();
+    let mut q = db
+        .prepare(&format!(
+            "SELECT name FROM {}.sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name LIMIT {}",
+            quote(schema),
+            MAX_SCHEMA_GRAPH_TABLES + 1
+        ))
+        .map_err(normalize)?;
+    let names = q
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(normalize)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(normalize)?;
+    let mut kept = Vec::new();
+    for name in names {
+        if !graph.table(
+            graph_id(schema, &name),
+            format!("{}.{}", quote(schema), quote(&name)),
+        ) {
+            break;
+        }
+        kept.push(name);
+    }
+    let primary_keys = |table: &str| -> Result<Vec<String>> {
+        let mut q = db
+            .prepare("SELECT name FROM pragma_table_info(?1,?2) WHERE pk>0 ORDER BY pk")
+            .map_err(normalize)?;
+        q.query_map(params![table, schema], |r| r.get::<_, String>(0))
+            .map_err(normalize)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(normalize)
+    };
+    for table in &kept {
+        let id = graph_id(schema, table).0;
+        let mut q = db
+            .prepare("SELECT name,type,pk FROM pragma_table_info(?1,?2) ORDER BY cid")
+            .map_err(normalize)?;
+        let mut rows = q.query(params![table, schema]).map_err(normalize)?;
+        while let Some(r) = rows.next().map_err(normalize)? {
+            let name: String = r.get(0).map_err(normalize)?;
+            let database_type: String = r.get(1).map_err(normalize)?;
+            graph.column(
+                &id,
+                &name,
+                &database_type,
+                r.get::<_, i64>(2).map_err(normalize)? > 0,
+            );
+        }
+        let mut q = db
+            .prepare("SELECT id,seq,\"table\",\"from\",\"to\" FROM pragma_foreign_key_list(?1,?2) ORDER BY id,seq")
+            .map_err(normalize)?;
+        let mut rows = q.query(params![table, schema]).map_err(normalize)?;
+        while let Some(r) = rows.next().map_err(normalize)? {
+            let key: i64 = r.get(0).map_err(normalize)?;
+            let seq = usize::try_from(r.get::<_, i64>(1).map_err(normalize)?).map_err(|_| {
+                DriverError::new(ErrorKind::InvalidInput, "Invalid foreign key position")
+            })?;
+            let target: String = r.get(2).map_err(normalize)?;
+            let target = kept
+                .iter()
+                .find(|name| name.eq_ignore_ascii_case(&target))
+                .cloned()
+                .unwrap_or(target);
+            let source_column: String = r.get(3).map_err(normalize)?;
+            let target_column = match r.get::<_, Option<String>>(4).map_err(normalize)? {
+                Some(column) => column,
+                None => primary_keys(&target)?.get(seq).cloned().ok_or_else(|| {
+                    DriverError::new(
+                        ErrorKind::InvalidInput,
+                        format!("The foreign key of {} has no target column", quote(table)),
+                    )
+                })?,
+            };
+            graph.foreign_key(
+                &format!("{schema}:{table}:{key}"),
+                &id,
+                &source_column,
+                &graph_id(schema, &target).0,
+                &target_column,
+            );
+        }
+    }
+    Ok(graph.finish())
+}
 pub(crate) fn object_graph(db: &Connection, object: &ObjectId) -> Result<ObjectGraph> {
     let p = parts(object)?;
+    if let [schema] = p.as_slice() {
+        return schema_graph(db, schema);
+    }
     let [schema, selected] = p.as_slice() else {
         return Err(DriverError::new(
             ErrorKind::InvalidInput,
