@@ -32,6 +32,7 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Pin objects, and find objects, tabs and SQL text with quick search.
 - Save queries, run queries again from the history, and recover unsaved SQL after a crash.
 - Keep the original rows of each applied grid change in the query history.
+- Preview JSON values as a tree with pretty and minified text, show images, and show geometry as WKT.
 - Put saved queries in folders and sort them by name or date. Give a saved query a keyword to insert it from completion.
 - Update the app from a signed update feed. Use the Light or Dark theme.
 

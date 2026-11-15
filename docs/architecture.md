@@ -160,6 +160,15 @@ MySQL and MariaDB cannot rename a database, and SQLite keeps each database in a 
 `DatabaseActionKind::fields` tells the dialog which fields each action shows.
 The dialog shows the SQL before Apply and sends it through `Engine::apply_ddl`.
 
+### Value preview
+
+The value detail dialog has a Preview action. The dialog loads the complete value in chunks, up to `VALUE_PREVIEW_MAX_BYTES` (16 MiB).
+`value_preview` in `core` reads the bytes and the database type, and returns one preview kind.
+JSON text gets a pretty form, a minified form and tree rows in document order. The tree stops at `MAX_JSON_PREVIEW_NODES` rows.
+A binary value gets the image format from its first bytes. The desktop frontend decodes and shows the image.
+A PDF document gets a summary with the version and the page count. ChoscorDB does not render PDF pages.
+A geometry type gets WKT from WKB, EWKB or hexadecimal EWKB. A MySQL SRID prefix and an EWKB SRID become `SRID=n;`.
+
 ### Excel export
 
 `ExportFormat::Xlsx` writes one worksheet with a header row. The `xlsx` module in `export` streams the sheet XML into a ZIP file.

@@ -37,6 +37,10 @@ class ValueDetailDialog final : public DialogShell {
     void dropChunk();
     void fail(const QString& error);
     void updateActions();
+    void startPreview();
+    void requestPreviewChunk();
+    void handlePreviewChunk(const BridgeEvent& event);
+    void finishPreview(const QByteArray& bytes, bool binary);
     QPointer<EngineAdapter> adapter_;
     ValuePreviewModel* model_;
     QTableView* table_;
@@ -45,6 +49,11 @@ class ValueDetailDialog final : public DialogShell {
     design::Button* retry_ = nullptr;
     design::Button* previous_ = nullptr;
     design::Button* next_ = nullptr;
+    design::Button* preview_ = nullptr;
+    QString type_;
+    bool previewing_ = false;
+    QByteArray previewBytes_;
+    quint64 previewOffset_ = 0;
     std::optional<quint64> query_;
     QByteArray inlineBytes_;
     bool inlineMode_ = false;

@@ -1,6 +1,7 @@
 #pragma once
 #include "bridge/database_action.h"
 #include "bridge/structure_types.h"
+#include "bridge/value_preview.h"
 #include "models/result_table_model.h"
 #include <QDateTime>
 #include <QList>
@@ -782,6 +783,8 @@ class EngineAdapter final : public QObject {
                         QString* error);
     static quint32 valueChunkBytes();
     static QString valueDetailError(quint64 bytes);
+    static QString valuePreviewError(quint64 bytes);
+    static ValuePreview valuePreview(const QByteArray& bytes, bool binary, const QString& type);
     void loadValueChunk(quint64 query, quint64 handle, quint64 offset,
                         quint32 maxBytes = valueChunkBytes());
     void loadMetadata(quint64 connection, const QString& parent = {}, quint64 requestToken = 0,

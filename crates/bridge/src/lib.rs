@@ -24,6 +24,8 @@ mod database_action;
 mod result_copy;
 mod sql_file;
 pub use database_action::{apply_database_action, database_action_kinds, database_action_plan};
+mod value_preview;
+pub use value_preview::{value_preview, value_preview_error};
 mod structure_edit;
 mod table_export;
 mod table_import;
@@ -1487,6 +1489,20 @@ pub mod ffi {
         settings: bool,
         confirmation: bool,
     }
+    struct JsonPreviewNodeDto {
+        parent: i64,
+        key: String,
+        value: String,
+        kind: String,
+    }
+    struct ValuePreviewDto {
+        kind: String,
+        summary: String,
+        pretty: String,
+        minified: String,
+        nodes: Vec<JsonPreviewNodeDto>,
+        image_format: String,
+    }
     struct DatabaseActionPlanDto {
         sql: String,
         error: String,
@@ -2100,6 +2116,8 @@ pub mod ffi {
         ) -> ValuePreviewRowsDto;
         fn value_text_boundary_after(window: &[u8], window_offset: u64, target: u64) -> u64;
         fn value_text_char_start(text: &[u8], target: u64) -> u64;
+        fn value_preview_error(bytes: u64) -> String;
+        fn value_preview(bytes: &[u8], binary: bool, database_type: &str) -> ValuePreviewDto;
         fn text_replacement_error(
             document_bytes: u64,
             removed_bytes: u64,

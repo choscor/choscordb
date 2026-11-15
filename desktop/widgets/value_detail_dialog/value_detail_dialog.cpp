@@ -7,6 +7,7 @@
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
 #include "models/value_preview_model.h"
+#include "widgets/value_preview_dialog/value_preview_dialog.h"
 #include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -16,6 +17,7 @@
 #include <QTableView>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <utility>
 
 namespace choscordb {
 namespace {
@@ -62,6 +64,9 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     next_ = sections->addAction(design::DialogActionRole::Utility, tr("Next"));
     next_->setObjectName("valueNext");
     next_->setDesignIcon(design::Icon::CaretRight);
+    preview_ = sections->addAction(design::DialogActionRole::Utility, tr("Preview"));
+    preview_->setObjectName("valuePreviewOpen");
+    connect(preview_, &QPushButton::clicked, this, &ValueDetailDialog::startPreview);
     auto* close = sections->addAction(design::DialogActionRole::Dismiss, tr("Close"));
     close->setObjectName("valueClose");
     connect(close, &QPushButton::clicked, this, &ValueDetailDialog::reject);
@@ -73,7 +78,11 @@ ValueDetailDialog::ValueDetailDialog(EngineAdapter* adapter, QWidget* parent)
     connect(adapter, &EngineAdapter::eventReady, this, &ValueDetailDialog::handleEvent);
     connect(adapter, &EngineAdapter::valueChunkSubmissionFailed, this,
             [this](quint64 query, quint64 handle, quint64 offset, const QString& error) {
-                if (loading_ && query_ == query && handle_ == handle && offset_ == offset)
+                if (previewing_ && query_ == query && handle_ == handle &&
+                    previewOffset_ == offset) {
+                    previewing_ = false;
+                    fail(error);
+                } else if (loading_ && query_ == query && handle_ == handle && offset_ == offset)
                     fail(error);
             });
     updateActions();
@@ -92,6 +101,7 @@ void ValueDetailDialog::openValue(quint64 query, quint64 handle, const QString& 
     clearValue();
     query_ = query;
     handle_ = handle;
+    type_ = type;
     total_ = length.value_or(0);
     setWindowTitle(type.isEmpty() ? tr("Value detail")
                                   : tr("Value detail · %1").arg(type.left(128)));
@@ -103,6 +113,7 @@ QString ValueDetailDialog::openInlineValue(QByteArray bytes, const QString& type
     if (auto error = EngineAdapter::valueDetailError(quint64(bytes.size())); !error.isEmpty())
         return error;
     inlineBytes_ = std::move(bytes);
+    type_ = type;
     inlineMode_ = true;
     inlineBinary_ = binary;
     total_ = static_cast<quint64>(inlineBytes_.size());
@@ -129,6 +140,9 @@ void ValueDetailDialog::clearValue() {
     inlineBytes_.clear();
     alignmentTarget_.reset();
     loading_ = false;
+    previewing_ = false;
+    previewBytes_.clear();
+    type_.clear();
     dropChunk();
     offset_ = total_ = nextOffset_ = 0;
     windowBytes_ = EngineAdapter::valueChunkBytes();
@@ -220,7 +234,74 @@ void ValueDetailDialog::fail(const QString& error) {
     retry_->show();
     updateActions();
 }
+void ValueDetailDialog::startPreview() {
+    if ((!query_ && !inlineMode_) || loading_ || previewing_)
+        return;
+    if (inlineMode_) {
+        finishPreview(inlineBytes_, inlineBinary_);
+        return;
+    }
+    if (const auto error = EngineAdapter::valuePreviewError(total_); !error.isEmpty()) {
+        statusLine_->showError(error);
+        return;
+    }
+    previewing_ = true;
+    previewBytes_.clear();
+    previewOffset_ = 0;
+    updateActions();
+    requestPreviewChunk();
+}
+void ValueDetailDialog::requestPreviewChunk() {
+    statusLine_->showProgress(
+        tr("Loading the value for the preview: %1 of %2 bytes…").arg(previewOffset_).arg(total_));
+    if (adapter_)
+        adapter_->loadValueChunk(*query_, handle_, previewOffset_);
+    else {
+        previewing_ = false;
+        fail(tr("The connection is no longer available."));
+    }
+}
+void ValueDetailDialog::handlePreviewChunk(const BridgeEvent& event) {
+    const auto kind = fromRust(event.kind);
+    if (kind == "value_chunk_failed") {
+        previewing_ = false;
+        fail(fromRust(event.error));
+        return;
+    }
+    if (kind != "value_chunk")
+        return;
+    if (event.has_lease && adapter_)
+        adapter_->releasePageLease(event.lease_id);
+    if (const auto error = EngineAdapter::valuePreviewError(event.total_bytes); !error.isEmpty()) {
+        previewing_ = false;
+        previewBytes_.clear();
+        statusLine_->showError(error);
+        updateActions();
+        return;
+    }
+    previewBytes_.append(reinterpret_cast<const char*>(event.chunk_bytes.data()),
+                         static_cast<qsizetype>(event.chunk_bytes.size()));
+    previewOffset_ += event.chunk_bytes.size();
+    if (previewOffset_ < event.total_bytes && !event.chunk_bytes.empty()) {
+        requestPreviewChunk();
+        return;
+    }
+    previewing_ = false;
+    statusLine_->clearReport();
+    finishPreview(std::exchange(previewBytes_, {}), fromRust(event.chunk_kind) == "binary");
+}
+void ValueDetailDialog::finishPreview(const QByteArray& bytes, bool binary) {
+    auto* dialog =
+        new ValuePreviewDialog(EngineAdapter::valuePreview(bytes, binary, type_), bytes, this);
+    dialog->open();
+    updateActions();
+}
 void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
+    if (previewing_ && query_ && event.id == *query_ && event.value_handle == handle_ &&
+        event.chunk_offset == previewOffset_) {
+        handlePreviewChunk(event);
+        return;
+    }
     if (!loading_ || !query_ || event.id != *query_ || event.value_handle != handle_ ||
         event.chunk_offset != offset_)
         return;
@@ -279,6 +360,7 @@ void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
 void ValueDetailDialog::updateActions() {
     const bool available = query_.has_value() || inlineMode_;
     previous_->setEnabled(available && !loading_ && offset_ > 0);
+    preview_->setEnabled(available && !loading_ && !previewing_);
     next_->setEnabled(available && !loading_ && hasChunk_ && nextOffset_ > offset_ &&
                       nextOffset_ < total_);
 }

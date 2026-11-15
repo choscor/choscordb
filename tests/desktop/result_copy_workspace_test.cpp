@@ -9,11 +9,14 @@
 #include "models/result_table_model.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include "widgets/value_detail_dialog/value_detail_dialog.h"
+#include "widgets/value_preview_dialog/value_preview_dialog.h"
 #include <QAction>
 #include <QApplication>
+#include <QBuffer>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
+#include <QImage>
 #include <QItemSelectionModel>
 #include <QJsonDocument>
 #include <QLabel>
@@ -24,6 +27,7 @@
 #include <QTabWidget>
 #include <QTableView>
 #include <QTimer>
+#include <QTreeWidget>
 #include <QtTest>
 namespace {
 QString copyScope(const choscordb::ResultTableModel& model, const QModelIndexList& indexes,
@@ -346,6 +350,59 @@ class ResultCopyWorkspaceTest : public QObject {
         QTRY_VERIFY2(messages->toPlainText().contains("8 MiB"),
                      qPrintable(messages->toPlainText()));
         QCOMPARE(QApplication::clipboard()->text(), QString("preserve oversized copy"));
+    }
+    void valuePreviewLoadsTheWholeDeferredValueAsAJsonTree() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* run = window.findChild<QAction*>("runStatement");
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        auto* grid = window.findChild<QTableView*>("queryResults");
+        QTRY_VERIFY(run->isEnabled());
+        editor->setText("SELECT '[' || replace(hex(zeroblob(40000)), '00', '1,') || '2]' AS doc");
+        run->trigger();
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        const auto index = grid->model()->index(0, 0);
+        QVERIFY(grid->model()->data(index).toString().contains("open to load"));
+        emit grid->doubleClicked(index);
+        auto* detail = window.findChild<choscordb::ValueDetailDialog*>("valueDetail");
+        QVERIFY(detail);
+        auto* open = detail->findChild<QPushButton*>("valuePreviewOpen");
+        QTRY_VERIFY(open->isEnabled());
+        open->click();
+        choscordb::ValuePreviewDialog* preview = nullptr;
+        QTRY_VERIFY((preview = detail->findChild<choscordb::ValuePreviewDialog*>()));
+        QCOMPARE(preview->findChild<QLabel*>("valuePreviewSummary")->text(),
+                 QString("JSON. The tree shows the first 10000 items."));
+        auto* tree = preview->findChild<QTreeWidget*>("valuePreviewTree");
+        QCOMPARE(tree->topLevelItemCount(), 1);
+        QCOMPARE(tree->topLevelItem(0)->text(1), QString("[40001 items]"));
+        auto* text = preview->findChild<QPlainTextEdit*>("valuePreviewText");
+        preview->findChild<QPushButton*>("valuePreviewMinify")->click();
+        QCOMPARE(text->toPlainText(), QString("[") + QString("1,").repeated(40000) + "2]");
+        preview->findChild<QPushButton*>("valuePreviewPretty")->click();
+        QVERIFY(text->toPlainText().startsWith("[\n  1,\n  1,"));
+    }
+    void valuePreviewShowsInlineImages() {
+        choscordb::EngineAdapter adapter;
+        choscordb::ValueDetailDialog detail(&adapter);
+        QImage image(3, 2, QImage::Format_RGB32);
+        image.fill(Qt::red);
+        QByteArray png;
+        QBuffer buffer(&png);
+        QVERIFY(buffer.open(QIODevice::WriteOnly) && image.save(&buffer, "PNG"));
+        QCOMPARE(detail.openInlineValue(png, "bytea", true), QString());
+        detail.findChild<QPushButton*>("valuePreviewOpen")->click();
+        auto* preview = detail.findChild<choscordb::ValuePreviewDialog*>();
+        QVERIFY(preview);
+        auto* picture = preview->findChild<QLabel*>("valuePreviewImage");
+        QVERIFY(picture);
+        QCOMPARE(picture->pixmap().size(), QSize(3, 2));
+        QCOMPARE(picture->accessibleName(), QString("PNG image, 3 × 2"));
     }
     void sqlResultsCopyCompleteDeferredFallbackText() {
         choscordb::MainWindow window;

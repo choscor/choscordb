@@ -22,7 +22,7 @@ choscordb-sql-language = { path = "../sql-language" }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "process", "fs", "io-util"] }
 thiserror = "2"
 rusqlite = { version = "0.41", features = ["bundled", "collation", "hooks", "limits"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 csv = "1"
 serde = "1"
 tempfile = "3"

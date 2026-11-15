@@ -701,6 +701,21 @@ void EngineAdapter::cancelExport(quint64 id) {
 QString EngineAdapter::valueDetailError(quint64 bytes) {
     return fromRust(value_detail_error(bytes));
 }
+QString EngineAdapter::valuePreviewError(quint64 bytes) {
+    return fromRust(value_preview_error(bytes));
+}
+ValuePreview EngineAdapter::valuePreview(const QByteArray& bytes, bool binary,
+                                         const QString& type) {
+    const auto source = value_preview(bridge_detail::byteView(bytes), binary, toRust(type));
+    ValuePreview preview{fromRust(source.kind),         fromRust(source.summary),
+                         fromRust(source.pretty),       fromRust(source.minified),
+                         fromRust(source.image_format), {}};
+    preview.nodes.reserve(static_cast<qsizetype>(source.nodes.size()));
+    for (const auto& node : source.nodes)
+        preview.nodes.append({static_cast<qsizetype>(node.parent), fromRust(node.key),
+                              fromRust(node.value), fromRust(node.kind)});
+    return preview;
+}
 quint32 EngineAdapter::valueChunkBytes() {
     static const quint32 bytes = value_chunk_max_bytes();
     return bytes;

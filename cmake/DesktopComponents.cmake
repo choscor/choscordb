@@ -114,6 +114,7 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/text_prompt_dialog/text_prompt_dialog.cpp
   desktop/widgets/structure_editor_dialog/structure_editor_dialog.cpp
   desktop/widgets/database_action_dialog/database_action_dialog.cpp
+  desktop/widgets/value_preview_dialog/value_preview_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog_actions.cpp
   desktop/widgets/profile_dialog/profile_dialog_security.cpp
