@@ -134,6 +134,8 @@ void MainWindow::connectNavigator(const Ui& ui) {
     workspace_->adapter()->getQueryPreferences(visibilityLoadToken);
     connect(navigatorController, &NavigatorController::objectActionRequested, this,
             &MainWindow::requestObjectAction);
+    connect(navigatorController, &NavigatorController::objectScriptRequested, this,
+            &MainWindow::copyObjectScript);
     connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
             &MainWindow::handleObjectActionEvent, Qt::DirectConnection);
     connect(navigatorController->model(), &NavigatorModel::childrenRequested, this,

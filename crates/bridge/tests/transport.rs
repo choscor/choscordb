@@ -1221,8 +1221,8 @@ fn object_kind_policy_crosses_the_bridge() {
     assert!(!sidebar_child_visible_policy("table", "index"));
     assert!(object_kind_traits_policy("schema").search_descends);
     assert_eq!(navigator_search_budget().filter_requests, 256);
-    assert!(object_action_unavailable_reason(false, "sqlite", "view", "").is_empty());
-    assert!(object_action_unavailable_reason(true, "sqlite", "view", "").contains("SQLite"));
+    assert!(object_action_unavailable_reason("drop", "sqlite", "view", "").is_empty());
+    assert!(object_action_unavailable_reason("rename", "sqlite", "view", "").contains("SQLite"));
 }
 
 #[test]

@@ -18,6 +18,8 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
+#include <QClipboard>
 #include <QDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -43,7 +45,8 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     auto* adapter = workspace->adapter();
     int finished = 0;
     connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
-        if (event.kind == "query_finished" && event.has_affected_rows)
+        if ((event.kind == "query_finished" && event.has_affected_rows) ||
+            event.kind == "edit_applied")
             ++finished;
     });
     const auto create = adapter->execute(connection, "CREATE TABLE \"old.name\" (id INTEGER)");
@@ -104,7 +107,9 @@ void NavigatorSqlWorkspaceTest::objectActionsRenameAndDropThroughNavigator() {
     const auto menuActions = renameMenu.actions();
     const auto dropAt = menuActions.indexOf(dropCommand);
     QVERIFY(menuActions.indexOf(rename) < dropAt);
-    QVERIFY(dropAt > 0 && menuActions.at(dropAt - 1)->isSeparator());
+    QVERIFY(dropAt > 1 &&
+            menuActions.at(dropAt - 1) == renameMenu.findChild<QAction*>("truncateObject"));
+    QVERIFY(menuActions.at(dropAt - 2)->isSeparator());
     workspace->setExternalWork(true);
     rename->trigger();
     QCOMPARE(finished, settledFinished);
@@ -335,7 +340,8 @@ void NavigatorSqlWorkspaceTest::objectActionKeepsOtherSessionTabWithSameProfile(
     auto* adapter = workspace->adapter();
     int finished = 0;
     connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
-        if (event.kind == "query_finished" && event.has_affected_rows)
+        if ((event.kind == "query_finished" && event.has_affected_rows) ||
+            event.kind == "edit_applied")
             ++finished;
     });
     const auto create = adapter->execute(*first, "CREATE TABLE shared_table (id INTEGER)");
@@ -406,4 +412,88 @@ void NavigatorSqlWorkspaceTest::objectActionKeepsOtherSessionTabWithSameProfile(
     QCOMPARE(secondObject->property("objectConnection").toULongLong(), *second);
     QCOMPARE(window.findChild<WorkspaceRecoveryController*>()->snapshotTabs().first().objectId,
              objectId);
+}
+
+void NavigatorSqlWorkspaceTest::objectTruncateAndCopyScriptThroughNavigator() {
+    using namespace choscordb;
+    QTemporaryDir storage;
+    MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    auto* workspace = window.findChild<QueryWorkspace*>();
+    QSignalSpy connected(workspace, &QueryWorkspace::connectionReady);
+    workspace->connectSqlite(":memory:");
+    QTRY_COMPARE(connected.count(), 1);
+    const auto connection = connected.first().at(0).toULongLong();
+    auto* adapter = workspace->adapter();
+    int applied = 0;
+    std::optional<quint64> lastAffected;
+    connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
+        if (event.kind == "edit_applied")
+            ++applied;
+        if (event.kind == "query_finished" && event.has_affected_rows)
+            lastAffected = event.affected_rows;
+    });
+    const auto run = [&](const char* sql) {
+        lastAffected.reset();
+        const auto query = adapter->execute(connection, sql);
+        QVERIFY(query);
+        adapter->fetchPage(*query);
+        QTRY_VERIFY(lastAffected.has_value());
+        adapter->releaseQuery(*query);
+    };
+    run("CREATE TABLE items (id INTEGER)");
+    run("INSERT INTO items VALUES (1), (2)");
+    QCOMPARE(*lastAffected, quint64(2));
+
+    auto* navigator = window.findChild<NavigatorController*>();
+    auto* model = navigator->model();
+    const auto root = model->index(0, 0);
+    model->fetchMore(root);
+    QTRY_VERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    const auto schema = model->index(0, 0, root);
+    model->fetchMore(schema);
+    QTRY_VERIFY(schema.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    const auto group = model->index(0, 0, schema);
+    model->fetchMore(group);
+    QTRY_VERIFY(group.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    const auto table = model->index(0, 0, group);
+    QCOMPARE(table.data().toString(), QString("items"));
+
+    QMenu menu;
+    navigator->populateContextMenu(&menu, table);
+    auto* clone = menu.findChild<QAction*>("cloneObject");
+    QVERIFY(clone && !clone->isEnabled());
+    QCOMPARE(clone->toolTip(), QString("SQLite cannot clone a table with its keys and indexes."));
+    auto* truncate = menu.findChild<QAction*>("truncateObject");
+    QVERIFY(truncate && truncate->isEnabled());
+    auto* select = menu.findChild<QAction*>("copyObjectScript_select");
+    auto* create = menu.findChild<QAction*>("copyObjectScript_create");
+    QVERIFY(select && select->isEnabled() && create && create->isEnabled());
+
+    select->trigger();
+    QCOMPARE(QGuiApplication::clipboard()->text(),
+             QString("SELECT * FROM \"main\".\"items\" LIMIT 100;"));
+    create->trigger();
+    QTRY_VERIFY(QGuiApplication::clipboard()->text().contains("CREATE TABLE items"));
+
+    bool truncateChecked = false;
+    QTimer::singleShot(0, &window, [&] {
+        auto* dialog = window.findChild<QDialog*>("truncateObjectDialog");
+        auto* preview = dialog ? dialog->findChild<QPlainTextEdit*>("truncateObjectSql") : nullptr;
+        auto* confirm = dialog ? dialog->findChild<QPushButton*>("truncateObjectConfirm") : nullptr;
+        if (!preview || !confirm) {
+            if (auto* modal = QApplication::activeModalWidget())
+                modal->close();
+            return;
+        }
+        truncateChecked = preview->toPlainText() == "DELETE FROM \"main\".\"items\";" &&
+                          !dialog->findChild<QCheckBox*>("truncateObjectCascade") &&
+                          !dialog->findChild<QCheckBox*>("truncateObjectRestartIdentity");
+        confirm->click();
+    });
+    truncate->trigger();
+    QVERIFY(truncateChecked);
+    QTRY_COMPARE(applied, 1);
+    run("UPDATE items SET id = id");
+    QCOMPARE(*lastAffected, quint64(0));
 }

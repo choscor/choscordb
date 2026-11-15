@@ -805,11 +805,12 @@ void EngineAdapter::loadObjectInspection(quint64 connection, const QString& obje
         emit objectInspectionFailed(connection, object, requestToken, fromRust(reply.error));
     }
 }
-void EngineAdapter::objectDdl(quint64 connection, const QString& object) {
+bool EngineAdapter::objectDdl(quint64 connection, const QString& object, quint64 requestToken) {
     const auto bytes = object.toUtf8();
-    auto reply = object_ddl(*d_->engine, connection, utf8View(bytes));
+    auto reply = object_ddl_request(*d_->engine, connection, utf8View(bytes), requestToken);
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
+    return reply.accepted;
 }
 bool EngineAdapter::disconnectConnection(quint64 connection) {
     auto reply = choscordb::disconnect(*d_->engine, connection);

@@ -97,6 +97,16 @@ The grid stages an expression as `GridEditRow::expressions`. `plan_grid_edits` w
 `GridTemporalKind::text` makes the ISO text of a picked date and time.
 `read_cell_file` and `write_cell_file` in `core` read and write a binary cell. A cell file can have up to `MAX_GRID_BINARY_BYTES` (64 KiB).
 
+### Object actions
+
+`prepare_object_action` in `core` makes the SQL for Drop, Rename, Truncate and Clone from the trusted object ID.
+It returns a list of statements. The desktop frontend applies the list as one edit batch, so a failure rolls back the full action where the database permits it.
+Truncate is available only for tables. PostgreSQL gives `TRUNCATE TABLE` with optional `RESTART IDENTITY` and `CASCADE`. `truncate_traits` tells which options a driver supports.
+MySQL and MariaDB give `TRUNCATE TABLE`. SQLite gives `DELETE FROM`.
+Clone makes a new table in the same schema. PostgreSQL uses `LIKE ... INCLUDING ALL`, and MySQL and MariaDB use `CREATE TABLE ... LIKE`. An optional second statement copies the rows.
+SQLite cannot clone a table with its keys and indexes, so the engine returns a typed error.
+`object_script` gives the text for Copy script as: `DROP`, `TRUNCATE`, or `SELECT` with `SCRIPT_SELECT_ROWS` (100) rows. For `CREATE` it tells the frontend to load the object DDL.
+
 ### Metadata cache
 
 The `storage` crate keeps the navigator children of saved connection profiles in the `metadata_cache` table.

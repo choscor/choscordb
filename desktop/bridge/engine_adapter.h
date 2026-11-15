@@ -752,8 +752,6 @@ class EngineAdapter final : public QObject {
     static quint32 recentHistoryRows();
     static bool sidebarChildVisible(const QString& parentKind, const QString& kind);
     static bool relationSubtypeHasHistory(const QString& subtype);
-    static QString objectActionUnavailableReason(bool rename, const QString& driver,
-                                                 const QString& kind, const QString& subtype);
     static bool navigatorObjectVisible(const QString& driver, bool showSystemSchemas,
                                        const QString& qualifiedName);
     static bool systemSchemaNode(const QString& kind, const QString& name);
@@ -770,7 +768,7 @@ class EngineAdapter final : public QObject {
     void loadObjectInspection(quint64 connection, const QString& object, ObjectInspectionPane pane,
                               quint64 requestToken);
     void loadObjectGraph(quint64 connection, const QString& object, quint64 requestToken);
-    void objectDdl(quint64 connection, const QString& object);
+    bool objectDdl(quint64 connection, const QString& object, quint64 requestToken);
     bool disconnectConnection(quint64 connection);
     void releaseQuery(quint64 query);
     void beginShutdown();

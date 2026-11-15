@@ -16,8 +16,9 @@ mod memory;
 pub use memory::{LEASE_BOOKKEEPING_BYTES, MemoryUsage, PageLease, PageMemoryConfig, lease_fits};
 mod object_action;
 pub use object_action::{
-    ObjectAction, ObjectActionStatement, object_action_availability, object_display_identity,
-    prepare_object_action,
+    ObjectAction, ObjectActionStatement, ObjectScript, ObjectScriptText, SCRIPT_SELECT_ROWS,
+    TruncateTraits, object_action_availability, object_display_identity, object_script,
+    object_script_availability, prepare_object_action, truncate_traits,
 };
 mod operation;
 mod preview_capture;

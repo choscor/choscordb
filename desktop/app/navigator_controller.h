@@ -120,6 +120,9 @@ class NavigatorController final : public QObject {
                                const QString& shortName, const QString& kind,
                                const QString& parentObjectId, const QString& qualifiedName,
                                const QString& relationSubtype);
+    void objectScriptRequested(const QString& script, quint64 connection, const QString& objectId,
+                               const QString& kind, const QString& qualifiedName,
+                               const QString& relationSubtype);
     void pinRequested(const QModelIndex& sourceIndex, bool unpin);
 
   private:

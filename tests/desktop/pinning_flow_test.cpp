@@ -188,7 +188,7 @@ class PinningFlowTest : public QObject {
         auto* adapter = workspace->adapter();
         int completed = 0;
         connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
-            if (event.kind == "query_finished")
+            if (event.kind == "query_finished" || event.kind == "edit_applied")
                 ++completed;
         });
         const auto create = adapter->execute(connection, "CREATE TABLE orders (id INTEGER)");
@@ -292,7 +292,7 @@ class PinningFlowTest : public QObject {
             auto* adapter = workspace->adapter();
             int finished = 0;
             connect(adapter, &EngineAdapter::eventReady, &setup, [&](const BridgeEvent& event) {
-                if (event.kind == "query_finished")
+                if (event.kind == "query_finished" || event.kind == "edit_applied")
                     ++finished;
             });
             for (const auto& statement :
@@ -443,7 +443,7 @@ class PinningFlowTest : public QObject {
             auto* adapter = workspace->adapter();
             int finished = 0;
             connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
-                if (event.kind == "query_finished")
+                if (event.kind == "query_finished" || event.kind == "edit_applied")
                     ++finished;
             });
             const auto query = adapter->execute(connection, "CREATE TABLE orders (id INTEGER)");
@@ -572,7 +572,7 @@ class PinningFlowTest : public QObject {
             auto* adapter = workspace->adapter();
             int completed = 0;
             connect(adapter, &EngineAdapter::eventReady, &setup, [&](const BridgeEvent& event) {
-                if (event.kind == "query_finished")
+                if (event.kind == "query_finished" || event.kind == "edit_applied")
                     ++completed;
             });
             const auto query = adapter->execute(connection, "CREATE TABLE orders (id INTEGER)");
@@ -665,7 +665,7 @@ class PinningFlowTest : public QObject {
         auto* adapter = workspace->adapter();
         int completed = 0;
         connect(adapter, &EngineAdapter::eventReady, &restored, [&](const BridgeEvent& event) {
-            if (event.kind == "query_finished")
+            if (event.kind == "query_finished" || event.kind == "edit_applied")
                 ++completed;
         });
         const auto drop = adapter->execute(connection, "DROP TABLE orders");
@@ -709,7 +709,7 @@ class PinningFlowTest : public QObject {
             auto* adapter = workspace->adapter();
             int completed = 0;
             connect(adapter, &EngineAdapter::eventReady, &setup, [&](const BridgeEvent& event) {
-                if (event.kind == "query_finished")
+                if (event.kind == "query_finished" || event.kind == "edit_applied")
                     ++completed;
             });
             const auto query = adapter->execute(connection, "CREATE TABLE orders (id INTEGER)");
@@ -840,7 +840,7 @@ class PinningFlowTest : public QObject {
             auto* adapter = workspace->adapter();
             int completed = 0;
             connect(adapter, &EngineAdapter::eventReady, &setup, [&](const BridgeEvent& event) {
-                if (event.kind == "query_finished")
+                if (event.kind == "query_finished" || event.kind == "edit_applied")
                     ++completed;
             });
             for (const auto& name : {"alpha", "beta"}) {

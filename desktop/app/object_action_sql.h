@@ -1,26 +1,51 @@
 #pragma once
 
+#include <QList>
 #include <QString>
+#include <QStringList>
 
 namespace choscordb {
+
+struct ObjectActionRequest {
+    QString action, driver, kind, objectId, qualifiedName, newName, relationSubtype;
+    bool cascade = false, restartIdentity = false, withData = false;
+};
 
 struct ObjectActionStatement {
     bool valid = false;
     QString sql{};
+    QStringList statements{};
     QString error{};
     QString newObjectId{};
     QString newQualifiedName{};
+    QString newName{};
+};
+
+struct ObjectScript {
+    bool valid = false, fromDdl = false;
+    QString sql{}, error{};
+};
+
+struct ObjectScriptKind {
+    QString code, label;
+};
+
+struct TruncateTraits {
+    bool cascade = false, restartIdentity = false;
 };
 
 class ObjectActionSql {
   public:
-    static ObjectActionStatement drop(const QString& driver, const QString& kind,
-                                      const QString& objectId, const QString& qualifiedName,
-                                      const QString& relationSubtype = {});
-    static ObjectActionStatement rename(const QString& driver, const QString& kind,
-                                        const QString& objectId, const QString& qualifiedName,
-                                        const QString& newName,
-                                        const QString& relationSubtype = {});
+    static ObjectActionStatement prepare(const ObjectActionRequest& request);
+    static QString unavailableReason(const QString& action, const QString& driver,
+                                     const QString& kind, const QString& relationSubtype);
+    static TruncateTraits truncateTraits(const QString& driver);
+    static QList<ObjectScriptKind> scripts();
+    static QString scriptUnavailableReason(const QString& script, const QString& driver,
+                                           const QString& kind, const QString& relationSubtype);
+    static ObjectScript script(const QString& script, const QString& driver, const QString& kind,
+                               const QString& objectId, const QString& qualifiedName,
+                               const QString& relationSubtype);
 };
 
 }

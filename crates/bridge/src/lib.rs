@@ -1370,12 +1370,37 @@ pub mod ffi {
         accept: String,
     }
     #[derive(Default)]
+    struct ObjectActionRequestDto {
+        action: String,
+        driver: String,
+        kind: String,
+        object_id: String,
+        qualified_name: String,
+        new_name: String,
+        relation_subtype: String,
+        cascade: bool,
+        restart_identity: bool,
+        with_data: bool,
+    }
+    #[derive(Default)]
     struct ObjectActionStatementDto {
         valid: bool,
         sql: String,
+        statements: Vec<String>,
         error: String,
         new_object_id: String,
         new_qualified_name: String,
+    }
+    struct TruncateTraitsDto {
+        cascade: bool,
+        restart_identity: bool,
+    }
+    #[derive(Default)]
+    struct ObjectScriptDto {
+        valid: bool,
+        from_ddl: bool,
+        sql: String,
+        error: String,
     }
     #[derive(Default)]
     struct DocumentPathStatusDto {
@@ -1794,20 +1819,28 @@ pub mod ffi {
         ) -> ProfileTestTransitionDto;
         fn recovery_hint_text(hint: RecoveryHintDto) -> String;
         fn object_action_unavailable_reason(
-            rename: bool,
+            action: &str,
             driver: &str,
             kind: &str,
             relation_subtype: &str,
         ) -> String;
-        fn prepare_object_action(
+        fn prepare_object_action(request: ObjectActionRequestDto) -> ObjectActionStatementDto;
+        fn truncate_traits_policy(driver: &str) -> TruncateTraitsDto;
+        fn object_scripts() -> Vec<CodeLabelDto>;
+        fn object_script_unavailable_reason(
+            script: &str,
+            driver: &str,
+            kind: &str,
+            relation_subtype: &str,
+        ) -> String;
+        fn object_script_policy(
+            script: &str,
             driver: &str,
             kind: &str,
             object_id: &str,
             qualified_name: &str,
-            new_name: &str,
             relation_subtype: &str,
-            rename: bool,
-        ) -> ObjectActionStatementDto;
+        ) -> ObjectScriptDto;
         type CompletionCatalog;
         fn completion_limits() -> CompletionLimitsDto;
         fn completion_source_supported(bytes: u64) -> bool;
@@ -2140,7 +2173,6 @@ pub mod ffi {
             object: &str,
             request_token: u64,
         ) -> Submit;
-        fn object_ddl(engine: &mut BridgeEngine, connection: u64, object: &str) -> Submit;
         fn fetch_page(engine: &mut BridgeEngine, query: u64) -> Submit;
         fn fetch_page_at(engine: &mut BridgeEngine, query: u64, index: u64) -> Submit;
         fn apply_result_view(
@@ -2649,14 +2681,6 @@ pub fn load_value(engine: &mut BridgeEngine, query: u64, handle: u64) -> ffi::Su
             .map_err(|e| e.to_string())
     })
 }
-pub fn object_ddl(engine: &mut BridgeEngine, connection: u64, object: &str) -> ffi::Submit {
-    submit(engine, |e| {
-        e.object_ddl(unpack(connection), ObjectId(object.into()))
-            .map(|()| connection)
-            .map_err(|e| e.to_string())
-    })
-}
-
 pub fn metadata_request(
     engine: &mut BridgeEngine,
     connection: u64,

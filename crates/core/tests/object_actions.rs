@@ -1,4 +1,14 @@
-use choscordb_core::{ObjectAction, object_action_availability, prepare_object_action};
+use choscordb_core::{
+    ObjectAction, ObjectScript, ObjectScriptText, object_action_availability, object_script,
+    object_script_availability, prepare_object_action, truncate_traits,
+};
+
+fn truncate(cascade: bool, restart_identity: bool) -> ObjectAction {
+    ObjectAction::Truncate {
+        cascade,
+        restart_identity,
+    }
+}
 
 #[test]
 fn drop_uses_trusted_identity_and_quotes_each_dialect() {
@@ -410,5 +420,214 @@ fn mariadb_system_versioned_tables_drop_and_rename() {
     assert!(
         object_action_availability(ObjectAction::Drop, "mariadb", "view", "system_versioned")
             .is_err()
+    );
+}
+
+#[test]
+fn truncate_uses_each_dialect_and_postgres_options() {
+    let postgres = prepare_object_action(
+        truncate(true, true),
+        "postgres",
+        "table",
+        "pg:relation:7",
+        "\"public\".\"orders\"",
+        "",
+        "",
+    )
+    .unwrap();
+    assert_eq!(
+        postgres.statements,
+        ["TRUNCATE TABLE \"public\".\"orders\" RESTART IDENTITY CASCADE;"]
+    );
+    let plain = prepare_object_action(
+        truncate(false, false),
+        "postgres",
+        "table",
+        "pg:relation:7",
+        "\"public\".\"orders\"",
+        "",
+        "",
+    )
+    .unwrap();
+    assert_eq!(plain.sql, "TRUNCATE TABLE \"public\".\"orders\";");
+    let mysql = prepare_object_action(
+        truncate(false, false),
+        "mariadb",
+        "table",
+        "[\"shop\",\"orders\"]",
+        "",
+        "",
+        "",
+    )
+    .unwrap();
+    assert_eq!(mysql.sql, "TRUNCATE TABLE `shop`.`orders`;");
+    let sqlite = prepare_object_action(
+        truncate(false, false),
+        "sqlite",
+        "table",
+        "[\"main\",\"orders\"]",
+        "",
+        "",
+        "",
+    )
+    .unwrap();
+    assert_eq!(sqlite.sql, "DELETE FROM \"main\".\"orders\";");
+}
+
+#[test]
+fn truncate_rejects_options_and_kinds_that_a_driver_cannot_run() {
+    assert!(truncate_traits("postgres").cascade && truncate_traits("postgres").restart_identity);
+    for driver in ["sqlite", "mysql", "mariadb"] {
+        let traits = truncate_traits(driver);
+        assert!(!traits.cascade && !traits.restart_identity, "{driver}");
+    }
+    assert_eq!(
+        prepare_object_action(
+            truncate(true, false),
+            "mysql",
+            "table",
+            "[\"shop\",\"orders\"]",
+            "",
+            "",
+            ""
+        ),
+        Err("This connection does not support CASCADE for truncate.")
+    );
+    assert_eq!(
+        prepare_object_action(
+            truncate(false, true),
+            "sqlite",
+            "table",
+            "[\"main\",\"orders\"]",
+            "",
+            "",
+            ""
+        ),
+        Err("This connection does not support RESTART IDENTITY for truncate.")
+    );
+    assert_eq!(
+        object_action_availability(truncate(false, false), "postgres", "view", ""),
+        Err("Only tables support this action.")
+    );
+    assert_eq!(
+        object_action_availability(truncate(false, false), "postgres", "table", "foreign_table"),
+        Err("Only tables support this action.")
+    );
+}
+
+#[test]
+fn clone_copies_structure_and_optional_rows() {
+    let postgres = prepare_object_action(
+        ObjectAction::Clone { with_data: true },
+        "postgres",
+        "table",
+        "pg:relation:7",
+        "\"public\".\"orders\"",
+        "orders copy",
+        "",
+    )
+    .unwrap();
+    assert_eq!(
+        postgres.statements,
+        [
+            "CREATE TABLE \"public\".\"orders copy\" (LIKE \"public\".\"orders\" INCLUDING ALL);",
+            "INSERT INTO \"public\".\"orders copy\" OVERRIDING SYSTEM VALUE SELECT * FROM \"public\".\"orders\";"
+        ]
+    );
+    assert_eq!(postgres.new_qualified_name, "\"public\".\"orders copy\"");
+    let mysql = prepare_object_action(
+        ObjectAction::Clone { with_data: false },
+        "mysql",
+        "table",
+        "[\"shop\",\"orders\"]",
+        "",
+        "orders_copy",
+        "",
+    )
+    .unwrap();
+    assert_eq!(
+        mysql.statements,
+        ["CREATE TABLE `shop`.`orders_copy` LIKE `shop`.`orders`;"]
+    );
+    assert_eq!(mysql.new_object_id, "[\"shop\",\"orders_copy\"]");
+    assert_eq!(
+        prepare_object_action(
+            ObjectAction::Clone { with_data: false },
+            "mysql",
+            "table",
+            "[\"shop\",\"orders\"]",
+            "",
+            "orders",
+            ""
+        ),
+        Err("Enter a different object name.")
+    );
+    assert_eq!(
+        object_action_availability(
+            ObjectAction::Clone { with_data: true },
+            "sqlite",
+            "table",
+            ""
+        ),
+        Err("SQLite cannot clone a table with its keys and indexes.")
+    );
+}
+
+#[test]
+fn action_codes_select_each_action() {
+    assert_eq!(
+        ObjectAction::from_code("truncate", true, false, true),
+        Some(truncate(true, false))
+    );
+    assert_eq!(
+        ObjectAction::from_code("clone", false, false, true),
+        Some(ObjectAction::Clone { with_data: true })
+    );
+    assert_eq!(
+        ObjectAction::from_code("drop", true, true, true),
+        Some(ObjectAction::Drop)
+    );
+    assert_eq!(ObjectAction::from_code("purge", false, false, false), None);
+}
+
+#[test]
+fn copy_scripts_build_sql_or_request_ddl() {
+    let id = "[\"main\",\"orders\"]";
+    let script = |script| object_script(script, "sqlite", "table", id, "", "");
+    assert_eq!(script(ObjectScript::Create), Ok(ObjectScriptText::Ddl));
+    assert_eq!(
+        script(ObjectScript::Drop),
+        Ok(ObjectScriptText::Sql(
+            "DROP TABLE \"main\".\"orders\";".into()
+        ))
+    );
+    assert_eq!(
+        script(ObjectScript::Truncate),
+        Ok(ObjectScriptText::Sql(
+            "DELETE FROM \"main\".\"orders\";".into()
+        ))
+    );
+    assert_eq!(
+        script(ObjectScript::SelectRows),
+        Ok(ObjectScriptText::Sql(
+            "SELECT * FROM \"main\".\"orders\" LIMIT 100;".into()
+        ))
+    );
+    assert_eq!(
+        object_script(ObjectScript::Create, "sqlite", "table", "bad", "", ""),
+        Err("The selected object has an invalid identity.")
+    );
+    assert_eq!(
+        object_script_availability(ObjectScript::Truncate, "mysql", "view", ""),
+        Err("Only tables support this action.")
+    );
+    assert_eq!(
+        object_script_availability(ObjectScript::SelectRows, "mariadb", "sequence", ""),
+        Err("Only tables and views support this script.")
+    );
+    assert_eq!(ObjectScript::SelectRows.label(), "SELECT 100 rows");
+    assert_eq!(
+        ObjectScript::from_code("select"),
+        Some(ObjectScript::SelectRows)
     );
 }

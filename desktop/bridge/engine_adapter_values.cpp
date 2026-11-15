@@ -754,14 +754,6 @@ bool EngineAdapter::relationSubtypeHasHistory(const QString& subtype) {
     cache.insert(subtype, history);
     return history;
 }
-QString EngineAdapter::objectActionUnavailableReason(bool rename, const QString& driver,
-                                                     const QString& kind, const QString& subtype) {
-    const auto driverBytes = driver.toUtf8();
-    const auto kindBytes = kind.toUtf8();
-    const auto subtypeBytes = subtype.toUtf8();
-    return fromRust(object_action_unavailable_reason(rename, utf8View(driverBytes),
-                                                     utf8View(kindBytes), utf8View(subtypeBytes)));
-}
 bool EngineAdapter::navigatorObjectVisible(const QString& driver, bool showSystemSchemas,
                                            const QString& qualifiedName) {
     const auto driverBytes = driver.toUtf8();

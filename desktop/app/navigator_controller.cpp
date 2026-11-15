@@ -1,4 +1,5 @@
 #include "app/navigator_controller.h"
+#include "app/object_action_sql.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/rust_text.h"
 #include "bridge/template_service.h"
@@ -576,38 +577,59 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
     const auto subtype = relationSubtype(index.data(NavigatorModel::PropertiesRole).toList());
     const auto driver = driverResolver_ ? driverResolver_(connection).toLower() : QString{};
     menu->addSeparator();
-    const auto addObjectAction = [&](const QString& label, const char* name, bool rename) {
-        auto* action = menu->addAction(label);
-        action->setObjectName(name);
-        const auto reason =
-            EngineAdapter::objectActionUnavailableReason(rename, driver, objectKind, subtype);
+    const auto disableWithReason = [menu](QAction* action, const QString& reason) {
         action->setEnabled(reason.isEmpty());
         if (!reason.isEmpty()) {
             action->setToolTip(reason);
             action->setStatusTip(reason);
             menu->setToolTipsVisible(true);
         }
-        return action;
     };
-    auto* rename = addObjectAction(tr("Rename…"), "renameObject", true);
+    const auto requestStillMatches = [this, index, connection, objectId, shortName, objectKind,
+                                      parentObjectId, qualifiedName, subtype] {
+        return index.isValid() && index.model() == model_ &&
+               index.data(NavigatorModel::ConnectionRole).toULongLong() == connection &&
+               index.data(NavigatorModel::ObjectIdRole).toString() == objectId &&
+               index.data(NavigatorModel::KindRole).toString() == objectKind &&
+               index.data(Qt::DisplayRole).toString() == shortName &&
+               index.data(NavigatorModel::QualifiedNameRole).toString() == qualifiedName &&
+               index.parent().data(NavigatorModel::ObjectIdRole).toString() == parentObjectId &&
+               relationSubtype(index.data(NavigatorModel::PropertiesRole).toList()) == subtype;
+    };
+    const auto addObjectAction = [&](const QString& label, const QString& code) {
+        auto* action = menu->addAction(label);
+        action->setObjectName(code + QStringLiteral("Object"));
+        disableWithReason(action,
+                          ObjectActionSql::unavailableReason(code, driver, objectKind, subtype));
+        connect(action, &QAction::triggered, this,
+                [this, code, requestStillMatches, connection, objectId, shortName, objectKind,
+                 parentObjectId, qualifiedName, subtype] {
+                    if (requestStillMatches())
+                        emit objectActionRequested(code, connection, objectId, shortName,
+                                                   objectKind, parentObjectId, qualifiedName,
+                                                   subtype);
+                });
+    };
+    addObjectAction(tr("Rename…"), QStringLiteral("rename"));
+    addObjectAction(tr("Clone…"), QStringLiteral("clone"));
+    auto* scripts = menu->addMenu(tr("Copy script as"));
+    scripts->setObjectName("copyObjectScript");
+    for (const auto& script : ObjectActionSql::scripts()) {
+        auto* action = scripts->addAction(script.label);
+        action->setObjectName(QStringLiteral("copyObjectScript_") + script.code);
+        disableWithReason(action, ObjectActionSql::scriptUnavailableReason(script.code, driver,
+                                                                           objectKind, subtype));
+        connect(action, &QAction::triggered, this,
+                [this, code = script.code, requestStillMatches, connection, objectId, objectKind,
+                 qualifiedName, subtype] {
+                    if (requestStillMatches())
+                        emit objectScriptRequested(code, connection, objectId, objectKind,
+                                                   qualifiedName, subtype);
+                });
+    }
     menu->addSeparator();
-    auto* drop = addObjectAction(tr("Drop…"), "dropObject", false);
-    const auto dispatch = [this, index, connection, objectId, shortName, objectKind, parentObjectId,
-                           qualifiedName, subtype](const QString& action) {
-        if (!index.isValid() || index.model() != model_ ||
-            index.data(NavigatorModel::ConnectionRole).toULongLong() != connection ||
-            index.data(NavigatorModel::ObjectIdRole).toString() != objectId ||
-            index.data(NavigatorModel::KindRole).toString() != objectKind ||
-            index.data(Qt::DisplayRole).toString() != shortName ||
-            index.data(NavigatorModel::QualifiedNameRole).toString() != qualifiedName ||
-            index.parent().data(NavigatorModel::ObjectIdRole).toString() != parentObjectId ||
-            relationSubtype(index.data(NavigatorModel::PropertiesRole).toList()) != subtype)
-            return;
-        emit objectActionRequested(action, connection, objectId, shortName, objectKind,
-                                   parentObjectId, qualifiedName, subtype);
-    };
-    connect(drop, &QAction::triggered, this, [dispatch] { dispatch(QStringLiteral("drop")); });
-    connect(rename, &QAction::triggered, this, [dispatch] { dispatch(QStringLiteral("rename")); });
+    addObjectAction(tr("Truncate…"), QStringLiteral("truncate"));
+    addObjectAction(tr("Drop…"), QStringLiteral("drop"));
     if (!traits.relation)
         return;
     menu->addSeparator();

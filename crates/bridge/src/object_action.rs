@@ -1,38 +1,114 @@
 use crate::ffi;
-use choscordb_core::{ObjectAction, prepare_object_action as prepare_core_object_action};
+use choscordb_core::{
+    ObjectAction, ObjectScript, ObjectScriptText,
+    prepare_object_action as prepare_core_object_action,
+};
 
 pub fn prepare_object_action(
-    driver: &str,
-    kind: &str,
-    object_id: &str,
-    qualified_name: &str,
-    new_name: &str,
-    relation_subtype: &str,
-    rename: bool,
+    request: ffi::ObjectActionRequestDto,
 ) -> ffi::ObjectActionStatementDto {
-    let action = if rename {
-        ObjectAction::Rename
-    } else {
-        ObjectAction::Drop
+    let Some(action) = ObjectAction::from_code(
+        &request.action,
+        request.cascade,
+        request.restart_identity,
+        request.with_data,
+    ) else {
+        return ffi::ObjectActionStatementDto {
+            error: format!("Unknown object action {}.", request.action),
+            ..Default::default()
+        };
     };
     match prepare_core_object_action(
         action,
-        driver,
-        kind,
-        object_id,
-        qualified_name,
-        new_name,
-        relation_subtype,
+        &request.driver,
+        &request.kind,
+        &request.object_id,
+        &request.qualified_name,
+        &request.new_name,
+        &request.relation_subtype,
     ) {
         Ok(statement) => ffi::ObjectActionStatementDto {
             valid: true,
             sql: statement.sql,
+            statements: statement.statements,
             error: String::new(),
             new_object_id: statement.new_object_id,
             new_qualified_name: statement.new_qualified_name,
         },
         Err(error) => ffi::ObjectActionStatementDto {
             error: error.to_owned(),
+            ..Default::default()
+        },
+    }
+}
+
+pub fn truncate_traits_policy(driver: &str) -> ffi::TruncateTraitsDto {
+    let traits = choscordb_core::truncate_traits(driver);
+    ffi::TruncateTraitsDto {
+        cascade: traits.cascade,
+        restart_identity: traits.restart_identity,
+    }
+}
+
+pub fn object_scripts() -> Vec<ffi::CodeLabelDto> {
+    ObjectScript::ALL
+        .into_iter()
+        .map(|script| ffi::CodeLabelDto {
+            code: script.code().into(),
+            label: script.label(),
+        })
+        .collect()
+}
+
+pub fn object_script_unavailable_reason(
+    script: &str,
+    driver: &str,
+    kind: &str,
+    relation_subtype: &str,
+) -> String {
+    let Some(script) = ObjectScript::from_code(script) else {
+        return format!("Unknown object script {script}.");
+    };
+    match choscordb_core::object_script_availability(script, driver, kind, relation_subtype) {
+        Ok(()) => String::new(),
+        Err(reason) => reason.into(),
+    }
+}
+
+pub fn object_script_policy(
+    script: &str,
+    driver: &str,
+    kind: &str,
+    object_id: &str,
+    qualified_name: &str,
+    relation_subtype: &str,
+) -> ffi::ObjectScriptDto {
+    let Some(script_kind) = ObjectScript::from_code(script) else {
+        return ffi::ObjectScriptDto {
+            error: format!("Unknown object script {script}."),
+            ..Default::default()
+        };
+    };
+    match choscordb_core::object_script(
+        script_kind,
+        driver,
+        kind,
+        object_id,
+        qualified_name,
+        relation_subtype,
+    ) {
+        Ok(ObjectScriptText::Sql(sql)) => ffi::ObjectScriptDto {
+            valid: true,
+            sql,
+            ..Default::default()
+        },
+        Ok(ObjectScriptText::Ddl) => ffi::ObjectScriptDto {
+            valid: true,
+            from_ddl: true,
+            ..Default::default()
+        },
+        Err(error) => ffi::ObjectScriptDto {
+            error: error.into(),
             ..Default::default()
         },
     }
@@ -232,18 +308,16 @@ pub fn relation_subtype_history_policy(relation_subtype: &str) -> bool {
 }
 
 pub fn object_action_unavailable_reason(
-    rename: bool,
+    action: &str,
     driver: &str,
     kind: &str,
     relation_subtype: &str,
 ) -> String {
-    let action = if rename {
-        ObjectAction::Rename
-    } else {
-        ObjectAction::Drop
+    let Some(action) = ObjectAction::from_code(action, false, false, false) else {
+        return format!("Unknown object action {action}.");
     };
-    choscordb_core::object_action_availability(action, driver, kind, relation_subtype)
-        .err()
-        .unwrap_or_default()
-        .into()
+    match choscordb_core::object_action_availability(action, driver, kind, relation_subtype) {
+        Ok(()) => String::new(),
+        Err(reason) => reason.into(),
+    }
 }

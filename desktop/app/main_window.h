@@ -1,4 +1,5 @@
 #pragma once
+#include "app/object_action_sql.h"
 #include "app/pin_store.h"
 #include "app/result_column_widths.h"
 #include "bridge/engine_adapter.h"
@@ -95,6 +96,12 @@ class MainWindow final : public QMainWindow {
                              const QString& shortName, const QString& kind,
                              const QString& parentObjectId, const QString& qualifiedName,
                              const QString& relationSubtype);
+    std::optional<ObjectActionStatement> execObjectActionForm(const ObjectActionRequest& request,
+                                                              const QString& shortName,
+                                                              const QString& displayKind);
+    void copyObjectScript(const QString& script, quint64 connection, const QString& objectId,
+                          const QString& kind, const QString& qualifiedName,
+                          const QString& relationSubtype);
     void handleObjectActionEvent(const BridgeEvent& event);
     void syncObjectSectionBusy();
     bool objectActionReady(quint64 connection, const QString& objectId, const QString& kind,
@@ -125,9 +132,14 @@ class MainWindow final : public QMainWindow {
     struct PendingObjectAction {
         QString action, objectId, kind, displayKind, parentObjectId, qualifiedName;
         QString newObjectId, newQualifiedName, newName, context;
-        quint64 connection = 0, query = 0;
+        quint64 connection = 0, token = 0;
     };
     std::optional<PendingObjectAction> pendingObjectAction_;
+    struct PendingObjectScript {
+        quint64 connection = 0, token = 0;
+        QString objectId, qualifiedName;
+    };
+    std::optional<PendingObjectScript> pendingObjectScript_;
     struct PendingObjectRefresh {
         quint64 connection = 0, token = 0;
         QString parentObjectId;

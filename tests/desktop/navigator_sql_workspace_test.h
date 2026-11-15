@@ -69,4 +69,5 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void generationOpensDraftOnExistingSavedConnectionWithoutExecuting();
     void objectActionsRenameAndDropThroughNavigator();
     void objectActionKeepsOtherSessionTabWithSameProfile();
+    void objectTruncateAndCopyScriptThroughNavigator();
 };

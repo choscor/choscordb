@@ -1,49 +1,88 @@
 #include "app/object_action_sql.h"
 #include "bridge/rust_text.h"
 
-#include <QByteArray>
-#include <array>
-
 namespace choscordb {
 namespace {
 
 using bridge_detail::fromRust;
-using bridge_detail::utf8View;
+using bridge_detail::toRust;
 
-ObjectActionStatement prepare(const QString& driver, const QString& kind, const QString& objectId,
-                              const QString& qualifiedName, const QString& newName,
-                              const QString& relationSubtype, bool rename) {
-    const std::array<QString, 6> inputs{driver,        kind,    objectId,
-                                        qualifiedName, newName, relationSubtype};
-    std::array<QByteArray, 6> bytes;
-    for (size_t i = 0; i < inputs.size(); ++i) {
-        bytes[i] = inputs[i].toUtf8();
-        if (QString::fromUtf8(bytes[i]) != inputs[i])
-            return {.error = QStringLiteral("The object action input is not valid Unicode.")};
-    }
-    const auto part = [&bytes](size_t index) { return utf8View(bytes[index]); };
-    const auto result =
-        prepare_object_action(part(0), part(1), part(2), part(3), part(4), part(5), rename);
+bool validUnicode(std::initializer_list<const QString*> inputs) {
+    for (const auto* input : inputs)
+        if (QString::fromUtf8(input->toUtf8()) != *input)
+            return false;
+    return true;
+}
+
+const QString invalidInput = QStringLiteral("The object action input is not valid Unicode.");
+
+}
+
+ObjectActionStatement ObjectActionSql::prepare(const ObjectActionRequest& request) {
+    if (!validUnicode({&request.action, &request.driver, &request.kind, &request.objectId,
+                       &request.qualifiedName, &request.newName, &request.relationSubtype}))
+        return {.error = invalidInput};
+    ObjectActionRequestDto dto;
+    dto.action = toRust(request.action);
+    dto.driver = toRust(request.driver);
+    dto.kind = toRust(request.kind);
+    dto.object_id = toRust(request.objectId);
+    dto.qualified_name = toRust(request.qualifiedName);
+    dto.new_name = toRust(request.newName);
+    dto.relation_subtype = toRust(request.relationSubtype);
+    dto.cascade = request.cascade;
+    dto.restart_identity = request.restartIdentity;
+    dto.with_data = request.withData;
+    const auto result = prepare_object_action(std::move(dto));
+    QStringList statements;
+    for (const auto& statement : result.statements)
+        statements.append(fromRust(statement));
     return {.valid = result.valid,
             .sql = fromRust(result.sql),
+            .statements = statements,
             .error = fromRust(result.error),
             .newObjectId = fromRust(result.new_object_id),
-            .newQualifiedName = fromRust(result.new_qualified_name)};
+            .newQualifiedName = fromRust(result.new_qualified_name),
+            .newName = result.valid ? request.newName : QString{}};
 }
 
+QString ObjectActionSql::unavailableReason(const QString& action, const QString& driver,
+                                           const QString& kind, const QString& relationSubtype) {
+    return fromRust(object_action_unavailable_reason(toRust(action), toRust(driver), toRust(kind),
+                                                     toRust(relationSubtype)));
 }
 
-ObjectActionStatement ObjectActionSql::drop(const QString& driver, const QString& kind,
-                                            const QString& objectId, const QString& qualifiedName,
-                                            const QString& relationSubtype) {
-    return prepare(driver, kind, objectId, qualifiedName, {}, relationSubtype, false);
+TruncateTraits ObjectActionSql::truncateTraits(const QString& driver) {
+    const auto traits = truncate_traits_policy(toRust(driver));
+    return {.cascade = traits.cascade, .restartIdentity = traits.restart_identity};
 }
 
-ObjectActionStatement ObjectActionSql::rename(const QString& driver, const QString& kind,
-                                              const QString& objectId, const QString& qualifiedName,
-                                              const QString& newName,
-                                              const QString& relationSubtype) {
-    return prepare(driver, kind, objectId, qualifiedName, newName, relationSubtype, true);
+QList<ObjectScriptKind> ObjectActionSql::scripts() {
+    QList<ObjectScriptKind> result;
+    for (const auto& script : object_scripts())
+        result.append({fromRust(script.code), fromRust(script.label)});
+    return result;
+}
+
+QString ObjectActionSql::scriptUnavailableReason(const QString& script, const QString& driver,
+                                                 const QString& kind,
+                                                 const QString& relationSubtype) {
+    return fromRust(object_script_unavailable_reason(toRust(script), toRust(driver), toRust(kind),
+                                                     toRust(relationSubtype)));
+}
+
+ObjectScript ObjectActionSql::script(const QString& script, const QString& driver,
+                                     const QString& kind, const QString& objectId,
+                                     const QString& qualifiedName, const QString& relationSubtype) {
+    if (!validUnicode({&script, &driver, &kind, &objectId, &qualifiedName, &relationSubtype}))
+        return {.error = invalidInput};
+    const auto result =
+        object_script_policy(toRust(script), toRust(driver), toRust(kind), toRust(objectId),
+                             toRust(qualifiedName), toRust(relationSubtype));
+    return {.valid = result.valid,
+            .fromDdl = result.from_ddl,
+            .sql = fromRust(result.sql),
+            .error = fromRust(result.error)};
 }
 
 }
