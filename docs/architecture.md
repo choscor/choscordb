@@ -116,6 +116,15 @@ A block that does not fit, a ragged block or an empty clipboard returns an error
 The grid parses each value with the column type and stages all cells in one batch. If one cell fails, the grid stages no cell.
 With more than one selected row, the Edit cell sheet sets a changed value in the same column of each selected row.
 
+### History of grid changes
+
+`grid_edit_history` in `driver-api` makes a history text when it plans grid changes.
+The text starts with the original values of each updated or deleted row, as SQL comments.
+Then it has each statement, with its parameter values as comments.
+`Engine::apply_edit_batch` takes this text as an `EditHistory` with the profile ID.
+The connection actor records one history entry after the batch. The entry has the result and the sum of the affected rows.
+Object actions apply edit batches without a history entry.
+
 ### Object actions
 
 `prepare_object_action` in `core` makes the SQL for Drop, Rename, Truncate and Clone from the trusted object ID.

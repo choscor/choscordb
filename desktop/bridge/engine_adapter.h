@@ -81,7 +81,12 @@ struct GridEditEligibility {
 struct GridEditPlan {
     std::vector<ReviewedEditStatement> statements;
     QString review;
+    QString history;
     QString error;
+};
+struct EditHistoryRecord {
+    QString text;
+    QString profileId;
 };
 struct Submit;
 struct ProfileSecretDrafts {
@@ -788,7 +793,7 @@ class EngineAdapter final : public QObject {
     bool inspectResultCells(quint64 connection, const QString& object, const QString& sql,
                             const QStringList& resultColumns, quint64 token);
     bool applyEditBatch(quint64 connection, const std::vector<ReviewedEditStatement>& statements,
-                        quint64 token);
+                        const EditHistoryRecord& history, quint64 token);
     static GridEditEligibility gridEditability(const GridEditRequest& request);
     static GridEditPlan planGridEdits(const GridEditRequest& request);
     static QList<CellFilterOption> quickFilterOptions(const QString& column, const Cell& value);

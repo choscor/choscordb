@@ -558,6 +558,41 @@ pub fn review_text(plan: &GridEditPlan) -> String {
     review
 }
 
+pub fn grid_edit_history(request: &GridEditRequest, plan: &GridEditPlan) -> String {
+    let mut history = String::new();
+    let originals = request
+        .rows
+        .iter()
+        .filter(|row| !row.inserted && (row.deleted || row.touched.contains(&true)));
+    for (index, row) in originals.enumerate() {
+        if index == 0 {
+            history.push_str("-- Original rows before the change:\n");
+        }
+        let cells: Vec<String> = request
+            .columns
+            .iter()
+            .zip(&row.original)
+            .map(|(column, value)| format!("{} = {}", column.name, review_value(value)))
+            .collect();
+        history.push_str(&format!("-- {}\n", cells.join(", ")));
+    }
+    if !history.is_empty() {
+        history.push('\n');
+    }
+    for planned in &plan.statements {
+        history.push_str(&planned.statement.sql);
+        history.push('\n');
+        for (index, value) in planned.statement.params.iter().enumerate() {
+            history.push_str(&format!(
+                "-- Parameter {}: {}\n",
+                index + 1,
+                review_value(value)
+            ));
+        }
+    }
+    history
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridCellKind {
     Value,

@@ -165,6 +165,7 @@ bool QueryWorkspace::applyStagedEdits() {
         return false;
     auto batch = std::move(plan->statements);
     const auto review = plan->review;
+    const EditHistoryRecord history{plan->history, connectionProfiles_.value(connectionId)};
     if (batch.empty())
         return false;
     design::ModalDialog box(widgets_.dialogParent);
@@ -218,7 +219,7 @@ bool QueryWorkspace::applyStagedEdits() {
         });
     connect(this, &QObject::destroyed, &loop, &QEventLoop::quit);
     connect(adapter_, &QObject::destroyed, &loop, &QEventLoop::quit);
-    if (!adapter_ || !adapter_->applyEditBatch(connectionId, batch, editApplyToken_)) {
+    if (!adapter_ || !adapter_->applyEditBatch(connectionId, batch, history, editApplyToken_)) {
         stepGridEdit(GridEditEvent::ApplyFailed,
                      EngineAdapter::gridEditNote(GridEditNote::SubmitFailed));
         updateActions();

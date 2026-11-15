@@ -74,7 +74,7 @@ Cell gridCell(const CellDto& value) {
 }
 bool EngineAdapter::applyEditBatch(quint64 connection,
                                    const std::vector<ReviewedEditStatement>& statements,
-                                   quint64 token) {
+                                   const EditHistoryRecord& history, quint64 token) {
     rust::Vec<EditStatementDto> batch;
     for (const auto& statement : statements) {
         EditStatementDto dto;
@@ -98,7 +98,8 @@ bool EngineAdapter::applyEditBatch(quint64 connection,
         }
         batch.push_back(std::move(dto));
     }
-    auto reply = apply_edit_batch(*d_->engine, connection, std::move(batch), token);
+    auto reply = apply_edit_batch(*d_->engine, connection, std::move(batch), toRust(history.text),
+                                  toRust(history.profileId), token);
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
     return reply.accepted;
@@ -122,6 +123,7 @@ GridEditPlan EngineAdapter::planGridEdits(const GridEditRequest& request) {
     GridEditPlan result;
     result.error = fromRust(source.error);
     result.review = fromRust(source.review);
+    result.history = fromRust(source.history);
     for (const auto& planned : source.statements) {
         ReviewedEditStatement statement;
         statement.sql = fromRust(planned.statement.sql);

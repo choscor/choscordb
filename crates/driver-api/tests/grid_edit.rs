@@ -1,6 +1,7 @@
 use choscordb_driver_api::{
     GridCellKind, GridEditColumn, GridEditDriver, GridEditError, GridEditRequest, GridEditRow,
-    Handle, MAX_PAGE_SIZE, Value, grid_editability, grid_row_insert_error, plan_grid_edits,
+    Handle, MAX_PAGE_SIZE, Value, grid_edit_history, grid_editability, grid_row_insert_error,
+    plan_grid_edits,
 };
 
 fn column(name: &str, database_type: &str, key: bool) -> GridEditColumn {
@@ -491,4 +492,55 @@ fn duplicated_rows_copy_only_plain_named_columns() {
     assert!(!column("id", true, false).duplicable());
     assert!(!column("total", false, true).duplicable());
     assert!(!column("", false, false).duplicable());
+}
+
+#[test]
+fn history_keeps_the_original_rows_before_the_statements() {
+    let mut input = request(GridEditDriver::Sqlite);
+    input.object_read_only = false;
+    input.rows.push(GridEditRow {
+        current: vec![Value::Integer(8), Value::Text("gone\nline".into())],
+        original: vec![Value::Integer(8), Value::Text("gone\nline".into())],
+        touched: vec![false, false],
+        expressions: vec![],
+        inserted: false,
+        deleted: true,
+    });
+    input.rows.push(GridEditRow {
+        current: vec![Value::Integer(9), Value::Text("added".into())],
+        original: vec![],
+        touched: vec![true, true],
+        expressions: vec![],
+        inserted: true,
+        deleted: false,
+    });
+    input.rows.push(GridEditRow {
+        current: vec![Value::Integer(10), Value::Null],
+        original: vec![Value::Integer(10), Value::Null],
+        touched: vec![false, false],
+        expressions: vec![],
+        inserted: false,
+        deleted: false,
+    });
+    let plan = plan_grid_edits(&input).unwrap();
+    let history = grid_edit_history(&input, &plan);
+    let (originals, statements) = history.split_once("\n\n").unwrap();
+    assert_eq!(
+        originals,
+        "-- Original rows before the change:\n\
+         -- id = 7, title = text \"old\"\n\
+         -- id = 8, title = text \"gone\\nline\""
+    );
+    let lines: Vec<&str> = statements.lines().collect();
+    assert!(statements.contains("\nDELETE FROM \"main\".\"items\""));
+    assert!(statements.contains("\nINSERT INTO \"main\".\"items\""));
+    assert!(lines.iter().all(|line| !line.is_empty()));
+    assert!(lines[0].starts_with("UPDATE \"main\".\"items\" SET"));
+    assert_eq!(lines[1], "-- Parameter 1: text \"new\"");
+    let inserts_only = GridEditRequest {
+        rows: vec![input.rows[2].clone()],
+        ..input
+    };
+    let plan = plan_grid_edits(&inserts_only).unwrap();
+    assert!(grid_edit_history(&inserts_only, &plan).starts_with("INSERT INTO"));
 }

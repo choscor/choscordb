@@ -14,6 +14,7 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTimer>
@@ -133,6 +134,17 @@ class GridSetValueTest : public QObject {
         auto* results = window.findChild<QTableView*>("queryResults");
         QTRY_COMPARE(results->model()->rowCount(), 1);
         QCOMPARE(results->model()->index(0, 0).data().toString(), QString("1"));
+        QSignalSpy listed(sql->adapter(), &choscordb::EngineAdapter::historyListed);
+        QVERIFY(sql->adapter()->listHistory(20, 0, 7001));
+        QTRY_VERIFY(!listed.isEmpty() && listed.last().first().toULongLong() == 7001);
+        const auto entries =
+            qvariant_cast<QList<choscordb::SavedHistoryEntry>>(listed.last().at(1));
+        const auto applied = std::find_if(entries.begin(), entries.end(), [](const auto& entry) {
+            return entry.sql.startsWith("-- Original rows before the change:\n");
+        });
+        QVERIFY(applied != entries.end());
+        QVERIFY2(applied->sql.contains("-- id = 1, name = text \"before\", stamp = NULL\n\nUPDATE"),
+                 qPrintable(applied->sql));
     }
     void pasteAndRowSheetStageValuesAcrossCells() {
         choscordb::MainWindow window;

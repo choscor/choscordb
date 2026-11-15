@@ -268,7 +268,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
     QString submitError;
     const auto failure = connect(workspace_->adapter(), &EngineAdapter::commandFailed, this,
                                  [&submitError](const QString& error) { submitError = error; });
-    const bool submitted = workspace_->adapter()->applyEditBatch(connection, batch, token);
+    const bool submitted = workspace_->adapter()->applyEditBatch(connection, batch, {}, token);
     disconnect(failure);
     if (!submitted) {
         pendingObjectAction_.reset();

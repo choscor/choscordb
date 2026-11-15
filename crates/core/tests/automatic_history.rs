@@ -281,3 +281,80 @@ fn queued_history_is_final_before_the_connection_failure_event() {
     assert_eq!(entries[0].sql, "SELECT 7");
     assert_eq!(entries[0].status, HistoryStatus::Disconnected);
 }
+#[test]
+fn applied_grid_edits_record_their_history_text_and_outcome() {
+    use choscordb_core::EditHistory;
+    use choscordb_driver_api::{EditBatch, EditStatement, Value};
+    let mut engine = Engine::new(
+        EngineConfig::default(),
+        vec![Arc::new(choscordb_driver_sqlite::SqliteDriver)],
+    )
+    .unwrap();
+    let connection = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path: ":memory:".into(),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    until(&mut engine, |e| matches!(e, Event::Connected { .. }));
+    let batch = |sql: &str| EditBatch {
+        statements: vec![EditStatement {
+            sql: sql.into(),
+            params: vec![Value::Text("old".into())],
+            expected_rows: None,
+        }],
+    };
+    let history = |sql: &str| EditHistory {
+        sql: format!("-- Original rows before the change:\n-- v = text \"old\"\n\n{sql}"),
+        profile_id: Some("profile".into()),
+    };
+    engine
+        .apply_edit_batch(
+            connection,
+            EditBatch {
+                statements: vec![EditStatement {
+                    sql: "CREATE TABLE t(v TEXT)".into(),
+                    params: vec![],
+                    expected_rows: None,
+                }],
+            },
+            None,
+            1,
+        )
+        .unwrap();
+    until(&mut engine, |e| matches!(e, Event::EditApplied { .. }));
+    let insert = "INSERT INTO t(v) VALUES (?)";
+    engine
+        .apply_edit_batch(connection, batch(insert), Some(history(insert)), 2)
+        .unwrap();
+    until(&mut engine, |e| matches!(e, Event::EditApplied { .. }));
+    let missing = "INSERT INTO missing(v) VALUES (?)";
+    engine
+        .apply_edit_batch(connection, batch(missing), Some(history(missing)), 3)
+        .unwrap();
+    until(&mut engine, |e| matches!(e, Event::EditFailed { .. }));
+    engine.history_flush(4).unwrap();
+    until(&mut engine, |e| matches!(e, Event::HistoryFlushed { .. }));
+    engine.history_list(10, 0, 5).unwrap();
+    let Event::HistoryListed { entries, .. } =
+        until(&mut engine, |e| matches!(e, Event::HistoryListed { .. }))
+    else {
+        unreachable!()
+    };
+    assert_eq!(entries.len(), 2);
+    let applied = entries
+        .iter()
+        .find(|e| e.sql == history(insert).sql)
+        .unwrap();
+    assert_eq!(applied.status, HistoryStatus::Completed);
+    assert_eq!(applied.row_count, Some(1));
+    assert_eq!(applied.profile_id.as_deref(), Some("profile"));
+    let failed = entries
+        .iter()
+        .find(|e| e.sql == history(missing).sql)
+        .unwrap();
+    assert_eq!(failed.status, HistoryStatus::Failed);
+}

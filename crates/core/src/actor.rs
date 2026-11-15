@@ -23,6 +23,7 @@ pub(crate) enum Command {
     },
     Edit {
         batch: EditBatch,
+        history: Option<crate::query_history::Ticket>,
         request_token: u64,
     },
     ApplyDdl {
@@ -1052,9 +1053,24 @@ pub(crate) async fn run(
             }
             Command::Edit {
                 batch,
+                mut history,
                 request_token,
             } => {
-                match metadata_operation(connection.apply_edit_batch(batch), &mut shutdown).await {
+                let outcome =
+                    metadata_operation(connection.apply_edit_batch(batch), &mut shutdown).await;
+                if let Some(history) = &mut history {
+                    history.bind_events(events.clone());
+                    match &outcome {
+                        Ok(summary) => {
+                            let rows = summary.affected_rows.iter().sum();
+                            history
+                                .finish(crate::HistoryStatus::Completed, Some(rows))
+                                .await;
+                        }
+                        Err(error) => history.fail(error.kind).await,
+                    }
+                }
+                match outcome {
                     Ok(summary) => {
                         send(
                             &events,

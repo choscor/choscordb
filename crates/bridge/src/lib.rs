@@ -352,6 +352,7 @@ pub mod ffi {
     struct GridEditPlanDto {
         statements: Vec<PlannedGridEditDto>,
         review: String,
+        history: String,
         error: String,
     }
     #[derive(Debug)]
@@ -2289,6 +2290,8 @@ pub mod ffi {
             engine: &mut BridgeEngine,
             connection: u64,
             statements: Vec<EditStatementDto>,
+            history: &str,
+            profile_id: &str,
             request_token: u64,
         ) -> Submit;
         fn edit_target_request(
@@ -3841,6 +3844,8 @@ pub fn apply_edit_batch(
     engine: &mut BridgeEngine,
     connection: u64,
     statements: Vec<ffi::EditStatementDto>,
+    history: &str,
+    profile_id: &str,
     request_token: u64,
 ) -> ffi::Submit {
     submit(engine, |e| {
@@ -3877,9 +3882,18 @@ pub fn apply_edit_batch(
                 })
             })
             .collect::<std::result::Result<Vec<_>, String>>()?;
-        e.apply_edit_batch(unpack(connection), EditBatch { statements }, request_token)
-            .map(|()| connection)
-            .map_err(|error| error.to_string())
+        let history = (!history.is_empty()).then(|| choscordb_core::EditHistory {
+            sql: history.into(),
+            profile_id: (!profile_id.is_empty()).then(|| profile_id.into()),
+        });
+        e.apply_edit_batch(
+            unpack(connection),
+            EditBatch { statements },
+            history,
+            request_token,
+        )
+        .map(|()| connection)
+        .map_err(|error| error.to_string())
     })
 }
 pub fn edit_target_request(

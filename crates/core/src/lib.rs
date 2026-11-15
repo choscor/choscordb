@@ -148,6 +148,15 @@ pub struct Engine {
     diagnostics: DiagnosticsSlot,
 }
 pub use choscordb_result_cache::DEFAULT_RESULT_BYTES as RESULT_VIEW_BYTES;
+const EDIT_HISTORY_QUERY: QueryId = QueryId {
+    slot: u32::MAX,
+    generation: 0,
+};
+fn invalid_profile_id(profile_id: &Option<String>) -> bool {
+    profile_id
+        .as_ref()
+        .is_some_and(|id| id.is_empty() || id.len() > 256 || id.contains('\0'))
+}
 pub const METADATA_PAGE_SIZE: u32 = 1_000;
 pub const MAX_METADATA_PAGE: u32 = 10_000;
 
@@ -352,10 +361,7 @@ impl Engine {
         object: Option<(ObjectId, ObjectDataTime)>,
     ) -> std::result::Result<QueryId, SubmitError> {
         self.ensure_running()?;
-        if profile_id
-            .as_ref()
-            .is_some_and(|id| id.is_empty() || id.len() > 256 || id.contains('\0'))
-        {
+        if invalid_profile_id(&profile_id) {
             return Err(SubmitError::InvalidInput);
         }
         if self.query_count >= self.config.max_queries {
@@ -724,6 +730,7 @@ impl Engine {
         &self,
         connection: ConnectionId,
         batch: EditBatch,
+        history: Option<EditHistory>,
         request_token: u64,
     ) -> std::result::Result<(), SubmitError> {
         if batch.statements.is_empty()
@@ -735,13 +742,44 @@ impl Engine {
         {
             return Err(SubmitError::InvalidInput);
         }
-        self.submit(
-            connection,
-            actor::Command::Edit {
+        if history
+            .as_ref()
+            .is_some_and(|history| invalid_profile_id(&history.profile_id))
+        {
+            return Err(SubmitError::InvalidInput);
+        }
+        self.ensure_running()?;
+        let slot = self
+            .connections
+            .get(connection)
+            .ok_or(SubmitError::StaleHandle)?;
+        let permit = slot.commands.try_reserve().map_err(map_send)?;
+        let history = match history {
+            Some(history) => {
+                let _entered = self
+                    .runtime
+                    .as_ref()
+                    .ok_or(SubmitError::ShuttingDown)?
+                    .enter();
+                crate::query_history::Ticket::new(
+                    EDIT_HISTORY_QUERY,
+                    Arc::new(history.sql),
+                    history.profile_id,
+                    self.history_memory.clone(),
+                    self.profiles.clone(),
+                    self.events_tx.clone(),
+                )
+            }
+            None => None,
+        };
+        permit.send(actor::Request {
+            command: actor::Command::Edit {
                 batch,
+                history,
                 request_token,
             },
-        )
+        });
+        Ok(())
     }
     pub fn apply_ddl(
         &self,

@@ -202,10 +202,12 @@ pub fn grid_editability_policy(source: ffi::GridEditRequestDto) -> ffi::GridEdit
 }
 
 pub fn plan_grid_edits_policy(source: ffi::GridEditRequestDto) -> ffi::GridEditPlanDto {
-    let result = request(source).and_then(|request| plan_grid_edits(&request));
+    let result =
+        request(source).and_then(|request| plan_grid_edits(&request).map(|plan| (request, plan)));
     match result {
-        Ok(plan) => ffi::GridEditPlanDto {
+        Ok((request, plan)) => ffi::GridEditPlanDto {
             review: choscordb_driver_api::review_text(&plan),
+            history: choscordb_driver_api::grid_edit_history(&request, &plan),
             statements: plan
                 .statements
                 .into_iter()

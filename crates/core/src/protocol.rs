@@ -1,5 +1,10 @@
 use choscordb_driver_api::*;
 use std::time::Duration;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditHistory {
+    pub sql: String,
+    pub profile_id: Option<String>,
+}
 #[derive(Clone, Debug)]
 pub struct EngineConfig {
     pub storage_path: Option<std::path::PathBuf>,
