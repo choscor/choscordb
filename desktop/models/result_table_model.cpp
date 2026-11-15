@@ -499,6 +499,9 @@ void ResultTableModel::preserveOriginal(int row) {
     if (static_cast<std::size_t>(row) < originalRowCount_ && !inserted_[row])
         editedOriginals_.try_emplace(static_cast<std::size_t>(row), rows_[row]);
 }
+QString ResultTableModel::cellDisplay(const Cell& value) {
+    return displayText(value);
+}
 std::size_t ResultTableModel::editCharge(const Cell& value, const QString& display) {
     AllocationCounter charge{std::numeric_limits<std::size_t>::max()};
     charge.add(sizeof(std::pair<const quint64, CellEdit>) + 2 * sizeof(void*));

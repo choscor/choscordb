@@ -232,3 +232,34 @@ pub fn plan_grid_edits_policy(source: ffi::GridEditRequestDto) -> ffi::GridEditP
         },
     }
 }
+
+pub fn grid_paste_plan(
+    text: &str,
+    top: u32,
+    left: u32,
+    rows: u32,
+    columns: u32,
+    grid_rows: u32,
+    grid_columns: u32,
+) -> ffi::GridPastePlanDto {
+    let selection = choscordb_core::GridRect {
+        top,
+        left,
+        rows,
+        columns,
+    };
+    match choscordb_core::plan_grid_paste(text, selection, grid_rows, grid_columns) {
+        Ok(cells) => ffi::GridPastePlanDto {
+            error: String::new(),
+            rows: cells.iter().map(|cell| cell.row).collect(),
+            columns: cells.iter().map(|cell| cell.column).collect(),
+            texts: cells.into_iter().map(|cell| cell.text).collect(),
+        },
+        Err(error) => ffi::GridPastePlanDto {
+            error,
+            rows: Vec::new(),
+            columns: Vec::new(),
+            texts: Vec::new(),
+        },
+    }
+}

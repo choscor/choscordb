@@ -310,6 +310,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             }
             if (widgets_.addRow) {
                 menu.addSeparator();
+                menu.addAction(gridAction(GridCommand::PasteCells));
                 appendSetValueActions(menu, clicked, current);
                 for (auto command :
                      {GridCommand::DuplicateRow, GridCommand::AddRow, GridCommand::DeleteRows,

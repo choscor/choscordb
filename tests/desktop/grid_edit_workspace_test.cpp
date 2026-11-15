@@ -377,7 +377,7 @@ class GridEditWorkspaceTest : public QObject {
         });
         grid->customContextMenuRequested(grid->visualRect(model->index(0, 1)).center());
         QCOMPARE(keyed,
-                 QStringList({"editCell", "duplicateRow", "objectDataAddRow",
+                 QStringList({"editCell", "pasteCells", "duplicateRow", "objectDataAddRow",
                               "objectDataDeleteRows", "objectDataRestoreRows", "objectDataSetNull",
                               "objectDataApply", "objectDataDiscardEdits"}));
         const auto key = QKeySequence("Ctrl+Shift+S").toString(QKeySequence::NativeText);

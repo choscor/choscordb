@@ -58,7 +58,7 @@ pub use document_io::{
 pub use edit_value::parse_grid_edit_value_policy;
 pub use foreign_key_filter::{foreign_key_predicate_policy, foreign_key_value_filterable_policy};
 pub use grid_edit::{
-    grid_binary_column_policy, grid_cell_kind_policies, grid_editability_policy,
+    grid_binary_column_policy, grid_cell_kind_policies, grid_editability_policy, grid_paste_plan,
     grid_row_insert_error_policy, grid_set_value_policy, grid_temporal_kind_policy,
     grid_temporal_text_policy, plan_grid_edits_policy, set_value_kinds,
 };
@@ -1404,6 +1404,12 @@ pub mod ffi {
         path: String,
         pattern: String,
     }
+    struct GridPastePlanDto {
+        error: String,
+        rows: Vec<u32>,
+        columns: Vec<u32>,
+        texts: Vec<String>,
+    }
     struct StructureFieldDto {
         key: String,
         label: String,
@@ -1749,6 +1755,15 @@ pub mod ffi {
         fn grid_temporal_kind_policy(database_type: &str) -> String;
         fn grid_temporal_text_policy(kind: &str, picked: GridDateTimeDto) -> GridTemporalTextDto;
         fn grid_set_value_policy(request: GridSetValueRequestDto) -> GridSetValueDto;
+        fn grid_paste_plan(
+            text: &str,
+            top: u32,
+            left: u32,
+            rows: u32,
+            columns: u32,
+            grid_rows: u32,
+            grid_columns: u32,
+        ) -> GridPastePlanDto;
         fn quick_filter_options_policy(column: &str, value: CellDto) -> Vec<QuickFilterOptionDto>;
         fn quick_filter_compose_policy(
             columns: Vec<String>,

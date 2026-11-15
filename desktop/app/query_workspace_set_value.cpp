@@ -3,10 +3,13 @@
 #include "widgets/document_io/document_io.h"
 
 #include <QAction>
+#include <QClipboard>
 #include <QFileDialog>
 #include <QFutureWatcher>
+#include <QGuiApplication>
 #include <QMenu>
 #include <QPointer>
+#include <QTableView>
 
 namespace choscordb {
 void QueryWorkspace::appendSetValueActions(QMenu& menu, const QPersistentModelIndex& clicked,
@@ -65,6 +68,47 @@ void QueryWorkspace::setCellValue(const QPersistentModelIndex& index, const QStr
     }
     if (!staged)
         message(tr("The cell cannot take this value. Discard other staged edits and try again."));
+}
+void QueryWorkspace::pasteCells(const QModelIndex& target) {
+    if (!cellEditEligible(target))
+        return;
+    int top = target.row(), left = target.column(), rows = 1, columns = 1;
+    if (const auto selection = widgets_.grid->selectionModel()->selection();
+        selection.size() == 1 && selection.first().contains(target)) {
+        const auto& range = selection.first();
+        top = range.top();
+        left = range.left();
+        rows = range.height();
+        columns = range.width();
+    }
+    const auto plan =
+        EngineAdapter::gridPastePlan(QGuiApplication::clipboard()->text(), top, left, rows, columns,
+                                     model_->rowCount(), model_->columnCount());
+    if (!plan.error.isEmpty()) {
+        message(plan.error);
+        return;
+    }
+    std::vector<ResultTableModel::StagedCell> cells;
+    cells.reserve(static_cast<std::size_t>(plan.cells.size()));
+    for (const auto& cell : plan.cells) {
+        QString error;
+        auto value = EngineAdapter::parseGridEditValue(
+            model_->columns()[static_cast<std::size_t>(cell.column)].databaseType, cell.text,
+            &error);
+        if (!value) {
+            message(tr("Row %1, column %2: %3")
+                        .arg(cell.row + 1)
+                        .arg(model_
+                                 ->headerData(cell.column, Qt::Horizontal,
+                                              ResultTableModel::HeaderNameRole)
+                                 .toString(),
+                             error));
+            return;
+        }
+        cells.push_back({cell.row, cell.column, std::move(*value)});
+    }
+    if (const auto error = model_->stageCells(std::move(cells)); !error.isEmpty())
+        message(error);
 }
 void QueryWorkspace::loadCellFile(const QPersistentModelIndex& index) {
     const auto path =

@@ -385,13 +385,26 @@ class ObjectDataWorkspaceTest : public QObject {
             for (auto* action : actions)
                 if (!action->isSeparator())
                     labels << action->text();
-            QCOMPARE(
-                labels,
-                QStringList({"Edit cell…", "Quick filter", "View cell as JSON", "View row as JSON",
-                             "View table as JSON", "Copy selected cells", "Copy selected rows",
-                             "Copy current page", "Copy selected rows as", "Set value",
-                             "Save value to file…", "Duplicate row", "Add row", "Delete rows",
-                             "Restore rows", "Set NULL", "Apply…", "Discard", "Cancel query"}));
+            QCOMPARE(labels, QStringList({"Edit cell…",
+                                          "Quick filter",
+                                          "View cell as JSON",
+                                          "View row as JSON",
+                                          "View table as JSON",
+                                          "Copy selected cells",
+                                          "Copy selected rows",
+                                          "Copy current page",
+                                          "Copy selected rows as",
+                                          "Paste",
+                                          "Set value",
+                                          "Save value to file…",
+                                          "Duplicate row",
+                                          "Add row",
+                                          "Delete rows",
+                                          "Restore rows",
+                                          "Set NULL",
+                                          "Apply…",
+                                          "Discard",
+                                          "Cancel query"}));
             for (auto* action : actions)
                 if (!action->isSeparator())
                     QVERIFY(!action->isEnabled());

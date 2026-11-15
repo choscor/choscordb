@@ -191,6 +191,11 @@ class ResultTableModel final : public QAbstractTableModel {
     bool cellWritable(int row, int column) const;
     std::optional<bool> columnNullable(int column) const;
     bool stageCell(const QModelIndex& index, Cell value, const QString& expression = {});
+    struct StagedCell {
+        int row = 0, column = 0;
+        Cell value;
+    };
+    QString stageCells(std::vector<StagedCell> cells);
     bool omitInsertedCell(const QModelIndex& index);
     const std::vector<bool>& inserted() const { return inserted_; }
     const std::vector<bool>& deleted() const { return deleted_; }
@@ -231,6 +236,7 @@ class ResultTableModel final : public QAbstractTableModel {
     const CellEdit* edit(std::size_t row, std::size_t column) const;
     std::size_t editBytes(int row, int column) const;
     static std::size_t editCharge(const Cell& value, const QString& display);
+    static QString cellDisplay(const Cell& value);
     bool validIndex(const QModelIndex& index) const;
     QVariant cellData(int row, int column, int role) const;
     const GridCellPolicy& cellPolicy(const Cell& cell) const;

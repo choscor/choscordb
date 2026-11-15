@@ -20,7 +20,7 @@ struct GridCommandSpec {
     const char* sequence;
     const char* name;
 };
-constexpr std::array<GridCommandSpec, 9> gridCommands = {{
+constexpr std::array<GridCommandSpec, 10> gridCommands = {{
     {"grid_add_row", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Add row"), "Ctrl+Shift+N",
      nullptr},
     {"grid_duplicate_row", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Duplicate row"),
@@ -38,6 +38,8 @@ constexpr std::array<GridCommandSpec, 9> gridCommands = {{
      "Ctrl+Shift+Backspace", nullptr},
     {"grid_choose_columns", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Choose columns…"),
      "Ctrl+Alt+F", "chooseColumns"},
+    {"grid_paste_cells", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Paste"), "Ctrl+V",
+     "pasteCells"},
 }};
 constexpr auto setNullAlternate = "Backspace";
 QString gridLabel(std::size_t command) {
@@ -84,10 +86,10 @@ void QueryWorkspace::setGridShortcut(const QString& id, const QKeySequence& prim
     updateApplyToolTip();
 }
 void QueryWorkspace::setupGridCommands() {
-    const std::array<QPushButton*, 9> buttons = {
+    const std::array<QPushButton*, 10> buttons = {
         widgets_.addRow,  nullptr, widgets_.deleteRows, widgets_.restoreRows,
         widgets_.setNull, nullptr, widgets_.applyEdits, widgets_.discardEdits,
-        nullptr};
+        nullptr,          nullptr};
     for (std::size_t i = 0; i < gridActions_.size(); ++i) {
         const auto command = static_cast<GridCommand>(i);
         auto* action = new QAction(gridLabel(i), widgets_.grid);
@@ -130,6 +132,7 @@ void QueryWorkspace::updateGridActions() {
         ->setEnabled(gridAction(GridCommand::AddRow)->isEnabled() && target.isValid() &&
                      target.model() == model_);
     gridAction(GridCommand::EditCell)->setEnabled(cellEditEligible(target));
+    gridAction(GridCommand::PasteCells)->setEnabled(cellEditEligible(target));
     gridAction(GridCommand::ChooseColumns)->setEnabled(model_->columnCount() > 0);
     for (std::size_t i = 0; i < gridActions_.size(); ++i) {
         auto* action = gridActions_[i];
@@ -167,6 +170,7 @@ QString QueryWorkspace::gridBlockedReason(GridCommand command) const {
         return selected && !model_->hasEditableCell(selection->selection()) ? editReason_
                                                                             : QString();
     case GridCommand::EditCell:
+    case GridCommand::PasteCells:
         return target.isValid() && !(model_->flags(target) & Qt::ItemIsEditable) ? editReason_
                                                                                  : QString();
     case GridCommand::ApplyEdits:
@@ -214,6 +218,9 @@ void QueryWorkspace::runGridCommand(GridCommand command) {
         break;
     case GridCommand::ChooseColumns:
         showColumnChooser();
+        break;
+    case GridCommand::PasteCells:
+        pasteCells(target);
         break;
     }
 }

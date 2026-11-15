@@ -97,6 +97,15 @@ The grid stages an expression as `GridEditRow::expressions`. `plan_grid_edits` w
 `GridTemporalKind::text` makes the ISO text of a picked date and time.
 `read_cell_file` and `write_cell_file` in `core` read and write a binary cell. A cell file can have up to `MAX_GRID_BINARY_BYTES` (64 KiB).
 
+### Paste and bulk edit
+
+The grid Paste command (Ctrl+V) stages the clipboard text in the selected cells.
+`plan_grid_paste` in `core` reads the block. Tab text and comma rows become cells. Other text becomes one value for each line.
+One value fills the full selection. A block tiles a selection that is an exact multiple of the block. Other blocks start at the top-left selected cell.
+A block that does not fit, a ragged block or an empty clipboard returns an error. A paste changes at most `MAX_PASTE_CELLS` (100,000) cells.
+The grid parses each value with the column type and stages all cells in one batch. If one cell fails, the grid stages no cell.
+With more than one selected row, the Edit cell sheet sets a changed value in the same column of each selected row.
+
 ### Object actions
 
 `prepare_object_action` in `core` makes the SQL for Drop, Rename, Truncate and Clone from the trusted object ID.

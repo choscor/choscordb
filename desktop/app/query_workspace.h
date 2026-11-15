@@ -91,7 +91,8 @@ class QueryWorkspace final : public QObject {
         EditCell,
         ApplyEdits,
         DiscardEdits,
-        ChooseColumns
+        ChooseColumns,
+        PasteCells
     };
     static QList<ShortcutDescriptor> gridShortcuts();
     explicit QueryWorkspace(Widgets widgets, QObject* parent = nullptr);
@@ -214,7 +215,7 @@ class QueryWorkspace final : public QObject {
     void duplicateRow(const QModelIndex& index);
     void discardStagedEdits();
     QModelIndex gridTarget() const;
-    std::array<QAction*, 9> gridActions_{};
+    std::array<QAction*, 10> gridActions_{};
     std::optional<QPersistentModelIndex> menuTarget_;
     void configureEditability();
     void requestCellMetadata();
@@ -223,6 +224,7 @@ class QueryWorkspace final : public QObject {
     void setupColumnChooser();
     void appendSetValueActions(QMenu& menu, const QPersistentModelIndex& clicked, bool current);
     void setCellValue(const QPersistentModelIndex& index, const QString& kind);
+    void pasteCells(const QModelIndex& target);
     void loadCellFile(const QPersistentModelIndex& index);
     void saveCellFile(const QPersistentModelIndex& index);
     void populateColumnMenu(QMenu& menu);
@@ -317,6 +319,7 @@ class QueryWorkspace final : public QObject {
     QPointer<QPushButton> cellEditSave_;
     QPointer<design::StatusLine> cellEditStatus_;
     QPersistentModelIndex cellEditIndex_;
+    std::vector<int> cellEditRows_;
     quint64 cellResultGeneration_ = 0, cellDraftGeneration_ = 0;
     quint64 cellOpenResultGeneration_ = 0, cellOpenTargetToken_ = 0;
     std::optional<quint64> cellOpenQuery_, cellOpenConnection_;

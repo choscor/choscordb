@@ -34,6 +34,8 @@ pub use table_import::{
     import_failure_row, plan_table_import, read_import_file, structure_edit_unavailable,
     table_import_mapping_error, table_import_unavailable,
 };
+mod grid_paste;
+pub use grid_paste::{GridRect, MAX_PASTE_CELLS, PasteCell, plan_grid_paste};
 mod operation;
 mod preview_capture;
 pub use preview_capture::{

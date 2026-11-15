@@ -184,6 +184,7 @@ bool QueryWorkspace::cellEditEligible(const QPersistentModelIndex& index) const 
 void QueryWorkspace::clearCellEditor() {
     ++cellDraftGeneration_;
     cellEditIndex_ = QPersistentModelIndex{};
+    cellEditRows_.clear();
     cellOpenQuery_.reset();
     cellOpenConnection_.reset();
     cellDraftEdited_ = false;
@@ -242,6 +243,9 @@ void QueryWorkspace::openCellEditor(const QPersistentModelIndex& index) {
         });
     }
     cellEditIndex_ = index;
+    if (auto rows = model_->selectedRows(widgets_.grid->selectionModel()->selection());
+        rows.size() > 1 && std::find(rows.begin(), rows.end(), index.row()) != rows.end())
+        cellEditRows_ = std::move(rows);
     cellOpenResultGeneration_ = cellResultGeneration_;
     cellOpenTargetToken_ = editTargetToken_;
     cellOpenQuery_ = query_;
@@ -267,12 +271,15 @@ void QueryWorkspace::openCellEditor(const QPersistentModelIndex& index) {
     cellEditText_->setAccessibleDescription({});
     cellEditSave_->setEnabled(!cellEditParsing_);
     cellDraftEdited_ = false;
+    const auto column =
+        model_->headerData(index.column(), Qt::Horizontal, ResultTableModel::HeaderNameRole)
+            .toString();
     cellEditStatus_->showInfo(
-        omitted ? tr("Database default (omitted)")
-        : null
-            ? tr("SQL NULL")
-            : model_->headerData(index.column(), Qt::Horizontal, ResultTableModel::HeaderNameRole)
-                  .toString());
+        !cellEditRows_.empty()
+            ? tr("Sets %1 in %n selected row(s).", nullptr, int(cellEditRows_.size())).arg(column)
+        : omitted ? tr("Database default (omitted)")
+        : null    ? tr("SQL NULL")
+                  : column);
     cellEditSheet_->open();
     cellEditText_->setFocus(Qt::OtherFocusReason);
 }
@@ -326,7 +333,18 @@ void QueryWorkspace::saveCellEditor() {
                     return;
                 }
                 cellEditStaging_ = true;
-                evaluation = model_->stageCellEdit(index, std::move(evaluation));
+                if (!cellEditRows_.empty() &&
+                    evaluation.state == ResultTableModel::CellEditState::Ready) {
+                    std::vector<ResultTableModel::StagedCell> cells;
+                    cells.reserve(cellEditRows_.size());
+                    for (const auto row : cellEditRows_)
+                        cells.push_back({row, index.column(), *evaluation.value});
+                    evaluation.error = model_->stageCells(std::move(cells));
+                    if (!evaluation.error.isEmpty())
+                        evaluation.state = ResultTableModel::CellEditState::Ineligible;
+                } else {
+                    evaluation = model_->stageCellEdit(index, std::move(evaluation));
+                }
                 cellEditStaging_ = false;
                 if (evaluation.state == ResultTableModel::CellEditState::Ready)
                     cellEditSheet_->accept();

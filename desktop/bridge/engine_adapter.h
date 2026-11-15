@@ -1,4 +1,5 @@
 #pragma once
+#include "bridge/structure_types.h"
 #include "models/result_table_model.h"
 #include <QDateTime>
 #include <QList>
@@ -51,6 +52,14 @@ struct GridEditRow {
 struct GridTemporalText {
     QString text;
     QString error;
+};
+struct GridPasteCell {
+    int row = 0, column = 0;
+    QString text;
+};
+struct GridPastePlan {
+    QString error;
+    QList<GridPasteCell> cells;
 };
 struct GridSetValue {
     QString outcome;
@@ -161,10 +170,6 @@ struct CellFilterOption {
     bool enabled;
     QString reason;
 };
-struct CodeLabel {
-    QString code;
-    QString label;
-};
 struct TableExportFormatChoice {
     QString code, label;
     bool csvOptions = false, sqlOptions = false;
@@ -201,39 +206,6 @@ struct TableImportPreview {
 struct TableImportReview {
     bool valid = false;
     QString error, sql;
-};
-struct StructureField {
-    QString key, label, input, names;
-    bool required = false;
-    QList<CodeLabel> choices;
-};
-struct StructureChangeKindInfo {
-    QString code, label, unavailable;
-    QList<StructureField> fields;
-};
-struct StructureColumn {
-    QString name, dataType;
-    bool nullable = true;
-};
-struct StructureKey {
-    QString name, kind;
-};
-struct StructureTable {
-    QString driver;
-    bool existing = true;
-    QString qualifiedName, parentKind, parentQualified, tableName;
-    QList<StructureColumn> columns;
-    QStringList indexes;
-    QList<StructureKey> keys;
-};
-struct StructureChange {
-    QString kind;
-    QList<std::pair<QString, QString>> values;
-};
-struct StructurePlan {
-    bool valid = false;
-    QString error;
-    QStringList summaries, statements;
 };
 struct DatabaseList {
     QList<CodeLabel> choices;
@@ -832,6 +804,8 @@ class EngineAdapter final : public QObject {
     static GridSetValue gridSetValue(const QString& kind, const QString& driver,
                                      const QString& databaseType, bool inserted,
                                      std::optional<bool> nullable);
+    static GridPastePlan gridPastePlan(const QString& text, int top, int left, int rows,
+                                       int columns, int gridRows, int gridColumns);
     static const ProfileTagOptions& profileTagOptions();
     static DriverWorkflow driverWorkflow(const QString& driver);
     static const TransactionGuard& transactionGuard(bool transactionActive);

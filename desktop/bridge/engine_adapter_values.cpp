@@ -695,6 +695,19 @@ GridTemporalText EngineAdapter::gridTemporalText(const QString& kind, const QDat
     const auto dto = grid_temporal_text_policy(utf8View(bytes), parts);
     return {fromRust(dto.text), fromRust(dto.error)};
 }
+GridPastePlan EngineAdapter::gridPastePlan(const QString& text, int top, int left, int rows,
+                                           int columns, int gridRows, int gridColumns) {
+    const auto unsignedValue = [](int value) { return static_cast<uint32_t>(std::max(0, value)); };
+    const auto dto = grid_paste_plan(toRust(text), unsignedValue(top), unsignedValue(left),
+                                     unsignedValue(rows), unsignedValue(columns),
+                                     unsignedValue(gridRows), unsignedValue(gridColumns));
+    GridPastePlan plan{fromRust(dto.error), {}};
+    plan.cells.reserve(static_cast<qsizetype>(dto.texts.size()));
+    for (std::size_t i = 0; i < dto.texts.size(); ++i)
+        plan.cells.push_back({static_cast<int>(dto.rows[i]), static_cast<int>(dto.columns[i]),
+                              fromRust(dto.texts[i])});
+    return plan;
+}
 GridSetValue EngineAdapter::gridSetValue(const QString& kind, const QString& driver,
                                          const QString& databaseType, bool inserted,
                                          std::optional<bool> nullable) {

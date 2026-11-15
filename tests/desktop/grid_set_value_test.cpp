@@ -6,8 +6,11 @@
 #include "design_system/menu/embedded_popup.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
+#include <QClipboard>
 #include <QDateTimeEdit>
 #include <QDialog>
+#include <QGuiApplication>
+#include <QLabel>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -130,6 +133,98 @@ class GridSetValueTest : public QObject {
         auto* results = window.findChild<QTableView*>("queryResults");
         QTRY_COMPARE(results->model()->rowCount(), 1);
         QCOMPARE(results->model()->index(0, 0).data().toString(), QString("1"));
+    }
+    void pasteAndRowSheetStageValuesAcrossCells() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        QVERIFY(run(window, editor,
+                    "CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);"));
+        QVERIFY(run(window, editor,
+                    "INSERT INTO people VALUES (1, 'a', 1), (2, 'b', 2), (3, 'c', 3);"));
+        const auto connection = editor->connectionTarget().value_or(0);
+        choscordb::ObjectExplorer explorer(sql->adapter());
+        auto& data = *new choscordb::ObjectDataWorkspace(sql);
+        explorer.installDataWidget(&data);
+        connect(&explorer, &choscordb::ObjectExplorer::dataRequested, &data,
+                &choscordb::ObjectDataWorkspace::openObject);
+        explorer.restoreObject(connection, R"(["main","people"])", "people", "table");
+        explorer.selectPane(5);
+        explorer.show();
+        explorer.activateRestoredObject();
+        auto* grid = data.findChild<QTableView*>("objectDataResults");
+        auto* model = grid->model();
+        QTRY_COMPARE(model->rowCount(), 3);
+        QTRY_VERIFY(model->flags(model->index(0, 2)) & Qt::ItemIsEditable);
+        auto* messages = data.findChild<QPlainTextEdit*>("objectDataMessages");
+        auto* paste = grid->findChild<QAction*>("pasteCells");
+        QVERIFY(paste);
+        const auto select = [&](int top, int left, int bottom, int right) {
+            grid->selectionModel()->select(
+                QItemSelection(model->index(top, left), model->index(bottom, right)),
+                QItemSelectionModel::ClearAndSelect);
+            grid->selectionModel()->setCurrentIndex(model->index(top, left),
+                                                    QItemSelectionModel::NoUpdate);
+            QTRY_VERIFY(paste->isEnabled());
+        };
+        select(0, 1, 0, 1);
+        QGuiApplication::clipboard()->setText("x\t7\ny\t8\n");
+        paste->trigger();
+        QCOMPARE(model->index(0, 1).data().toString(), QString("x"));
+        QCOMPARE(model->index(1, 2).data().toString(), QString("8"));
+        QCOMPARE(model->index(2, 1).data().toString(), QString("c"));
+        select(0, 1, 2, 1);
+        QGuiApplication::clipboard()->setText("z");
+        paste->trigger();
+        for (int row = 0; row < 3; ++row)
+            QCOMPARE(model->index(row, 1).data().toString(), QString("z"));
+        select(2, 2, 2, 2);
+        QGuiApplication::clipboard()->setText("4\n5");
+        paste->trigger();
+        QVERIFY2(messages->toPlainText().contains(
+                     "The pasted block has 2 rows and 1 columns. It does not fit from row 3, "
+                     "column 3."),
+                 qPrintable(messages->toPlainText()));
+        QGuiApplication::clipboard()->setText("old");
+        paste->trigger();
+        QVERIFY2(messages->toPlainText().contains("Row 3, column age:"),
+                 qPrintable(messages->toPlainText()));
+        QCOMPARE(model->index(2, 2).data().toString(), QString("3"));
+
+        select(0, 2, 2, 2);
+        grid->findChild<QAction*>("editCell")->trigger();
+        auto* sheet = data.window()->findChild<QDialog*>("cellEditSheet");
+        QTRY_VERIFY(sheet && sheet->isVisible());
+        QCOMPARE(sheet->findChild<QLabel*>("cellEditStatus")->text(),
+                 QString("Sets age in 3 selected row(s)."));
+        auto* text = sheet->findChild<QPlainTextEdit*>("cellEditText");
+        text->selectAll();
+        QTest::keyClicks(text, "42");
+        sheet->findChild<QPushButton*>("cellEditSave")->click();
+        QTRY_VERIFY2(!sheet->isVisible(),
+                     qPrintable(sheet->findChild<QLabel*>("cellEditStatus")->text()));
+        for (int row = 0; row < 3; ++row)
+            QCOMPARE(model->index(row, 2).data().toString(), QString("42"));
+        QTimer reviewPoll;
+        connect(&reviewPoll, &QTimer::timeout, &data, [&] {
+            auto* dialog =
+                qobject_cast<QDialog*>(choscordb::design::DialogPresentation::activeDialog());
+            if (auto* apply = dialog ? dialog->findChild<QPushButton*>("gridEditApply") : nullptr)
+                apply->click();
+        });
+        reviewPoll.start(10);
+        explorer.findChild<QPushButton*>("objectDataApply")->click();
+        QTRY_VERIFY(!explorer.findChild<QPushButton*>("objectDataApply")->isEnabled());
+        reviewPoll.stop();
+        QVERIFY(run(window, editor, "SELECT count(*) FROM people WHERE name = 'z' AND age = 42;"));
+        auto* results = window.findChild<QTableView*>("queryResults");
+        QTRY_COMPARE(results->model()->rowCount(), 1);
+        QCOMPARE(results->model()->index(0, 0).data().toString(), QString("3"));
     }
 };
 
