@@ -24,6 +24,13 @@ namespace {
 QString rowCountText(quint64 count) {
     return count == 1 ? QueryWorkspace::tr("1 row") : QueryWorkspace::tr("%1 rows").arg(count);
 }
+}
+QString QueryWorkspace::resultRowsText(quint64 count) const {
+    if (!appliedRowLimit_)
+        return rowCountText(count);
+    return tr("%1 · limited to %2 rows").arg(rowCountText(count)).arg(*appliedRowLimit_);
+}
+namespace {
 QString affectedRowsText(quint64 count) {
     return count == 1 ? QueryWorkspace::tr("1 row affected")
                       : QueryWorkspace::tr("%1 rows affected").arg(count);
@@ -132,7 +139,7 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
              hasResultPage ? (completedAffectedRows_.isEmpty()
                                   ? QString{}
                                   : completedAffectedRows_ + QStringLiteral(" · ")) +
-                                 rowCountText(e.row_count)
+                                 resultRowsText(e.row_count)
                            : completedAffectedRows_,
              hasResultPage ? tr("%1 in memory")
                                  .arg(QLocale().formattedDataSize(qint64(model_->residentBytes())))
@@ -627,7 +634,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         QString rowMetric = completedAffectedRows_;
         if (hasResultPage)
             rowMetric += (rowMetric.isEmpty() ? QString{} : QStringLiteral(" · ")) +
-                         rowCountText(quint64(model_->rowCount()));
+                         resultRowsText(quint64(model_->rowCount()));
         setExecutionState(
             EngineAdapter::queryResultState(hasResultPage, quint64(model_->rowCount())), {},
             {tr("Executed in %1 ms").arg(e.duration_ms),

@@ -1481,6 +1481,8 @@ fn run_all_shortcut_id_round_trips_and_retired_ids_are_rejected() {
         version: 2,
         font_family: String::new(),
         font_size: 13,
+        format_indent: 2,
+        format_uppercase_keywords: true,
         shortcuts: vec![ffi::ShortcutOverrideDto {
             command: command.into(),
             sequence: "Ctrl+Alt+R".into(),
@@ -1518,6 +1520,8 @@ fn grid_shortcut_ids_round_trip_with_their_snake_case_names() {
         version: 2,
         font_family: String::new(),
         font_size: 13,
+        format_indent: 2,
+        format_uppercase_keywords: true,
         shortcuts: ids
             .iter()
             .enumerate()
@@ -1554,6 +1558,8 @@ fn grid_shortcut_ids_round_trip_with_their_snake_case_names() {
             version: 2,
             font_family: String::new(),
             font_size: 13,
+            format_indent: 2,
+            format_uppercase_keywords: true,
             shortcuts: vec![ffi::ShortcutOverrideDto {
                 command: "grid_paste_rows".into(),
                 sequence: String::new(),

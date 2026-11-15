@@ -15,6 +15,7 @@ class QToolBar;
 class QTreeView;
 class QTreeWidget;
 class QWidget;
+class QComboBox;
 namespace choscordb {
 class FilterField;
 class SidebarSection;
@@ -86,6 +87,7 @@ struct MainWindow::Ui {
     design::Button* discardResultEdits{};
     design::Button* applyResultEdits{};
     QLabel* resultEditReason{};
+    QComboBox* rowLimit{};
     QPlainTextEdit* messages{};
     QList<QAction*> searchActions{};
     ToastRegion* toast{};

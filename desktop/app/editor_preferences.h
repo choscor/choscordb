@@ -23,6 +23,7 @@ class EditorPreferencesController final : public QObject {
     void initialize(EngineAdapter* adapter);
     void setAppearanceController(AppearanceController* appearance);
     void open(PreferencesPage page);
+    const EditorPreferences& preferences() const { return preferences_; }
 
   signals:
     void queryPreferencesSaveSubmitted(quint64 token);

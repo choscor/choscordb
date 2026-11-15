@@ -122,6 +122,14 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
     form->addRow(system_);
     sections->addFormRow(form, tr("Font family"), font_);
     sections->addFormRow(form, tr("Font size"), size_);
+    formatIndent_ = new QSpinBox(editor);
+    formatIndent_->setObjectName("preferencesFormatIndent");
+    formatIndent_->setRange(limits.minFormatIndent, limits.maxFormatIndent);
+    formatIndent_->setSuffix(tr(" spaces"));
+    sections->addFormRow(form, tr("Format indent"), formatIndent_);
+    formatUppercase_ = new QCheckBox(tr("Format keywords in uppercase"), editor);
+    formatUppercase_->setObjectName("preferencesFormatUppercase");
+    form->addRow(formatUppercase_);
     preview_ = new SqlEditor(editor);
     preview_->setObjectName("preferencesPreview");
     preview_->setText("SELECT name, count(*)\nFROM sample\nWHERE active = true\nGROUP BY name;");
@@ -389,6 +397,8 @@ EditorPreferences PreferencesDialog::draft() const {
     EditorPreferences result;
     result.fontFamily = system_->isChecked() ? QString{} : font_->currentFont().family();
     result.fontSize = size_->value();
+    result.formatIndent = static_cast<quint8>(formatIndent_->value());
+    result.formatUppercaseKeywords = formatUppercase_->isChecked();
     for (qsizetype i = 0; i < catalog_.size(); ++i) {
         if (!catalog_[i].configurable)
             continue;
@@ -408,6 +418,8 @@ void PreferencesDialog::fill(const EditorPreferences& value) {
             ? design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced)
             : QFont(value.fontFamily));
     size_->setValue(value.fontSize);
+    formatIndent_->setValue(value.formatIndent);
+    formatUppercase_->setChecked(value.formatUppercaseKeywords);
     for (qsizetype i = 0; i < catalog_.size(); ++i) {
         QString sequence = catalog_[i].defaultSequence;
         for (const auto& custom : value.shortcuts)

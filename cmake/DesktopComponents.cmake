@@ -131,6 +131,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/main_window_diagnostics.cpp
   desktop/app/main_window_quick_search.cpp
   desktop/app/main_window_ui.cpp
+  desktop/app/main_window_sql_actions.cpp
   desktop/app/main_window_ui_pins.cpp
   desktop/app/main_window_workspace.cpp
   desktop/app/main_window_lifecycle.cpp
@@ -142,6 +143,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/workspace_recovery.cpp
   desktop/app/query_workspace.cpp
   desktop/app/query_workspace_copy.cpp
+  desktop/app/query_workspace_sql_edit.cpp
   desktop/app/query_workspace_grid_commands.cpp
   desktop/app/query_workspace_edit.cpp
   desktop/app/query_workspace_cell_edit.cpp

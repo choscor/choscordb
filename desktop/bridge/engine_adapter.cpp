@@ -238,6 +238,8 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             preferences.version = value.version;
             preferences.fontFamily = fromRust(value.font_family);
             preferences.fontSize = value.font_size;
+            preferences.formatIndent = value.format_indent;
+            preferences.formatUppercaseKeywords = value.format_uppercase_keywords;
             for (const auto& shortcut : value.shortcuts)
                 preferences.shortcuts.push_back(
                     {fromRust(shortcut.command), fromRust(shortcut.sequence)});
@@ -864,6 +866,50 @@ PageMemoryUsage EngineAdapter::memoryUsage() const {
 PageCacheUsage EngineAdapter::cacheUsage() const {
     const auto usage = cache_usage(*d_->engine);
     return {usage.hits, usage.misses, usage.resident_bytes};
+}
+namespace {
+SqlTextEdit textEdit(const SqlTextEditDto& dto) {
+    return {dto.valid, dto.start, dto.end, fromRust(dto.text), fromRust(dto.error)};
+}
+}
+SqlTextEdit EngineAdapter::formatSql(const QString& sql, quint64 cursor, quint64 start, quint64 end,
+                                     const QString& driver, const QString& sqlMode, quint8 indent,
+                                     bool uppercaseKeywords, bool minify) {
+    SqlFormatRequestDto request;
+    request.sql = toRust(sql);
+    request.cursor = cursor;
+    request.selection_start = start;
+    request.selection_end = end;
+    request.driver = toRust(driver);
+    request.sql_mode = toRust(sqlMode);
+    request.indent = indent;
+    request.uppercase_keywords = uppercaseKeywords;
+    request.minify = minify;
+    return textEdit(sql_format_edit(std::move(request)));
+}
+RowLimitedSql EngineAdapter::applyRowLimit(const QString& sql, quint32 limit, const QString& driver,
+                                           const QString& sqlMode) {
+    const auto bytes = sql.toUtf8();
+    const auto driverBytes = driver.toUtf8();
+    const auto modeBytes = sqlMode.toUtf8();
+    const auto result =
+        sql_apply_row_limit(utf8View(bytes), limit, utf8View(driverBytes), utf8View(modeBytes));
+    return {fromRust(result.sql),
+            result.applied ? std::optional<quint32>(result.limit) : std::nullopt};
+}
+const QList<quint32>& EngineAdapter::rowLimitChoices() {
+    static const QList<quint32> choices = [] {
+        QList<quint32> output;
+        for (const auto choice : row_limit_choices())
+            output.append(choice);
+        return output;
+    }();
+    return choices;
+}
+SqlTextEdit EngineAdapter::toggleSqlComment(const QString& sql, quint64 start, quint64 end,
+                                            bool block) {
+    const auto bytes = sql.toUtf8();
+    return textEdit(sql_toggle_comment(utf8View(bytes), start, end, block));
 }
 SqlSelection EngineAdapter::executionRange(const QString& sql, quint64 cursor, quint64 start,
                                            quint64 end, RunScope scope, const QString& driver,

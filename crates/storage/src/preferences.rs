@@ -7,6 +7,9 @@ pub const MIN_EDITOR_FONT_SIZE: u16 = 8;
 pub const MAX_EDITOR_FONT_SIZE: u16 = 48;
 pub const MAX_FONT_FAMILY_BYTES: usize = 256;
 pub const MAX_SHORTCUT_SEQUENCE_BYTES: usize = 128;
+pub const DEFAULT_FORMAT_INDENT: u8 = 2;
+pub const MIN_FORMAT_INDENT: u8 = 1;
+pub const MAX_FORMAT_INDENT: u8 = 8;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShortcutCommand {
@@ -38,9 +41,13 @@ pub enum ShortcutCommand {
     MinimizeWindow,
     Refresh,
     ToggleSidebar,
+    FormatSql,
+    MinifySql,
+    ToggleLineComment,
+    ToggleBlockComment,
 }
 impl ShortcutCommand {
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 32] = [
         Self::NewQuery,
         Self::ChoscorDBFile,
         Self::SaveSqlFile,
@@ -69,6 +76,10 @@ impl ShortcutCommand {
         Self::MinimizeWindow,
         Self::Refresh,
         Self::ToggleSidebar,
+        Self::FormatSql,
+        Self::MinifySql,
+        Self::ToggleLineComment,
+        Self::ToggleBlockComment,
     ];
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,6 +95,16 @@ pub struct EditorPreferences {
     pub font_family: Option<String>,
     pub font_size: u16,
     pub shortcuts: Vec<ShortcutOverride>,
+    #[serde(default = "default_format_indent")]
+    pub format_indent: u8,
+    #[serde(default = "default_uppercase_keywords")]
+    pub format_uppercase_keywords: bool,
+}
+fn default_format_indent() -> u8 {
+    DEFAULT_FORMAT_INDENT
+}
+fn default_uppercase_keywords() -> bool {
+    true
 }
 impl Default for EditorPreferences {
     fn default() -> Self {
@@ -92,6 +113,8 @@ impl Default for EditorPreferences {
             font_family: None,
             font_size: DEFAULT_EDITOR_FONT_SIZE,
             shortcuts: Vec::new(),
+            format_indent: DEFAULT_FORMAT_INDENT,
+            format_uppercase_keywords: default_uppercase_keywords(),
         }
     }
 }
@@ -99,6 +122,7 @@ impl EditorPreferences {
     pub fn validate(&self) -> Result<()> {
         if self.version != EDITOR_PREFERENCES_VERSION
             || !(MIN_EDITOR_FONT_SIZE..=MAX_EDITOR_FONT_SIZE).contains(&self.font_size)
+            || !(MIN_FORMAT_INDENT..=MAX_FORMAT_INDENT).contains(&self.format_indent)
         {
             return Err(StorageError::InvalidPreferences);
         }

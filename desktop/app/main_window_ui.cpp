@@ -33,6 +33,7 @@
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QApplication>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDockWidget>
 #include <QHBoxLayout>
@@ -489,6 +490,11 @@ MainWindow::Ui MainWindow::buildUi() {
     cancelButton->setVariant(design::ButtonVariant::Outline);
     cancelButton->setEnabled(false);
     auto* cancelSlot = toolbar->addWidget(cancelButton);
+    auto* rowLimit = new QComboBox(toolbar);
+    rowLimit->setObjectName("rowLimit");
+    rowLimit->setAccessibleName(tr("Row limit for SELECT"));
+    rowLimit->setToolTip(tr("Row limit for SELECT"));
+    toolbar->addWidget(rowLimit);
     cancelSlot->setVisible(false);
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
     connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton, cancelSlot] {
@@ -843,6 +849,7 @@ MainWindow::Ui MainWindow::buildUi() {
         if (editors_->isEnabled() && editors_->currentWidget() && showScreen(Screen::Sql))
             completion_->requestCompletion();
     });
+    addSqlTextActions(editMenu);
     editMenu->addSeparator();
     auto* preferencesAction = editMenu->addAction(tr("Preferences…"));
     preferencesAction->setObjectName("preferences");
@@ -967,6 +974,7 @@ MainWindow::Ui MainWindow::buildUi() {
         .discardResultEdits = discardResultEdits,
         .applyResultEdits = applyResultEdits,
         .resultEditReason = resultEditReason,
+        .rowLimit = rowLimit,
         .messages = messages,
         .searchActions = searchActions,
         .toast = toast,

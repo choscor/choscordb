@@ -1,0 +1,38 @@
+#include "app/editor_preferences.h"
+#include "app/main_window.h"
+#include "app/query_workspace.h"
+#include <QAction>
+#include <QMenu>
+#include <QTabWidget>
+
+namespace choscordb {
+void MainWindow::addSqlTextActions(QMenu* editMenu) {
+    editMenu->addSeparator();
+    const auto sqlTextAction = [this, editMenu](const QString& id, const QString& text,
+                                                const QKeySequence& shortcut, auto handler) {
+        auto* action = editMenu->addAction(text);
+        action->setShortcut(shortcut);
+        preferences_->addAction(id, action);
+        connect(action, &QAction::triggered, this, [this, handler] {
+            if (workspace_ && editors_->isEnabled() && editors_->currentWidget() &&
+                showScreen(Screen::Sql))
+                handler();
+        });
+        return action;
+    };
+    const auto format = [this](bool minify) {
+        const auto& value = preferences_->preferences();
+        workspace_->formatSql(minify, value.formatIndent, value.formatUppercaseKeywords);
+    };
+    sqlTextAction("format_sql", tr("Format SQL"), QKeySequence(Qt::CTRL | Qt::Key_I),
+                  [format] { format(false); });
+    sqlTextAction("minify_sql", tr("Minify SQL"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I),
+                  [format] { format(true); });
+    sqlTextAction("toggle_line_comment", tr("Toggle line comment"),
+                  QKeySequence(Qt::CTRL | Qt::Key_Slash),
+                  [this] { workspace_->toggleSqlComment(false); });
+    sqlTextAction("toggle_block_comment", tr("Toggle block comment"),
+                  QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Slash),
+                  [this] { workspace_->toggleSqlComment(true); });
+}
+}

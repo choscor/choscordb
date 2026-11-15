@@ -7,6 +7,8 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Connect to SQLite, PostgreSQL, MySQL and MariaDB.
 - Keep passwords in the credential store of the operating system. Connect through an SSH tunnel or TLS.
 - Write SQL with completion, search and replace, and run options.
+- Format or minify SQL, and toggle line or block comments.
+- Set a row limit for `SELECT` statements on each connection.
 - Read large results page by page. Filter, sort and edit table rows.
 - Copy rows as TSV, CSV, Markdown, HTML, JSON or SQL `INSERT` statements.
 - Export results to CSV, JSON, JSON Lines or SQL `INSERT` statements.

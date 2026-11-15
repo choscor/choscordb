@@ -21,6 +21,8 @@ mod metadata_policy;
 mod quick_filter;
 pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy};
 mod result_copy;
+mod sql_edit;
+pub use sql_edit::{row_limit_choices, sql_apply_row_limit, sql_format_edit, sql_toggle_comment};
 mod screen_state;
 pub use screen_state::{
     export_presentation, export_transition, grid_edit_note, grid_edit_presentation,
@@ -1067,12 +1069,42 @@ pub mod ffi {
         font_family: String,
         font_size: u16,
         shortcuts: Vec<ShortcutOverrideDto>,
+        format_indent: u8,
+        format_uppercase_keywords: bool,
     }
     struct EditorPreferenceLimitsDto {
         version: u32,
         default_font_size: u16,
         min_font_size: u16,
         max_font_size: u16,
+        default_format_indent: u8,
+        min_format_indent: u8,
+        max_format_indent: u8,
+    }
+    struct RowLimitDto {
+        sql: String,
+        applied: bool,
+        limit: u32,
+    }
+    #[derive(Default)]
+    struct SqlFormatRequestDto {
+        sql: String,
+        cursor: u64,
+        selection_start: u64,
+        selection_end: u64,
+        driver: String,
+        sql_mode: String,
+        indent: u8,
+        uppercase_keywords: bool,
+        minify: bool,
+    }
+    #[derive(Default)]
+    struct SqlTextEditDto {
+        valid: bool,
+        start: u64,
+        end: u64,
+        text: String,
+        error: String,
     }
     #[derive(Default)]
     struct EditorDocumentDto {
@@ -2036,6 +2068,15 @@ pub mod ffi {
         fn shrink_page_lease(engine: &mut BridgeEngine, lease: u64, payload_bytes: u64) -> Submit;
         fn memory_usage(engine: &BridgeEngine) -> MemoryUsageDto;
         fn cache_usage(engine: &BridgeEngine) -> CacheUsageDto;
+        fn sql_format_edit(request: SqlFormatRequestDto) -> SqlTextEditDto;
+        fn sql_apply_row_limit(sql: &str, limit: u32, driver: &str, sql_mode: &str) -> RowLimitDto;
+        fn row_limit_choices() -> Vec<u32>;
+        fn sql_toggle_comment(
+            sql: &str,
+            selection_start: u64,
+            selection_end: u64,
+            block: bool,
+        ) -> SqlTextEditDto;
         fn sql_execution_range(
             sql: &str,
             cursor: u64,
@@ -2423,12 +2464,7 @@ pub fn sql_execution_range(
             ffi::ExecutionScope::Current => language::ExecutionScope::Current,
             _ => return ffi::SqlRange::default(),
         };
-        let mariadb = driver.eq_ignore_ascii_case("mariadb");
-        let mysql =
-            (mariadb || driver.eq_ignore_ascii_case("mysql")).then(|| language::MysqlSqlMode {
-                mariadb,
-                ..language::MysqlSqlMode::from_sql_mode(sql_mode)
-            });
+        let mysql = sql_edit::mysql_mode(driver, sql_mode);
         let Ok(cursor) = usize::try_from(cursor) else {
             return ffi::SqlRange::default();
         };

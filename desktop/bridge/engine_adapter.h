@@ -116,10 +116,13 @@ struct EditorPreferences {
     QString fontFamily;
     quint16 fontSize;
     QList<ShortcutOverride> shortcuts;
+    quint8 formatIndent;
+    bool formatUppercaseKeywords = true;
 };
 struct EditorPreferenceLimits {
     quint32 version;
     quint16 defaultFontSize, minFontSize, maxFontSize;
+    quint8 defaultFormatIndent, minFormatIndent, maxFormatIndent;
 };
 struct QueryPreferences {
     QueryPreferences();
@@ -486,6 +489,17 @@ struct TextLimits {
     quint64 maxDocumentBytes, maxSearchPatternBytes;
 };
 enum class RunScope { Current, All };
+struct SqlTextEdit {
+    bool valid = false;
+    quint64 start = 0;
+    quint64 end = 0;
+    QString text;
+    QString error;
+};
+struct RowLimitedSql {
+    QString sql;
+    std::optional<quint32> applied;
+};
 struct SqlSelection {
     bool valid;
     quint64 start;
@@ -713,6 +727,13 @@ class EngineAdapter final : public QObject {
     void releasePageLease(quint64 lease);
     PageMemoryUsage memoryUsage() const;
     PageCacheUsage cacheUsage() const;
+    static SqlTextEdit formatSql(const QString& sql, quint64 cursor, quint64 start, quint64 end,
+                                 const QString& driver, const QString& sqlMode, quint8 indent,
+                                 bool uppercaseKeywords, bool minify);
+    static RowLimitedSql applyRowLimit(const QString& sql, quint32 limit, const QString& driver,
+                                       const QString& sqlMode);
+    static const QList<quint32>& rowLimitChoices();
+    static SqlTextEdit toggleSqlComment(const QString& sql, quint64 start, quint64 end, bool block);
     static SqlSelection executionRange(const QString& sql, quint64 cursor, quint64 start,
                                        quint64 end, RunScope scope, const QString& driver = {},
                                        const QString& sqlMode = {});

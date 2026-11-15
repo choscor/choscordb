@@ -134,6 +134,7 @@ fn version_one_drops_retired_transaction_commands_and_saves_version_two() {
             command: ShortcutCommand::RunStatement,
             sequence: "Ctrl+E".into(),
         }],
+        ..Default::default()
     };
     assert_eq!(storage.editor_preferences().unwrap(), expected);
     drop(storage);
@@ -173,6 +174,10 @@ fn window_commands_with_default_keys_are_configurable() {
         ("minimize_window", "\"minimize_window\""),
         ("refresh", "\"refresh\""),
         ("toggle_sidebar", "\"toggle_sidebar\""),
+        ("format_sql", "\"format_sql\""),
+        ("minify_sql", "\"minify_sql\""),
+        ("toggle_line_comment", "\"toggle_line_comment\""),
+        ("toggle_block_comment", "\"toggle_block_comment\""),
     ] {
         let parsed: ShortcutCommand = serde_json::from_str(command).unwrap();
         assert!(ShortcutCommand::ALL.contains(&parsed), "{id}");
@@ -191,7 +196,7 @@ fn grid_commands_use_their_snake_case_ids_and_round_trip() {
         (ShortcutCommand::GridApplyEdits, "grid_apply_edits"),
         (ShortcutCommand::GridDiscardEdits, "grid_discard_edits"),
     ];
-    assert_eq!(ShortcutCommand::ALL.len(), 28);
+    assert_eq!(ShortcutCommand::ALL.len(), 32);
     for (command, id) in grid {
         assert!(ShortcutCommand::ALL.contains(&command));
         assert_eq!(
@@ -218,4 +223,31 @@ fn grid_commands_use_their_snake_case_ids_and_round_trip() {
         Storage::open(path).unwrap().editor_preferences().unwrap(),
         expected
     );
+}
+#[test]
+fn format_preferences_default_for_old_records_and_are_bounded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("prefs.sqlite");
+    drop(Storage::open(&path).unwrap());
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute(
+        "INSERT INTO settings(key,value) VALUES ('editor_preferences',?1)",
+        [r#"{"version":2,"font_family":null,"font_size":13,"shortcuts":[{"command":"format_sql","sequence":"Ctrl+Alt+L"}]}"#],
+    )
+    .unwrap();
+    let storage = Storage::open(path).unwrap();
+    let loaded = storage.editor_preferences().unwrap();
+    assert_eq!(
+        loaded.format_indent,
+        choscordb_storage::DEFAULT_FORMAT_INDENT
+    );
+    assert!(loaded.format_uppercase_keywords);
+    assert_eq!(loaded.shortcuts[0].command, ShortcutCommand::FormatSql);
+    for (indent, valid) in [(0, false), (1, true), (8, true), (9, false)] {
+        let preferences = EditorPreferences {
+            format_indent: indent,
+            ..Default::default()
+        };
+        assert_eq!(preferences.validate().is_ok(), valid, "{indent}");
+    }
 }

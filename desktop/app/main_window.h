@@ -14,6 +14,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+class QMenu;
 class QTabWidget;
 class QStackedWidget;
 class QListWidget;
@@ -73,6 +74,7 @@ class MainWindow final : public QMainWindow {
     struct Ui;
     struct PendingObjectAction;
     Ui buildUi();
+    void addSqlTextActions(QMenu* editMenu);
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);

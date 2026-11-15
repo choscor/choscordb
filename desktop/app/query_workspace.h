@@ -25,6 +25,7 @@ namespace choscordb::design {
 class RightSheet;
 class StatusLine;
 }
+class QComboBox;
 namespace choscordb {
 class SqlEditor;
 class ValueDetailDialog;
@@ -69,6 +70,7 @@ class QueryWorkspace final : public QObject {
         QLabel* rowsMetric = nullptr;
         QLabel* visibleSizeMetric = nullptr;
         QLabel* editReason = nullptr;
+        QComboBox* rowLimit = nullptr;
     };
     struct LiveConnection {
         quint64 id = 0;
@@ -133,6 +135,8 @@ class QueryWorkspace final : public QObject {
     bool navigationAllowed() const { return !workInFlight() && !stopping_; }
     QueryState executionState() const { return executionState_; }
     void setGridShortcut(const QString& id, const QKeySequence& primary);
+    void formatSql(bool minify, quint8 indent, bool uppercaseKeywords);
+    void toggleSqlComment(bool block);
   signals:
     void connectionReady(quint64 connection);
     void connectionNotice(const QString& notice);
@@ -209,6 +213,7 @@ class QueryWorkspace final : public QObject {
     void failRowJson(const QString& error);
     void clearRowJson();
     void handleRowJsonEvent(const BridgeEvent& event);
+    void applySqlEdit(SqlEditor* editor, const SqlTextEdit& edit);
     void copyResult(int scope, const QString& format = QStringLiteral("tsv"));
     std::optional<ResultTableModel::CopySnapshot>
     formattedCopySnapshot(const QItemSelection& selection, int scope, const QString& format,
@@ -327,6 +332,11 @@ class QueryWorkspace final : public QObject {
     QHash<quint64, QString> connectionProfiles_;
     QHash<quint64, QString> connectionDrivers_;
     QHash<quint64, QString> connectionSqlModes_;
+    QHash<quint64, quint32> connectionRowLimits_;
+    std::optional<quint32> appliedRowLimit_;
+    void setupRowLimit();
+    void syncRowLimit();
+    QString resultRowsText(quint64 count) const;
     QSet<quint64> pendingTransactions_;
     QSet<quint64> confirmingDisconnects_;
     QSet<quint64> disconnecting_;

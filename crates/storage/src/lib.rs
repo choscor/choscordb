@@ -12,9 +12,9 @@ use choscordb_driver_api::{ConnectionOptions, Secret};
 pub use choscordb_driver_api::{SshTunnel, TlsMode};
 pub use metadata_cache::{CachedChild, METADATA_CACHE_SECONDS};
 pub use preferences::{
-    DEFAULT_EDITOR_FONT_SIZE, EDITOR_PREFERENCES_VERSION, EditorPreferences, MAX_EDITOR_FONT_SIZE,
-    MAX_FONT_FAMILY_BYTES, MAX_SHORTCUT_SEQUENCE_BYTES, MIN_EDITOR_FONT_SIZE, ShortcutCommand,
-    ShortcutOverride,
+    DEFAULT_EDITOR_FONT_SIZE, DEFAULT_FORMAT_INDENT, EDITOR_PREFERENCES_VERSION, EditorPreferences,
+    MAX_EDITOR_FONT_SIZE, MAX_FONT_FAMILY_BYTES, MAX_FORMAT_INDENT, MAX_SHORTCUT_SEQUENCE_BYTES,
+    MIN_EDITOR_FONT_SIZE, MIN_FORMAT_INDENT, ShortcutCommand, ShortcutOverride,
 };
 pub use query_preferences::{
     DEFAULT_CONNECTION_TIMEOUT_SECONDS, MAX_CONNECTION_TIMEOUT_SECONDS, MAX_QUERY_TIMEOUT_SECONDS,

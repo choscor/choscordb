@@ -62,6 +62,8 @@ class PreferencesDialog final : public DialogShell {
     QFontComboBox* font_;
     QCheckBox* system_;
     QSpinBox* size_;
+    QSpinBox* formatIndent_ = nullptr;
+    QCheckBox* formatUppercase_ = nullptr;
     QSpinBox *pageSize_, *timeout_, *connectionTimeout_;
     QDoubleSpinBox *historyDays_, *historyRecords_;
     QCheckBox* recordHistory_;

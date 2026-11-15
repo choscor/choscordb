@@ -2,6 +2,11 @@ mod completion;
 mod completion_context;
 pub use completion_context::{completion_context, completion_source_supported};
 mod editor;
+mod format;
+pub use format::{
+    EditError, FormatOptions, FormatStyle, ROW_LIMIT_CHOICES, RowLimit, TextEdit, apply_row_limit,
+    format_edit, format_sql, toggle_block_comment, toggle_line_comment,
+};
 mod highlight;
 mod history_preview;
 pub use highlight::{HighlightKind, HighlightSpan, highlight};

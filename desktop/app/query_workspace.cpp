@@ -64,6 +64,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         updateGridActions();
     });
     setupGridCommands();
+    setupRowLimit();
     setupResultViewControls();
     querySettings_ = new QuerySettingsController(adapter_, this);
     setupCellEditor();
@@ -711,6 +712,7 @@ QString QueryWorkspace::readOnlyReason() const {
 
 void QueryWorkspace::updateActions() {
     observeEditTransaction();
+    syncRowLimit();
     if (invalidatePending_ && !workInFlight()) {
         invalidateResult();
         return;
@@ -859,8 +861,13 @@ void QueryWorkspace::execute(RunScope scope) {
         adapter_->releaseQuery(*query_);
     clearViewState();
     const auto bytes = sql.toUtf8();
-    executedSql_ = QString::fromUtf8(bytes.mid(static_cast<qsizetype>(range.start),
-                                               static_cast<qsizetype>(range.end - range.start)));
+    const auto limited = EngineAdapter::applyRowLimit(
+        QString::fromUtf8(bytes.mid(static_cast<qsizetype>(range.start),
+                                    static_cast<qsizetype>(range.end - range.start))),
+        connectionRowLimits_.value(*connection), driverForConnection(*connection),
+        connectionSqlModes_.value(*connection));
+    executedSql_ = limited.sql;
+    appliedRowLimit_ = limited.applied;
     commandError_.clear();
     query_ = adapter_->execute(*connection, executedSql_, connectionProfiles_.value(*connection),
                                querySettings_->preferences());

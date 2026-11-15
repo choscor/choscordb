@@ -30,6 +30,10 @@ fn command_id(command: ShortcutCommand) -> &'static str {
         ShortcutCommand::MinimizeWindow => "minimize_window",
         ShortcutCommand::Refresh => "refresh",
         ShortcutCommand::ToggleSidebar => "toggle_sidebar",
+        ShortcutCommand::FormatSql => "format_sql",
+        ShortcutCommand::MinifySql => "minify_sql",
+        ShortcutCommand::ToggleLineComment => "toggle_line_comment",
+        ShortcutCommand::ToggleBlockComment => "toggle_block_comment",
     }
 }
 pub(crate) fn dto(value: EditorPreferences) -> ffi::EditorPreferencesDto {
@@ -37,6 +41,8 @@ pub(crate) fn dto(value: EditorPreferences) -> ffi::EditorPreferencesDto {
         version: value.version,
         font_family: value.font_family.unwrap_or_default(),
         font_size: value.font_size,
+        format_indent: value.format_indent,
+        format_uppercase_keywords: value.format_uppercase_keywords,
         shortcuts: value
             .shortcuts
             .into_iter()
@@ -80,6 +86,8 @@ pub fn editor_preferences_set(
                 font_family: (!value.font_family.is_empty()).then_some(value.font_family),
                 font_size: value.font_size,
                 shortcuts,
+                format_indent: value.format_indent,
+                format_uppercase_keywords: value.format_uppercase_keywords,
             },
             token,
         )
@@ -93,5 +101,8 @@ pub fn editor_preference_limits() -> ffi::EditorPreferenceLimitsDto {
         default_font_size: choscordb_core::DEFAULT_EDITOR_FONT_SIZE,
         min_font_size: choscordb_core::MIN_EDITOR_FONT_SIZE,
         max_font_size: choscordb_core::MAX_EDITOR_FONT_SIZE,
+        default_format_indent: choscordb_core::DEFAULT_FORMAT_INDENT,
+        min_format_indent: choscordb_core::MIN_FORMAT_INDENT,
+        max_format_indent: choscordb_core::MAX_FORMAT_INDENT,
     }
 }

@@ -45,6 +45,7 @@ EditorPreferences::EditorPreferences() {
     const auto limits = editor_preference_limits();
     version = limits.version;
     fontSize = limits.default_font_size;
+    formatIndent = limits.default_format_indent;
 }
 QueryPreferenceLimits EngineAdapter::queryPreferenceLimits() {
     const auto limits = query_preference_limits();
@@ -97,7 +98,9 @@ bool EngineAdapter::setHistoryPolicy(const HistoryPolicy& policy, quint64 token)
 }
 EditorPreferenceLimits EngineAdapter::editorPreferenceLimits() {
     const auto limits = editor_preference_limits();
-    return {limits.version, limits.default_font_size, limits.min_font_size, limits.max_font_size};
+    return {limits.version,          limits.default_font_size,     limits.min_font_size,
+            limits.max_font_size,    limits.default_format_indent, limits.min_format_indent,
+            limits.max_format_indent};
 }
 bool EngineAdapter::getQueryPreferences(quint64 token) {
     return submitRecovery(token,
@@ -124,6 +127,8 @@ bool EngineAdapter::setEditorPreferences(const EditorPreferences& preferences, q
         dto.version = preferences.version;
         dto.font_family = toRust(preferences.fontFamily);
         dto.font_size = preferences.fontSize;
+        dto.format_indent = preferences.formatIndent;
+        dto.format_uppercase_keywords = preferences.formatUppercaseKeywords;
         for (const auto& shortcut : preferences.shortcuts) {
             ShortcutOverrideDto value;
             value.command = toRust(shortcut.command);
