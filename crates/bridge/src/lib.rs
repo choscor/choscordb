@@ -40,7 +40,7 @@ fn sql_plan(result: std::result::Result<String, String>) -> ffi::SqlPlanDto {
 }
 pub use trigger_script::{trigger_script, trigger_script_kinds};
 mod value_preview;
-pub use value_preview::{value_preview, value_preview_error};
+pub use value_preview::{pdf_page_image, value_preview, value_preview_error};
 mod structure_edit;
 mod table_export;
 mod table_import;
@@ -1539,6 +1539,11 @@ pub mod ffi {
         nodes: Vec<JsonPreviewNodeDto>,
         image_format: String,
         page_image: Vec<u8>,
+        pdf_pages: usize,
+    }
+    struct PdfPageDto {
+        png: Vec<u8>,
+        error: String,
     }
     struct SqlPlanDto {
         sql: String,
@@ -2173,6 +2178,7 @@ pub mod ffi {
         fn value_text_char_start(text: &[u8], target: u64) -> u64;
         fn value_preview_error(bytes: u64) -> String;
         fn value_preview(bytes: &[u8], binary: bool, database_type: &str) -> ValuePreviewDto;
+        fn pdf_page_image(bytes: &[u8], number: usize) -> PdfPageDto;
         fn text_replacement_error(
             document_bytes: u64,
             removed_bytes: u64,

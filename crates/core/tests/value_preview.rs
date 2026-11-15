@@ -1,4 +1,4 @@
-use choscordb_core::{MAX_JSON_PREVIEW_NODES, ValuePreviewKind, value_preview};
+use choscordb_core::{MAX_JSON_PREVIEW_NODES, ValuePreviewKind, pdf_page_image, value_preview};
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -132,16 +132,28 @@ fn geometry_wkb_becomes_wkt_with_the_srid() {
     assert_eq!(broken.summary, "The geometry WKB ends too early.");
 }
 
-fn one_page_pdf(content: &str) -> Vec<u8> {
-    let objects = [
+fn pdf_with_pages(pages: &[(&str, u32, u32)]) -> Vec<u8> {
+    let kids: Vec<String> = (0..pages.len())
+        .map(|index| format!("{} 0 R", 3 + 2 * index))
+        .collect();
+    let mut objects = vec![
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
-        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R >>".to_string(),
         format!(
-            "<< /Length {} >>\nstream\n{content}\nendstream",
-            content.len()
+            "<< /Type /Pages /Kids [{}] /Count {} >>",
+            kids.join(" "),
+            pages.len()
         ),
     ];
+    for (index, (content, width, height)) in pages.iter().enumerate() {
+        objects.push(format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] /Contents {} 0 R >>",
+            4 + 2 * index
+        ));
+        objects.push(format!(
+            "<< /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        ));
+    }
     let mut pdf = b"%PDF-1.4\n".to_vec();
     let mut offsets = Vec::new();
     for (index, object) in objects.iter().enumerate() {
@@ -163,6 +175,10 @@ fn one_page_pdf(content: &str) -> Vec<u8> {
     pdf
 }
 
+fn one_page_pdf(content: &str) -> Vec<u8> {
+    pdf_with_pages(&[(content, 200, 100)])
+}
+
 fn png_size(png: &[u8]) -> (u32, u32) {
     assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     let field = |at: usize| u32::from_be_bytes(png[at..at + 4].try_into().unwrap());
@@ -177,7 +193,7 @@ fn a_pdf_document_shows_its_first_page_as_an_image() {
     assert_eq!(
         preview.summary,
         format!(
-            "PDF document, version 1.4, 1 page(s), {} bytes. The preview shows page 1.",
+            "PDF document, version 1.4, 1 page(s), {} bytes.",
             filled.len()
         )
     );
@@ -185,4 +201,31 @@ fn a_pdf_document_shows_its_first_page_as_an_image() {
     let blank = value_preview(&one_page_pdf(""), true, "bytea");
     assert_eq!(png_size(&blank.page_image), (400, 200));
     assert_ne!(blank.page_image, preview.page_image);
+}
+
+#[test]
+fn each_pdf_page_renders_on_request() {
+    let pdf = pdf_with_pages(&[("", 200, 100), ("0 0 1 rg 0 0 50 50 re f", 100, 300)]);
+    let preview = value_preview(&pdf, true, "bytea");
+    assert_eq!(preview.pdf_pages, 2);
+    assert!(
+        preview.summary.contains(", 2 page(s), "),
+        "{}",
+        preview.summary
+    );
+    assert_eq!(png_size(&preview.page_image), (400, 200));
+    assert_eq!(pdf_page_image(&pdf, 1).unwrap(), preview.page_image);
+    assert_eq!(png_size(&pdf_page_image(&pdf, 2).unwrap()), (200, 600));
+    assert_eq!(
+        pdf_page_image(&pdf, 3).unwrap_err(),
+        "Page 3 does not exist. The document has 2 page(s)."
+    );
+    assert_eq!(
+        pdf_page_image(&pdf, 0).unwrap_err(),
+        "Page 0 does not exist. The document has 2 page(s)."
+    );
+    assert_eq!(
+        pdf_page_image(b"%PDF-1.4 broken", 1).unwrap_err(),
+        "ChoscorDB cannot render the PDF document: the document is not valid."
+    );
 }

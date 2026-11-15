@@ -50,7 +50,7 @@ pub use trigger_script::{TriggerScript, TriggerScriptRequest, trigger_script};
 mod value_preview;
 pub use value_preview::{
     JsonPreviewNode, MAX_JSON_PREVIEW_NODES, VALUE_PREVIEW_MAX_BYTES, ValuePreview,
-    ValuePreviewKind, value_preview, value_preview_too_large,
+    ValuePreviewKind, pdf_page_image, value_preview, value_preview_too_large,
 };
 mod explain;
 pub use explain::{MAX_PLAN_NODES, PlanNode, explain_sql, parse_explain};

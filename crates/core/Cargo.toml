@@ -28,7 +28,7 @@ serde = "1"
 tempfile = "3"
 cap-std = { version = "4.0.3", default-features = false }
 cap-fs-ext = { version = "4.0.3", default-features = false, features = ["std"] }
-hayro = { version = "0.9", default-features = false, features = ["embed-fonts"] }
+hayro = "0.9"
 
 [dev-dependencies]
 choscordb-driver-mysql = { path = "../driver-mysql" }

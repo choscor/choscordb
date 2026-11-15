@@ -171,10 +171,11 @@ JSON text gets a pretty form, a minified form and tree rows in document order. T
 A binary value gets the image format from its first bytes. The desktop frontend decodes and shows the image.
 A PDF document gets a summary with the version and the page count, and a PNG image of page 1.
 The `hayro` crate renders the page in Rust. The longest side of the image is at most 1600 pixels.
-If the document is encrypted or not valid, the summary gives the reason and the dialog shows no page.
-The desktop frontend makes the preview on a worker thread and then opens the preview dialog.
+The Previous page and Next page buttons call `pdf_page_image` for the page number. The dialog shows "Page n of N".
+If the document needs a password or is not valid, the summary gives the reason and the dialog shows no page.
+The desktop frontend makes the preview and each page on a worker thread.
 The `embed-fonts` feature of `hayro` adds the 14 standard PDF fonts from PDFium. These fonts use a BSD-style license.
-The `embed-cmaps` feature is off, because it adds crates with a license that `deny.toml` does not allow.
+The `embed-cmaps` feature adds the CJK character maps. It uses `brotli`, so `deny.toml` has BSD-3-Clause exceptions for `brotli` and its two allocator crates.
 A geometry type gets WKT from WKB, EWKB or hexadecimal EWKB. A MySQL SRID prefix and an EWKB SRID become `SRID=n;`.
 
 ### Schema ER diagram

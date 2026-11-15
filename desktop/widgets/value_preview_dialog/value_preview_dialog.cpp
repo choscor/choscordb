@@ -1,8 +1,10 @@
 #include "widgets/value_preview_dialog/value_preview_dialog.h"
+#include "bridge/engine_adapter.h"
 #include "design_system/button/button.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/text/text.h"
 #include "design_system/theme.h"
+#include <QFutureWatcher>
 #include <QHeaderView>
 #include <QImage>
 #include <QLabel>
@@ -10,8 +12,10 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QStyle>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <QtConcurrent>
 
 namespace choscordb {
 ValuePreviewDialog::ValuePreviewDialog(const ValuePreview& preview, const QByteArray& bytes,
@@ -41,16 +45,16 @@ ValuePreviewDialog::ValuePreviewDialog(const ValuePreview& preview, const QByteA
             design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
         body->addWidget(text_, 1);
     };
-    const auto addImage = [body, sections](const QImage& image, const QString& name) {
-        auto* picture = new QLabel(sections);
-        picture->setObjectName("valuePreviewImage");
-        picture->setPixmap(QPixmap::fromImage(image));
-        picture->setAccessibleName(name);
+    const auto addImage = [this, body, sections](const QImage& image, const QString& name) {
+        picture_ = new QLabel(sections);
+        picture_->setObjectName("valuePreviewImage");
+        picture_->setPixmap(QPixmap::fromImage(image));
+        picture_->setAccessibleName(name);
         auto* scroll = new QScrollArea(sections);
         scroll->setObjectName("valuePreviewImageScroll");
         scroll->setFrameShape(QFrame::NoFrame);
         scroll->setAlignment(Qt::AlignCenter);
-        scroll->setWidget(picture);
+        scroll->setWidget(picture_);
         body->addWidget(scroll, 1);
     };
     if (preview.kind == QStringLiteral("json")) {
@@ -98,9 +102,56 @@ ValuePreviewDialog::ValuePreviewDialog(const ValuePreview& preview, const QByteA
     } else if (preview.kind == QStringLiteral("pdf") && !preview.pageImage.isEmpty()) {
         const auto page = QImage::fromData(preview.pageImage, "PNG");
         addImage(page, tr("PDF page 1, %1 × %2").arg(page.width()).arg(page.height()));
+        bytes_ = bytes;
+        pdfPages_ = preview.pdfPages;
+        pageStatus_ = createDescription({}, sections);
+        pageStatus_->setObjectName("valuePreviewPageStatus");
+        body->addWidget(pageStatus_);
+        previousPage_ = sections->addAction(design::DialogActionRole::Utility, tr("Previous page"));
+        previousPage_->setObjectName("valuePreviewPreviousPage");
+        nextPage_ = sections->addAction(design::DialogActionRole::Utility, tr("Next page"));
+        nextPage_->setObjectName("valuePreviewNextPage");
+        connect(previousPage_, &QPushButton::clicked, this, [this] { showPdfPage(pdfPage_ - 1); });
+        connect(nextPage_, &QPushButton::clicked, this, [this] { showPdfPage(pdfPage_ + 1); });
+        updatePdfPageStatus({});
     }
     auto* close = sections->addAction(design::DialogActionRole::Dismiss, tr("Close"));
     close->setObjectName("valuePreviewClose");
     connect(close, &QPushButton::clicked, this, &ValuePreviewDialog::reject);
+}
+void ValuePreviewDialog::showPdfPage(int number) {
+    previousPage_->setEnabled(false);
+    nextPage_->setEnabled(false);
+    auto* watcher = new QFutureWatcher<PdfPage>(this);
+    connect(watcher, &QFutureWatcher<PdfPage>::finished, this, [this, watcher, number] {
+        watcher->deleteLater();
+        const auto page = watcher->result();
+        const auto image = QImage::fromData(page.png, "PNG");
+        if (!page.error.isEmpty() || image.isNull()) {
+            updatePdfPageStatus(page.error.isEmpty() ? tr("The PDF page image cannot be decoded.")
+                                                     : page.error);
+            return;
+        }
+        pdfPage_ = number;
+        picture_->setPixmap(QPixmap::fromImage(image));
+        picture_->adjustSize();
+        picture_->setAccessibleName(
+            tr("PDF page %1, %2 × %3").arg(number).arg(image.width()).arg(image.height()));
+        updatePdfPageStatus({});
+    });
+    watcher->setFuture(QtConcurrent::run(
+        [bytes = bytes_, number] { return EngineAdapter::pdfPage(bytes, number); }));
+}
+void ValuePreviewDialog::updatePdfPageStatus(const QString& error) {
+    pageStatus_->setText(error.isEmpty() ? tr("Page %1 of %2").arg(pdfPage_).arg(pdfPages_)
+                                         : error);
+    const auto role = error.isEmpty() ? QString() : QStringLiteral("fieldError");
+    if (pageStatus_->property("designRole").toString() != role) {
+        pageStatus_->setProperty("designRole", role);
+        pageStatus_->style()->unpolish(pageStatus_);
+        pageStatus_->style()->polish(pageStatus_);
+    }
+    previousPage_->setEnabled(pdfPage_ > 1);
+    nextPage_->setEnabled(pdfPage_ < pdfPages_);
 }
 }

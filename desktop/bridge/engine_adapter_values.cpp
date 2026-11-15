@@ -829,4 +829,31 @@ StatementPlan EngineAdapter::statementPlan(const QString& sql, quint64 start, qu
         plan.statements.push_back({statement.start, statement.end, fromRust(statement.label)});
     return plan;
 }
+ValuePreview EngineAdapter::valuePreview(const QByteArray& bytes, bool binary,
+                                         const QString& type) {
+    const auto source = value_preview(bridge_detail::byteView(bytes), binary, toRust(type));
+    ValuePreview preview{fromRust(source.kind),
+                         fromRust(source.summary),
+                         fromRust(source.pretty),
+                         fromRust(source.minified),
+                         fromRust(source.image_format),
+                         {},
+                         {},
+                         0};
+    preview.nodes.reserve(static_cast<qsizetype>(source.nodes.size()));
+    for (const auto& node : source.nodes)
+        preview.nodes.append({static_cast<qsizetype>(node.parent), fromRust(node.key),
+                              fromRust(node.value), fromRust(node.kind)});
+    preview.pageImage = QByteArray(reinterpret_cast<const char*>(source.page_image.data()),
+                                   static_cast<qsizetype>(source.page_image.size()));
+    preview.pdfPages = static_cast<int>(source.pdf_pages);
+    return preview;
+}
+PdfPage EngineAdapter::pdfPage(const QByteArray& bytes, int number) {
+    const auto page =
+        pdf_page_image(bridge_detail::byteView(bytes), static_cast<size_t>(qMax(0, number)));
+    return {QByteArray(reinterpret_cast<const char*>(page.png.data()),
+                       static_cast<qsizetype>(page.png.size())),
+            fromRust(page.error)};
+}
 }

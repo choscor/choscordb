@@ -35,6 +35,7 @@ pub struct ValuePreview {
     pub nodes_truncated: bool,
     pub image_format: String,
     pub page_image: Vec<u8>,
+    pub pdf_pages: usize,
 }
 
 impl ValuePreview {
@@ -48,6 +49,7 @@ impl ValuePreview {
             nodes_truncated: false,
             image_format: String::new(),
             page_image: Vec::new(),
+            pdf_pages: 0,
         }
     }
 }
@@ -197,19 +199,24 @@ fn pdf_version(bytes: &[u8]) -> String {
 
 fn pdf_preview(bytes: &[u8]) -> ValuePreview {
     let version = pdf_version(bytes);
-    match render_first_pdf_page(bytes) {
+    match render_pdf_page(bytes, 1) {
         Ok((pages, png)) => {
             let mut preview = ValuePreview::new(
                 ValuePreviewKind::Pdf,
                 format!(
-                    "PDF document, version {version}, {pages} page(s), {} bytes. The preview shows page 1.",
+                    "PDF document, version {version}, {pages} page(s), {} bytes.",
                     bytes.len()
                 ),
             );
             preview.page_image = png;
+            preview.pdf_pages = pages;
             preview
         }
-        Err(reason) => {
+        Err(error) => {
+            let reason = match error {
+                PdfRenderError::MissingPage(_) => "the document has no pages",
+                PdfRenderError::Failed(reason) => reason,
+            };
             let pages = bytes
                 .windows(12)
                 .filter(|window| window.starts_with(b"/Type") && is_page_marker(window))
@@ -225,23 +232,33 @@ fn pdf_preview(bytes: &[u8]) -> ValuePreview {
     }
 }
 
-fn render_first_pdf_page(bytes: &[u8]) -> Result<(usize, Vec<u8>), &'static str> {
+enum PdfRenderError {
+    MissingPage(usize),
+    Failed(&'static str),
+}
+
+fn render_pdf_page(bytes: &[u8], number: usize) -> Result<(usize, Vec<u8>), PdfRenderError> {
     use hayro::hayro_interpret::InterpreterSettings;
     use hayro::hayro_syntax::{LoadPdfError, Pdf};
     use hayro::vello_cpu::color::palette::css::WHITE;
     use hayro::{PixmapSettings, RenderCache, RenderSettings, render};
     let data = bytes.to_vec();
     std::panic::catch_unwind(move || {
-        let pdf = Pdf::new(data).map_err(|error| match error {
-            LoadPdfError::Decryption(_) => "the document is encrypted",
-            LoadPdfError::Invalid => "the document is not valid",
+        let pdf = Pdf::new(data).map_err(|error| {
+            PdfRenderError::Failed(match error {
+                LoadPdfError::Decryption(_) => "the document is encrypted",
+                LoadPdfError::Invalid => "the document is not valid",
+            })
         })?;
         let pages = pdf.pages();
-        let page = pages.first().ok_or("the document has no pages")?;
+        let page = number
+            .checked_sub(1)
+            .and_then(|index| pages.get(index))
+            .ok_or(PdfRenderError::MissingPage(pages.len()))?;
         let (width, height) = page.render_dimensions();
         let longest = width.max(height);
         if !(longest.is_finite() && longest >= 1.0) {
-            return Err("the first page has no size");
+            return Err(PdfRenderError::Failed("the page has no size"));
         }
         let scale = PDF_PREVIEW_SCALE.min(PDF_PREVIEW_MAX_PIXELS / longest);
         let pixmap = render(
@@ -257,10 +274,10 @@ fn render_first_pdf_page(bytes: &[u8]) -> Result<(usize, Vec<u8>), &'static str>
         );
         let png = pixmap
             .into_png()
-            .map_err(|_| "the page image cannot be encoded")?;
+            .map_err(|_| PdfRenderError::Failed("the page image cannot be encoded"))?;
         Ok((pages.len(), png))
     })
-    .unwrap_or(Err("the renderer failed"))
+    .unwrap_or(Err(PdfRenderError::Failed("the renderer failed")))
 }
 
 fn is_page_marker(window: &[u8]) -> bool {
@@ -451,5 +468,17 @@ impl Wkb<'_> {
             format!("{name}{suffix} {body}")
         };
         Ok((srid, text))
+    }
+}
+
+pub fn pdf_page_image(bytes: &[u8], number: usize) -> Result<Vec<u8>, String> {
+    match render_pdf_page(bytes, number) {
+        Ok((_, png)) => Ok(png),
+        Err(PdfRenderError::MissingPage(pages)) => Err(format!(
+            "Page {number} does not exist. The document has {pages} page(s)."
+        )),
+        Err(PdfRenderError::Failed(reason)) => Err(format!(
+            "ChoscorDB cannot render the PDF document: {reason}."
+        )),
     }
 }

@@ -12,5 +12,10 @@ struct ValuePreview {
     QString kind, summary, pretty, minified, imageFormat;
     QList<JsonPreviewNode> nodes;
     QByteArray pageImage;
+    int pdfPages = 0;
+};
+struct PdfPage {
+    QByteArray png;
+    QString error;
 };
 }

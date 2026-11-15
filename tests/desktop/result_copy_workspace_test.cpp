@@ -404,12 +404,14 @@ class ResultCopyWorkspaceTest : public QObject {
         QCOMPARE(picture->pixmap().size(), QSize(3, 2));
         QCOMPARE(picture->accessibleName(), QString("PNG image, 3 × 2"));
     }
-    void valuePreviewRendersTheFirstPdfPage() {
+    void valuePreviewRendersEachPdfPage() {
         const QStringList objects = {
             "<< /Type /Catalog /Pages 2 0 R >>",
-            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>",
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R >>",
             "<< /Length 26 >>\nstream\n1 0 0 rg 0 0 100 100 re f\nendstream",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 300] /Contents 6 0 R >>",
+            "<< /Length 23 >>\nstream\n0 0 1 rg 0 0 50 50 re f\nendstream",
         };
         QByteArray pdf = "%PDF-1.4\n";
         QList<qsizetype> offsets;
@@ -421,10 +423,10 @@ class ResultCopyWorkspaceTest : public QObject {
                        .toUtf8();
         }
         const auto xref = pdf.size();
-        pdf += QStringLiteral("xref\n0 5\n0000000000 65535 f \n").toUtf8();
+        pdf += QStringLiteral("xref\n0 7\n0000000000 65535 f \n").toUtf8();
         for (const auto offset : offsets)
             pdf += QStringLiteral("%1 00000 n \n").arg(offset, 10, 10, QChar('0')).toUtf8();
-        pdf += QStringLiteral("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n%1\n%%EOF\n")
+        pdf += QStringLiteral("trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n%1\n%%EOF\n")
                    .arg(xref)
                    .toUtf8();
         choscordb::EngineAdapter adapter;
@@ -433,16 +435,29 @@ class ResultCopyWorkspaceTest : public QObject {
         detail.findChild<QPushButton*>("valuePreviewOpen")->click();
         choscordb::ValuePreviewDialog* preview = nullptr;
         QTRY_VERIFY((preview = detail.findChild<choscordb::ValuePreviewDialog*>()));
-        QVERIFY(preview->findChild<QLabel*>("valuePreviewSummary")
-                    ->text()
-                    .endsWith(QStringLiteral("1 page(s), %1 bytes. The preview shows page 1.")
-                                  .arg(pdf.size())));
+        QCOMPARE(preview->findChild<QLabel*>("valuePreviewSummary")->text(),
+                 QStringLiteral("PDF document, version 1.4, 2 page(s), %1 bytes.").arg(pdf.size()));
         auto* picture = preview->findChild<QLabel*>("valuePreviewImage");
-        QVERIFY(picture);
+        auto* status = preview->findChild<QLabel*>("valuePreviewPageStatus");
+        auto* previous = preview->findChild<QPushButton*>("valuePreviewPreviousPage");
+        auto* next = preview->findChild<QPushButton*>("valuePreviewNextPage");
+        QVERIFY(picture && status && previous && next);
         QCOMPARE(picture->accessibleName(), QString("PDF page 1, 400 × 200"));
-        const auto page = picture->pixmap().toImage();
+        QCOMPARE(status->text(), QString("Page 1 of 2"));
+        QVERIFY(!previous->isEnabled() && next->isEnabled());
+        auto page = picture->pixmap().toImage();
         QCOMPARE(page.pixelColor(50, 100), QColor(Qt::red));
         QCOMPARE(page.pixelColor(350, 100), QColor(Qt::white));
+        next->click();
+        QTRY_COMPARE(status->text(), QString("Page 2 of 2"));
+        QCOMPARE(picture->accessibleName(), QString("PDF page 2, 200 × 600"));
+        QVERIFY(previous->isEnabled() && !next->isEnabled());
+        page = picture->pixmap().toImage();
+        QCOMPARE(page.pixelColor(50, 550), QColor(Qt::blue));
+        QCOMPARE(page.pixelColor(150, 100), QColor(Qt::white));
+        previous->click();
+        QTRY_COMPARE(status->text(), QString("Page 1 of 2"));
+        QCOMPARE(picture->pixmap().size(), QSize(400, 200));
     }
     void sqlResultsCopyCompleteDeferredFallbackText() {
         choscordb::MainWindow window;
