@@ -20,6 +20,7 @@ pub enum TableExportFormat {
     Csv(CsvOptions),
     Json,
     JsonLines,
+    Xlsx,
     Sql {
         structure: bool,
         drop: bool,
@@ -33,6 +34,7 @@ impl TableExportFormat {
             Self::Csv(_) => "csv",
             Self::Json => "json",
             Self::JsonLines => "jsonl",
+            Self::Xlsx => "xlsx",
             Self::Sql { .. } => "sql",
         }
     }
@@ -114,14 +116,16 @@ pub fn plan_table_export(request: &TableExportRequest) -> Result<Vec<TableExport
             }
             (*structure, *drop, *data)
         }
-        TableExportFormat::Json | TableExportFormat::JsonLines => (false, false, true),
+        TableExportFormat::Json | TableExportFormat::JsonLines | TableExportFormat::Xlsx => {
+            (false, false, true)
+        }
     };
     let sql = matches!(request.format, TableExportFormat::Sql { .. });
     if let TableExportDestination::File(_) = &request.destination
         && request.objects.len() > 1
         && !sql
     {
-        return Err("Choose a folder to export several tables as CSV or JSON.".into());
+        return Err("Choose a folder to export several tables as CSV, JSON or Excel.".into());
     }
     if let TableExportDestination::Folder { pattern, .. } = &request.destination
         && (pattern.contains(['/', '\\']) || pattern.trim().is_empty())
@@ -165,6 +169,7 @@ pub fn plan_table_export(request: &TableExportRequest) -> Result<Vec<TableExport
             TableExportFormat::Csv(options) => ExportFormat::Csv(options.clone()),
             TableExportFormat::Json => ExportFormat::Json,
             TableExportFormat::JsonLines => ExportFormat::JsonLines,
+            TableExportFormat::Xlsx => ExportFormat::Xlsx,
             TableExportFormat::Sql { .. } => ExportFormat::SqlInsert {
                 table: schema.iter().cloned().chain([name.clone()]).collect(),
                 dialect: sql_dialect(&request.driver)?,

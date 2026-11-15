@@ -63,6 +63,7 @@ pub(crate) async fn row(
         ExportFormat::Csv(_) => String::new(),
         ExportFormat::Json => if first { "[" } else { ",[" }.into(),
         ExportFormat::JsonLines => "{\"row\":[".into(),
+        ExportFormat::Xlsx => crate::xlsx::ROW_START.into(),
         ExportFormat::SqlInsert { table, dialect } => format!(
             "INSERT INTO {} ({}) VALUES (",
             table
@@ -86,6 +87,7 @@ pub(crate) async fn row(
                     ExportFormat::SqlInsert { .. } => ", ".to_string(),
                     ExportFormat::Csv(options) => options.delimiter.to_string(),
                     ExportFormat::Json | ExportFormat::JsonLines => ",".to_string(),
+                    ExportFormat::Xlsx => String::new(),
                 },
                 &mut count,
             )
@@ -151,6 +153,7 @@ pub(crate) async fn row(
                 ExportFormat::Csv(options) => options.value(value)?,
                 ExportFormat::Json | ExportFormat::JsonLines => json(value)?,
                 ExportFormat::SqlInsert { dialect, .. } => sql(value, *dialect)?,
+                ExportFormat::Xlsx => crate::xlsx::cell(value)?,
             };
             write(sink, &encoded, &mut count).await?;
         }
@@ -162,6 +165,7 @@ pub(crate) async fn row(
             ExportFormat::Json => "]",
             ExportFormat::JsonLines => "]}\n",
             ExportFormat::SqlInsert { .. } => ");\n",
+            ExportFormat::Xlsx => crate::xlsx::ROW_END,
         },
         &mut count,
     )
@@ -197,6 +201,11 @@ async fn deferred(
             "No deferred chunk capacity",
         ));
     }
+    let xlsx = matches!(format, ExportFormat::Xlsx);
+    if xlsx && total > crate::xlsx::XLSX_MAX_CELL_CHARS * 4 {
+        return Err(crate::xlsx::cell_too_long());
+    }
+    let mut cell_chars = 0u64;
     let mut offset = 0;
     let mut kind = None;
     let mut carry = Vec::with_capacity(4);
@@ -226,6 +235,11 @@ async fn deferred(
                 "{\"fallback_text\":\""
             } else {
                 match (format, chunk.kind) {
+                    (ExportFormat::Xlsx, DeferredKind::Text) => crate::xlsx::TEXT_START,
+                    (ExportFormat::Xlsx, DeferredKind::Binary) => {
+                        csv_prefix = format!("{}\\x", crate::xlsx::TEXT_START);
+                        &csv_prefix
+                    }
                     (ExportFormat::Csv(options), kind) => {
                         csv_prefix = match kind {
                             DeferredKind::Binary => format!("{}\\x", options.quote),
@@ -278,6 +292,10 @@ async fn deferred(
         }
         offset += chunk.bytes.len() as u64;
         if chunk.kind == DeferredKind::Binary {
+            cell_chars += 2 * chunk.bytes.len() as u64 + if cell_chars == 0 { 2 } else { 0 };
+            if xlsx && cell_chars > crate::xlsx::XLSX_MAX_CELL_CHARS {
+                return Err(crate::xlsx::cell_too_long());
+            }
             write(sink, &hex(&chunk.bytes), count).await?;
         } else {
             let mut bytes = Vec::with_capacity(carry.len() + chunk.bytes.len());
@@ -292,7 +310,22 @@ async fn deferred(
                 }
                 Err(_) => return Err(invalid()),
             };
+            let end = if xlsx && offset < total {
+                crate::xlsx::unfinished_marker(valid)
+            } else {
+                valid.len()
+            };
+            if end < valid.len() {
+                let mut rest = valid.as_bytes()[end..].to_vec();
+                rest.extend_from_slice(&carry);
+                carry = rest;
+            }
+            cell_chars += valid[..end].encode_utf16().count() as u64;
+            if xlsx && cell_chars > crate::xlsx::XLSX_MAX_CELL_CHARS {
+                return Err(crate::xlsx::cell_too_long());
+            }
             let encoded = match format {
+                ExportFormat::Xlsx => crate::xlsx::escape_prefix(valid, end),
                 ExportFormat::Csv(options) => options.escape(valid),
                 ExportFormat::Json | ExportFormat::JsonLines => {
                     let s = serde_json::to_string(valid).map_err(|_| invalid())?;
@@ -352,6 +385,7 @@ async fn deferred(
             DeferredKind::Text,
         ) => "' USING utf8mb4)",
         (ExportFormat::SqlInsert { .. }, _) => "'",
+        (ExportFormat::Xlsx, _) => crate::xlsx::TEXT_END,
     };
     write(sink, suffix, count).await
 }

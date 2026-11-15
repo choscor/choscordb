@@ -193,6 +193,28 @@ pub async fn export(
     limits: Limits,
     progress: Option<mpsc::Sender<Progress>>,
 ) -> Result<Progress> {
+    if matches!(format, ExportFormat::Xlsx) {
+        let mut workbook = crate::xlsx::XlsxSink::new(sink);
+        return finish(
+            source,
+            &mut workbook,
+            format,
+            cancellation,
+            limits,
+            progress,
+        )
+        .await;
+    }
+    finish(source, sink, format, cancellation, limits, progress).await
+}
+async fn finish(
+    source: &mut dyn ExportSource,
+    sink: &mut dyn ExportSink,
+    format: ExportFormat,
+    cancellation: Cancellation,
+    limits: Limits,
+    progress: Option<mpsc::Sender<Progress>>,
+) -> Result<Progress> {
     let work = stream(source, sink, &format, &cancellation, limits, progress);
     let result =
         tokio::select! {biased; _=cancellation.cancelled()=>Err(cancelled()), result=work=>result};
@@ -240,6 +262,9 @@ async fn stream(
         for row in &page.rows {
             if cancel.is_cancelled() {
                 return Err(cancelled());
+            }
+            if matches!(format, ExportFormat::Xlsx) && state.rows + 2 > crate::XLSX_MAX_ROWS {
+                return Err(crate::xlsx::too_many_rows());
             }
             let bytes = crate::chunked::row(
                 source,

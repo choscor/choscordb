@@ -45,6 +45,7 @@ class WorkspaceTest : public QObject {
     void deferredTextRemainsInspectableAndDisconnectClosesDetail();
     void backwardTextWindowAlignsUtf8AndLongRowsScroll();
     void exportsMysqlInsertDialectThroughDialog();
+    void exportsExcelWorkbookThroughDialog();
     void exportsOriginalResultAfterBrowsing();
     void exportCancellationPreservesExistingDestination();
     void exportFailureLeavesResultUsable();

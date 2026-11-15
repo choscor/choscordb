@@ -142,6 +142,16 @@ A list can have up to `MAX_DATABASE_CHOICES` (10,000) entries. A larger list is 
 `profile_with_database` in `bridge` sets the database name, or the SQLite path, of a copy of the profile.
 The desktop frontend opens a new connection with that profile and moves the current SQL tab to it. The old connection stays open.
 
+### Excel export
+
+`ExportFormat::Xlsx` writes one worksheet with a header row. The `xlsx` module in `export` streams the sheet XML into a ZIP file.
+The sheet part uses deflate and a data descriptor. Thus the writer keeps only one compressed buffer in memory.
+Integers up to 2^53, finite real numbers and decimals with 15 or fewer significant digits become number cells.
+Booleans become boolean cells. All other values become inline text cells.
+The writer escapes XML characters and control characters. It also escapes text that looks like an Excel `_xHHHH_` escape.
+The export fails when it gets to an Excel limit: 1,048,576 rows, 16,384 columns or 32,767 characters in one cell.
+The export also fails when the file gets to 4 GiB. Then the destination file does not change.
+
 ### Table export
 
 `plan_table_export` in `core` makes one target for each table or view: the `SELECT` that Rust builds, the destination file and the export format.

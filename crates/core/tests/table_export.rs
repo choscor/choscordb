@@ -140,7 +140,7 @@ fn invalid_requests_return_the_reason() {
                 csv(),
                 TableExportDestination::File(PathBuf::from("/exports/all.csv")),
             ),
-            "Choose a folder to export several tables as CSV or JSON.",
+            "Choose a folder to export several tables as CSV, JSON or Excel.",
         ),
         (
             request("sqlite", two(), csv(), folder("export")),
@@ -346,4 +346,20 @@ mod engine_export {
         );
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
+}
+
+#[test]
+fn excel_exports_write_one_workbook_per_table() {
+    let plan = plan_table_export(&request(
+        "sqlite",
+        vec![table("[\"main\",\"t\"]", "t")],
+        TableExportFormat::Xlsx,
+        folder("{table}"),
+    ))
+    .unwrap();
+    assert_eq!(plan[0].destination, PathBuf::from("/exports/t.xlsx"));
+    assert!(matches!(
+        plan[0].data.as_ref().unwrap().format,
+        ExportFormat::Xlsx
+    ));
 }

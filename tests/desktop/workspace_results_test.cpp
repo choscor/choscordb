@@ -350,6 +350,33 @@ void WorkspaceTest::exportsMysqlInsertDialectThroughDialog() {
     QVERIFY(!bytes.contains("\"order"));
 }
 
+void WorkspaceTest::exportsExcelWorkbookThroughDialog() {
+    WorkspaceFixture f;
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTRY_VERIFY(f.run.isEnabled());
+    f.execute("SELECT 1 AS id, 'a' AS label");
+    QTRY_COMPARE(f.grid.model()->rowCount(), 1);
+    QTRY_VERIFY(f.exportResult.isEnabled());
+    f.exportResult.click();
+    auto* dialog = f.parent.findChild<choscordb::ExportDialog*>("exportDialog");
+    QVERIFY(dialog);
+    const auto destination = directory.filePath("rows.xlsx");
+    dialog->findChild<QLineEdit*>("exportDestination")->setText(destination);
+    auto* format = dialog->findChild<QComboBox*>("exportFormat");
+    QVERIFY(format->findData("xlsx") >= 0);
+    format->setCurrentIndex(format->findData("xlsx"));
+    QVERIFY(!dialog->findChild<QWidget*>("exportTable")->isVisibleTo(dialog));
+    dialog->findChild<QPushButton*>("exportStart")->click();
+    QTRY_VERIFY(f.exportResult.isEnabled());
+    QFile output(destination);
+    QVERIFY(output.open(QIODevice::ReadOnly));
+    const auto bytes = output.readAll();
+    QVERIFY(bytes.startsWith(QByteArray("PK\x03\x04", 4)));
+    QVERIFY(bytes.contains("xl/worksheets/sheet1.xml"));
+    QVERIFY(bytes.contains("[Content_Types].xml"));
+}
+
 void WorkspaceTest::exportsOriginalResultAfterBrowsing() {
     WorkspaceFixture f;
     QTemporaryDir directory;

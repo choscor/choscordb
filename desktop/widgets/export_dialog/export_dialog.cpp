@@ -46,6 +46,7 @@ ExportDialog::ExportDialog(EngineAdapter* adapter, QWidget* parent)
     format_->addItem(tr("CSV"), "csv");
     format_->addItem(tr("JSON"), "json");
     format_->addItem(tr("JSON Lines"), "jsonl");
+    format_->addItem(tr("Excel"), "xlsx");
     format_->addItem(tr("SQL INSERT"), "sql");
     dialect_->addItem(tr("SQLite"), "sqlite");
     dialect_->addItem(tr("PostgreSQL"), "postgres");

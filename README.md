@@ -19,8 +19,8 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Explain a statement and see its query plan as a tree with costs and row estimates.
 - Sort by up to four columns with Shift+click. Hide result columns with the column chooser (Ctrl+Alt+F). ChoscorDB keeps the hidden columns for each table.
 - Copy rows as TSV, CSV, Markdown, HTML, JSON or SQL `INSERT` statements.
-- Export results to CSV, JSON, JSON Lines or SQL `INSERT` statements.
-- Export tables or views from the navigator to CSV, JSON, JSON Lines or SQL with structure, DROP and data.
+- Export results to CSV, JSON, JSON Lines, Excel or SQL `INSERT` statements.
+- Export tables or views from the navigator to CSV, JSON, JSON Lines, Excel or SQL with structure, DROP and data.
 - Import CSV, JSON or JSON Lines files into a table or a new table with a preview and column mapping.
 - Run a SQL file or a dump. Stop at the first error, continue after errors, or run it in one transaction.
 - Edit the columns, indexes and keys of a table or create a table. Review the SQL before you apply it.

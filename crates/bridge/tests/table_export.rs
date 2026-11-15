@@ -40,6 +40,7 @@ fn defaults_and_choices_come_from_the_engine() {
             ("csv".to_string(), true, false),
             ("json".to_string(), false, false),
             ("jsonl".to_string(), false, false),
+            ("xlsx".to_string(), false, false),
             ("sql".to_string(), false, true),
         ]
     );
@@ -59,6 +60,11 @@ fn request_errors_name_the_field() {
         ..people()
     };
     assert_eq!(table_export_error(&lf), "");
+    let excel = ffi::TableExportRequestDto {
+        format: "xlsx".into(),
+        ..people()
+    };
+    assert_eq!(table_export_error(&excel), "");
     let cases = [
         (
             ffi::TableExportRequestDto {

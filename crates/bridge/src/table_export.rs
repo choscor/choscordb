@@ -15,6 +15,7 @@ pub fn table_export_formats() -> Vec<ffi::TableExportFormatDto> {
         format("csv", "CSV"),
         format("json", "JSON"),
         format("jsonl", "JSON Lines"),
+        format("xlsx", "Excel"),
         format("sql", "SQL"),
     ]
 }
@@ -67,6 +68,7 @@ fn request(dto: &ffi::TableExportRequestDto) -> Result<TableExportRequest, Strin
         }),
         "json" => TableExportFormat::Json,
         "jsonl" => TableExportFormat::JsonLines,
+        "xlsx" => TableExportFormat::Xlsx,
         "sql" => TableExportFormat::Sql {
             structure: dto.structure,
             drop: dto.drop,

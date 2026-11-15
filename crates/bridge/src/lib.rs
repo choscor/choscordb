@@ -3182,6 +3182,7 @@ pub fn start_export_dialect(
             "csv" => choscordb_core::ExportFormat::Csv(Default::default()),
             "json" => choscordb_core::ExportFormat::Json,
             "jsonl" => choscordb_core::ExportFormat::JsonLines,
+            "xlsx" => choscordb_core::ExportFormat::Xlsx,
             "sql" => choscordb_core::ExportFormat::SqlInsert { table, dialect },
             _ => return Err("Unknown export format".into()),
         };

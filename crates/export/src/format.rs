@@ -82,6 +82,7 @@ pub enum ExportFormat {
         table: Vec<String>,
         dialect: SqlDialect,
     },
+    Xlsx,
 }
 fn invalid(message: &str) -> DriverError {
     DriverError::new(ErrorKind::InvalidInput, message)
@@ -305,6 +306,21 @@ pub(crate) fn header(format: &ExportFormat, columns: &[Column]) -> Result<String
             }
             Ok(String::new())
         }
+        ExportFormat::Xlsx => {
+            if columns.len() > crate::xlsx::XLSX_MAX_COLUMNS {
+                return Err(crate::xlsx::too_many_columns());
+            }
+            let cells = columns
+                .iter()
+                .map(|c| crate::xlsx::header_cell(&c.name))
+                .collect::<Result<String>>()?;
+            Ok(format!(
+                "{}{}{cells}{}",
+                crate::xlsx::SHEET_START,
+                crate::xlsx::ROW_START,
+                crate::xlsx::ROW_END
+            ))
+        }
     }
 }
 pub fn encode_row(
@@ -349,12 +365,20 @@ pub fn encode_row(
                 .collect::<Result<Vec<_>>>()?
                 .join(", ")
         )),
+        ExportFormat::Xlsx => Ok(format!(
+            "{}{}{}",
+            crate::xlsx::ROW_START,
+            row.iter()
+                .map(crate::xlsx::cell)
+                .collect::<Result<String>>()?,
+            crate::xlsx::ROW_END
+        )),
     }
 }
 pub(crate) fn footer(format: &ExportFormat) -> &'static str {
-    if matches!(format, ExportFormat::Json) {
-        "]}"
-    } else {
-        ""
+    match format {
+        ExportFormat::Json => "]}",
+        ExportFormat::Xlsx => crate::xlsx::SHEET_END,
+        _ => "",
     }
 }
