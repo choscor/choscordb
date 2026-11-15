@@ -121,18 +121,32 @@ fn target(
             object: ObjectId(dto.object_id.clone()),
         });
     }
-    let qualify = create_template_parent(&dto.parent_kind)
+    Ok(TableImportTarget::New {
+        qualified_name: new_table_name(
+            driver,
+            &dto.parent_kind,
+            &dto.parent_qualified,
+            &dto.table_name,
+        )?,
+    })
+}
+
+pub(crate) fn new_table_name(
+    driver: GridEditDriver,
+    parent_kind: &str,
+    parent_qualified: &str,
+    table_name: &str,
+) -> Result<String, String> {
+    let qualify = create_template_parent(parent_kind)
         .ok_or("Select a connection, database or schema for the new table.")?;
-    if dto.table_name.trim().is_empty() {
+    if table_name.trim().is_empty() {
         return Err("Enter a name for the new table.".into());
     }
-    let name = quote_import_identifier(driver, &dto.table_name).map_err(|e| e.to_string())?;
-    Ok(TableImportTarget::New {
-        qualified_name: if qualify {
-            format!("{}.{name}", dto.parent_qualified)
-        } else {
-            name
-        },
+    let name = quote_import_identifier(driver, table_name).map_err(|e| e.to_string())?;
+    Ok(if qualify {
+        format!("{parent_qualified}.{name}")
+    } else {
+        name
     })
 }
 

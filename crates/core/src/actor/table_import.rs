@@ -18,11 +18,6 @@ fn stopped(cancellation: &Cancellation, shutdown: &watch::Receiver<bool>) -> Res
     Ok(())
 }
 
-async fn execute_ddl(connection: &mut dyn Connection, sql: &str) -> Result<()> {
-    let mut cursor = connection.execute(sql, QueryOptions::default()).await?;
-    cursor.close().await
-}
-
 async fn write_rows(
     connection: &mut dyn Connection,
     batch: EditBatch,

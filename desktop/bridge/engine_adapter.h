@@ -202,6 +202,39 @@ struct TableImportReview {
     bool valid = false;
     QString error, sql;
 };
+struct StructureField {
+    QString key, label, input, names;
+    bool required = false;
+    QList<CodeLabel> choices;
+};
+struct StructureChangeKindInfo {
+    QString code, label, unavailable;
+    QList<StructureField> fields;
+};
+struct StructureColumn {
+    QString name, dataType;
+    bool nullable = true;
+};
+struct StructureKey {
+    QString name, kind;
+};
+struct StructureTable {
+    QString driver;
+    bool existing = true;
+    QString qualifiedName, parentKind, parentQualified, tableName;
+    QList<StructureColumn> columns;
+    QStringList indexes;
+    QList<StructureKey> keys;
+};
+struct StructureChange {
+    QString kind;
+    QList<std::pair<QString, QString>> values;
+};
+struct StructurePlan {
+    bool valid = false;
+    QString error;
+    QStringList summaries, statements;
+};
 struct DatabaseList {
     QList<CodeLabel> choices;
     QString current;
@@ -747,6 +780,15 @@ class EngineAdapter final : public QObject {
                                                const QStringList& fileColumns);
     std::optional<quint64> importTable(quint64 connection, const TableImportRequest& request,
                                        QString* error);
+    static QString structureUnavailableReason(const QString& kind, const QString& subtype);
+    static QList<StructureChangeKindInfo> structureChangeKinds(const QString& driver,
+                                                               bool newTable);
+    static QStringList structureTypes(const QString& driver);
+    static StructurePlan structurePlan(const StructureTable& table,
+                                       const QList<StructureChange>& changes);
+    bool applyStructure(quint64 connection, const StructureTable& table,
+                        const QList<StructureChange>& changes, quint64 requestToken,
+                        QString* error);
     static quint32 valueChunkBytes();
     static QString valueDetailError(quint64 bytes);
     void loadValueChunk(quint64 query, quint64 handle, quint64 offset,

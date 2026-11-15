@@ -127,6 +127,9 @@ class NavigatorController final : public QObject {
     void tableExportRequested(quint64 connection, const QList<TableExportObject>& objects);
     void tableImportRequested(quint64 connection, const TableImportRequest& request,
                               const QString& targetName, const QString& refreshObjectId);
+    void structureEditRequested(quint64 connection, const StructureTable& table,
+                                const QString& objectId, const QString& targetName,
+                                const QString& refreshObjectId);
 
   private:
     QList<TableExportObject> loadedRelations(const QModelIndex& parent) const;

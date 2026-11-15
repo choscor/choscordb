@@ -17,6 +17,7 @@
 #include "widgets/screen_state/screen_state.h"
 #include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include "widgets/structure_editor_dialog/structure_editor_dialog.h"
 #include "widgets/table_export_dialog/table_export_dialog.h"
 #include "widgets/table_import_dialog/table_import_dialog.h"
 #include <QAbstractItemModel>
@@ -148,26 +149,35 @@ void MainWindow::connectNavigator(const Ui& ui) {
                 dialog->setAttribute(Qt::WA_DeleteOnClose);
                 dialog->open();
             });
-    connect(
-        navigatorController, &NavigatorController::tableImportRequested, this,
-        [this](quint64 connection, TableImportRequest request, const QString& targetName,
-               const QString& refreshObjectId) {
-            request.driver = workspace_->driverForConnection(connection);
-            auto* dialog =
-                new TableImportDialog(workspace_->adapter(), connection, request, targetName, this);
-            dialog->setAttribute(Qt::WA_DeleteOnClose);
-            if (!refreshObjectId.isEmpty())
-                connect(dialog, &TableImportDialog::imported, this,
-                        [this, refreshObjectId](quint64 imported) {
-                            if (!navigatorController_->model()->refreshObject(imported,
-                                                                              refreshObjectId))
-                                reportError(tr("Data imported, but the navigator did not refresh. "
-                                               "%1")
-                                                .arg(EngineAdapter::recoveryHint(
-                                                    RecoveryHint::RefreshNavigator)));
+    connect(navigatorController, &NavigatorController::tableImportRequested, this,
+            [this](quint64 connection, TableImportRequest request, const QString& targetName,
+                   const QString& refreshObjectId) {
+                request.driver = workspace_->driverForConnection(connection);
+                auto* dialog = new TableImportDialog(workspace_->adapter(), connection, request,
+                                                     targetName, this);
+                dialog->setAttribute(Qt::WA_DeleteOnClose);
+                if (!refreshObjectId.isEmpty())
+                    connect(dialog, &TableImportDialog::imported, this,
+                            [this, refreshObjectId](quint64 imported) {
+                                refreshNavigatorAfterChange(imported, refreshObjectId,
+                                                            tr("Data imported"));
+                            });
+                dialog->open();
+            });
+    connect(navigatorController, &NavigatorController::structureEditRequested, this,
+            [this](quint64 connection, StructureTable table, const QString& objectId,
+                   const QString& targetName, const QString& refreshObjectId) {
+                table.driver = workspace_->driverForConnection(connection);
+                auto* dialog = new StructureEditorDialog(workspace_->adapter(), connection, table,
+                                                         objectId, targetName, this);
+                dialog->setAttribute(Qt::WA_DeleteOnClose);
+                connect(dialog, &StructureEditorDialog::applied, this,
+                        [this, refreshObjectId](quint64 changed) {
+                            refreshNavigatorAfterChange(changed, refreshObjectId,
+                                                        tr("Structure changed"));
                         });
-            dialog->open();
-        });
+                dialog->open();
+            });
     connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
             &MainWindow::handleObjectActionEvent, Qt::DirectConnection);
     connect(navigatorController->model(), &NavigatorModel::childrenRequested, this,
@@ -394,5 +404,11 @@ void MainWindow::activateNavigatorObject(const QModelIndex& current) {
                       object.data(NavigatorModel::QualifiedNameRole).toString(), kind,
                       object.data(NavigatorModel::PropertiesRole).toList(), pane);
     }
+}
+void MainWindow::refreshNavigatorAfterChange(quint64 connection, const QString& objectId,
+                                             const QString& outcome) {
+    if (!navigatorController_->model()->refreshObject(connection, objectId))
+        reportError(tr("%1, but the navigator did not refresh. %2")
+                        .arg(outcome, EngineAdapter::recoveryHint(RecoveryHint::RefreshNavigator)));
 }
 }

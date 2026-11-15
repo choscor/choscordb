@@ -62,6 +62,43 @@ TableImportRequestDto importDto(const TableImportRequest& request) {
     dto.conflict = toRust(request.conflict);
     return dto;
 }
+StructureTableDto structureDto(const StructureTable& table) {
+    StructureTableDto dto;
+    dto.driver = toRust(table.driver);
+    dto.existing = table.existing;
+    dto.qualified_name = toRust(table.qualifiedName);
+    dto.parent_kind = toRust(table.parentKind);
+    dto.parent_qualified = toRust(table.parentQualified);
+    dto.table_name = toRust(table.tableName);
+    for (const auto& column : table.columns) {
+        StructureColumnDto entry;
+        entry.name = toRust(column.name);
+        entry.data_type = toRust(column.dataType);
+        entry.nullable = column.nullable;
+        dto.columns.push_back(std::move(entry));
+    }
+    dto.indexes = toRustStrings(table.indexes);
+    for (const auto& key : table.keys) {
+        StructureKeyDto entry;
+        entry.name = toRust(key.name);
+        entry.kind = toRust(key.kind);
+        dto.keys.push_back(std::move(entry));
+    }
+    return dto;
+}
+rust::Vec<StructureChangeDto> structureChangeDtos(const QList<StructureChange>& changes) {
+    rust::Vec<StructureChangeDto> dtos;
+    for (const auto& change : changes) {
+        StructureChangeDto dto;
+        dto.kind = toRust(change.kind);
+        for (const auto& [key, value] : change.values) {
+            dto.keys.push_back(toRust(key));
+            dto.values.push_back(toRust(value));
+        }
+        dtos.push_back(std::move(dto));
+    }
+    return dtos;
+}
 QList<TableExportFormatChoice> formatChoices(const rust::Vec<TableExportFormatDto>& values) {
     QList<TableExportFormatChoice> result;
     for (const auto& format : values)
@@ -172,5 +209,40 @@ EngineAdapter::importTable(quint64 connection, const TableImportRequest& request
         return std::nullopt;
     }
     return reply.id;
+}
+QString EngineAdapter::structureUnavailableReason(const QString& kind, const QString& subtype) {
+    return fromRust(structure_unavailable_reason(toRust(kind), toRust(subtype)));
+}
+QList<StructureChangeKindInfo> EngineAdapter::structureChangeKinds(const QString& driver,
+                                                                   bool newTable) {
+    QList<StructureChangeKindInfo> result;
+    for (const auto& kind : structure_change_kinds(toRust(driver), newTable)) {
+        StructureChangeKindInfo info{
+            fromRust(kind.code), fromRust(kind.label), fromRust(kind.unavailable), {}};
+        for (const auto& field : kind.fields)
+            info.fields.push_back({fromRust(field.key), fromRust(field.label),
+                                   fromRust(field.input), fromRust(field.names), field.required,
+                                   codeLabels(field.choices)});
+        result.push_back(std::move(info));
+    }
+    return result;
+}
+QStringList EngineAdapter::structureTypes(const QString& driver) {
+    return fromRustStrings(structure_types(toRust(driver)));
+}
+StructurePlan EngineAdapter::structurePlan(const StructureTable& table,
+                                           const QList<StructureChange>& changes) {
+    const auto dto = structure_plan(structureDto(table), structureChangeDtos(changes));
+    return {dto.valid, fromRust(dto.error), fromRustStrings(dto.summaries),
+            fromRustStrings(dto.statements)};
+}
+bool EngineAdapter::applyStructure(quint64 connection, const StructureTable& table,
+                                   const QList<StructureChange>& changes, quint64 requestToken,
+                                   QString* error) {
+    const auto reply = apply_structure(*d_->engine, connection, structureDto(table),
+                                       structureChangeDtos(changes), requestToken);
+    if (!reply.accepted && error)
+        *error = fromRust(reply.error);
+    return reply.accepted;
 }
 }

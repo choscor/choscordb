@@ -72,6 +72,8 @@ class MainWindow final : public QMainWindow {
 #endif
 
   private:
+    void refreshNavigatorAfterChange(quint64 connection, const QString& objectId,
+                                     const QString& outcome);
     struct Ui;
     struct PendingObjectAction;
     Ui buildUi();

@@ -24,6 +24,10 @@ pub(crate) enum Command {
         batch: EditBatch,
         request_token: u64,
     },
+    ApplyDdl {
+        statements: Vec<String>,
+        request_token: u64,
+    },
     EditQuery {
         sql: String,
         result_columns: Vec<String>,
@@ -295,6 +299,12 @@ async fn send(events: &EventSink, event: Event) {
             }
         }
     }
+}
+pub(super) async fn execute_ddl(connection: &mut dyn Connection, sql: &str) -> Result<()> {
+    let mut cursor = connection.execute(sql, QueryOptions::default()).await?;
+    let outcome = cursor.fetch_page(PageSize::new(MIN_PAGE_SIZE)?).await;
+    let closed = cursor.close().await;
+    outcome.and(closed)
 }
 async fn metadata_operation<T>(
     operation: impl std::future::Future<Output = Result<T>>,
@@ -955,6 +965,37 @@ pub(crate) async fn run(
                     *cache = None;
                 }
                 catalog_read(&mut *connection, id, read, &mut shutdown, &events).await;
+            }
+            Command::ApplyDdl {
+                statements,
+                request_token,
+            } => {
+                close_active(active, &events).await;
+                let mut affected_rows = Vec::with_capacity(statements.len());
+                let mut failure = None;
+                for (index, sql) in statements.iter().enumerate() {
+                    match execute_ddl(connection.as_mut(), sql).await {
+                        Ok(()) => affected_rows.push(0),
+                        Err(mut error) => {
+                            error.message = format!("Statement {}: {}", index + 1, error.message);
+                            failure = Some(error.at_statement(index));
+                            break;
+                        }
+                    }
+                }
+                let event = match failure {
+                    None => Event::EditApplied {
+                        connection: id,
+                        request_token,
+                        summary: EditBatchSummary { affected_rows },
+                    },
+                    Some(error) => Event::EditFailed {
+                        connection: id,
+                        request_token,
+                        error,
+                    },
+                };
+                send(&events, event).await
             }
             Command::Edit {
                 batch,

@@ -21,8 +21,13 @@ mod metadata_policy;
 mod quick_filter;
 pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy};
 mod result_copy;
+mod structure_edit;
 mod table_export;
 mod table_import;
+pub use structure_edit::{
+    apply_structure, structure_change_kinds, structure_plan, structure_types,
+    structure_unavailable_reason,
+};
 pub use table_export::{
     export_tables, table_export_defaults, table_export_error, table_export_formats,
     table_export_line_breaks,
@@ -1399,6 +1404,55 @@ pub mod ffi {
         path: String,
         pattern: String,
     }
+    struct StructureFieldDto {
+        key: String,
+        label: String,
+        input: String,
+        names: String,
+        required: bool,
+        choices: Vec<CodeLabelDto>,
+    }
+    struct StructureChangeKindDto {
+        code: String,
+        label: String,
+        unavailable: String,
+        fields: Vec<StructureFieldDto>,
+    }
+    #[derive(Default)]
+    struct StructureColumnDto {
+        name: String,
+        data_type: String,
+        nullable: bool,
+    }
+    #[derive(Default)]
+    struct StructureKeyDto {
+        name: String,
+        kind: String,
+    }
+    #[derive(Default)]
+    struct StructureTableDto {
+        driver: String,
+        existing: bool,
+        qualified_name: String,
+        parent_kind: String,
+        parent_qualified: String,
+        table_name: String,
+        columns: Vec<StructureColumnDto>,
+        indexes: Vec<String>,
+        keys: Vec<StructureKeyDto>,
+    }
+    #[derive(Default)]
+    struct StructureChangeDto {
+        kind: String,
+        keys: Vec<String>,
+        values: Vec<String>,
+    }
+    struct StructurePlanDto {
+        valid: bool,
+        error: String,
+        summaries: Vec<String>,
+        statements: Vec<String>,
+    }
     #[derive(Default)]
     struct TableImportMappingDto {
         target: String,
@@ -2327,6 +2381,20 @@ pub mod ffi {
             request: &TableExportRequestDto,
         ) -> Submit;
         fn table_import_unavailable_reason(kind: &str, relation_subtype: &str) -> String;
+        fn structure_unavailable_reason(kind: &str, relation_subtype: &str) -> String;
+        fn structure_change_kinds(driver: &str, new_table: bool) -> Vec<StructureChangeKindDto>;
+        fn structure_types(driver: &str) -> Vec<String>;
+        fn structure_plan(
+            table: &StructureTableDto,
+            changes: Vec<StructureChangeDto>,
+        ) -> StructurePlanDto;
+        fn apply_structure(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            table: &StructureTableDto,
+            changes: Vec<StructureChangeDto>,
+            request_token: u64,
+        ) -> Submit;
         fn table_import_formats() -> Vec<TableExportFormatDto>;
         fn table_import_encodings() -> Vec<CodeLabelDto>;
         fn table_import_conflicts(driver: &str) -> Vec<CodeLabelDto>;

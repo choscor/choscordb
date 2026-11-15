@@ -16,6 +16,7 @@
 #include "models/navigator_model.h"
 #include "navigator_sql_workspace_test.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include "widgets/structure_editor_dialog/structure_editor_dialog.h"
 #include "widgets/table_export_dialog/table_export_dialog.h"
 #include "widgets/table_import_dialog/table_import_dialog.h"
 #include <QAction>
@@ -735,4 +736,156 @@ void NavigatorSqlWorkspaceTest::importCsvIntoTablesFromTheNavigator() {
     counts.clear();
     run("SELECT count(full_name) FROM imported");
     QTRY_COMPARE(counts, QList<qint64>{2});
+}
+
+void NavigatorSqlWorkspaceTest::editTableStructureFromTheNavigator() {
+    using namespace choscordb;
+    QTemporaryDir storage;
+    MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    auto* workspace = window.findChild<QueryWorkspace*>();
+    QSignalSpy connected(workspace, &QueryWorkspace::connectionReady);
+    workspace->connectSqlite(":memory:");
+    QTRY_COMPARE(connected.count(), 1);
+    const auto connection = connected.first().at(0).toULongLong();
+    auto* adapter = workspace->adapter();
+    bool finished = false;
+    QList<qint64> counts;
+    connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
+        if (event.kind == "query_finished")
+            finished = true;
+        if ((event.kind == "stored_page" || event.kind == "page") && !event.cells.empty())
+            counts.push_back(event.cells[0].integer);
+    });
+    const auto run = [&](const char* sql) {
+        finished = false;
+        const auto query = adapter->execute(connection, sql);
+        QVERIFY(query);
+        adapter->fetchPage(*query);
+        QTRY_VERIFY(finished);
+        adapter->releaseQuery(*query);
+    };
+    for (const char* sql : {"CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)",
+                            "INSERT INTO items (name) VALUES ('a')",
+                            "CREATE VIEW item_names AS SELECT name FROM items"})
+        run(sql);
+    auto* navigator = window.findChild<NavigatorController*>();
+    auto* model = navigator->model();
+    const auto root = model->index(0, 0);
+    model->fetchMore(root);
+    QTRY_VERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    const auto schema = model->index(0, 0, root);
+    model->fetchMore(schema);
+    QTRY_VERIFY(schema.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    for (int row = 0; row < model->rowCount(schema); ++row) {
+        const auto group = model->index(row, 0, schema);
+        model->fetchMore(group);
+        QTRY_VERIFY(group.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    }
+    const auto table = model->index(0, 0, model->index(0, 0, schema));
+    QCOMPARE(table.data().toString(), QString("items"));
+    const auto view = model->index(0, 0, model->index(1, 0, schema));
+    QMenu viewMenu;
+    navigator->populateContextMenu(&viewMenu, view);
+    auto* viewStructure = viewMenu.findChild<QAction*>("editStructure");
+    QVERIFY(viewStructure && !viewStructure->isEnabled());
+    QCOMPARE(viewStructure->toolTip(), QString("Only tables have a structure to edit."));
+
+    const auto openEditor = [&](const QModelIndex& index, const char* action) {
+        QMenu menu;
+        navigator->populateContextMenu(&menu, index);
+        auto* entry = menu.findChild<QAction*>(action);
+        if (!entry || !entry->isEnabled())
+            return static_cast<StructureEditorDialog*>(nullptr);
+        entry->trigger();
+        return window.findChild<StructureEditorDialog*>("structureEditorDialog");
+    };
+    const auto changeAction = [](StructureEditorDialog* dialog, const QString& code) {
+        const auto actions =
+            dialog->findChild<QPushButton*>("structureEditorAdd")->menu()->actions();
+        const auto found = std::find_if(actions.begin(), actions.end(), [&](QAction* action) {
+            return action->objectName() == "structureEditorAdd_" + code;
+        });
+        return found == actions.end() ? nullptr : *found;
+    };
+    const auto addChange = [&](StructureEditorDialog* dialog, const QString& code) {
+        auto* action = changeAction(dialog, code);
+        if (!action || !action->isEnabled())
+            return static_cast<QWidget*>(nullptr);
+        action->trigger();
+        const auto frames = dialog->findChildren<QWidget*>(
+            QRegularExpression("^structureChange_\\d+$"), Qt::FindChildrenRecursively);
+        return frames.isEmpty() ? nullptr : frames.last();
+    };
+    auto* dialog = openEditor(table, "editStructure");
+    QVERIFY(dialog);
+    auto* add = dialog->findChild<QPushButton*>("structureEditorAdd");
+    auto* apply = dialog->findChild<QPushButton*>("structureEditorApply");
+    QTRY_VERIFY(add->isEnabled());
+    QVERIFY(!apply->isEnabled());
+    auto* primaryKey = changeAction(dialog, "primary_key");
+    QVERIFY(primaryKey && !primaryKey->isEnabled());
+    QCOMPARE(primaryKey->toolTip(), QString("SQLite needs a table rebuild for this change."));
+    auto* column = addChange(dialog, "add_column");
+    QVERIFY(column);
+    column->findChild<QLineEdit*>("structureField_name")->setText("email");
+    column->findChild<QComboBox*>("structureField_type")->setEditText("TEXT");
+    auto* index = addChange(dialog, "add_index");
+    QVERIFY(index);
+    index->findChild<QLineEdit*>("structureField_name")->setText("items_email");
+    index->findChild<QLineEdit*>("structureField_columns")->setText("email");
+    auto* sql = dialog->findChild<QPlainTextEdit*>("structureEditorSql");
+    QTRY_COMPARE(sql->toPlainText(),
+                 QString("ALTER TABLE \"main\".\"items\" ADD COLUMN \"email\" TEXT;\n\n"
+                         "CREATE INDEX \"main\".\"items_email\" ON \"items\" (\"email\");"));
+    QCOMPARE(column->findChild<QLabel*>("structureChangeTitle")->text(),
+             QString("Add column email"));
+    QVERIFY(apply->isEnabled());
+    apply->click();
+    QTRY_VERIFY(!window.findChild<StructureEditorDialog*>("structureEditorDialog"));
+    counts.clear();
+    run("SELECT count(*) FROM pragma_table_info('items') WHERE name = 'email'");
+    run("SELECT count(*) FROM pragma_index_list('items') WHERE name = 'items_email'");
+    QTRY_COMPARE(counts, (QList<qint64>{1, 1}));
+
+    dialog = openEditor(table, "editStructure");
+    QVERIFY(dialog);
+    apply = dialog->findChild<QPushButton*>("structureEditorApply");
+    QTRY_VERIFY(dialog->findChild<QPushButton*>("structureEditorAdd")->isEnabled());
+    column = addChange(dialog, "add_column");
+    column->findChild<QLineEdit*>("structureField_name")->setText("email");
+    auto* error = dialog->findChild<QLabel*>("structureEditorError");
+    QTRY_COMPARE(error->text(), QString("Change 1: The table already has a column email."));
+    QVERIFY(!apply->isEnabled());
+    column->findChild<QLineEdit*>("structureField_name")->setText("code");
+    column->findChild<QCheckBox*>("structureField_not_null")->setChecked(true);
+    QTRY_VERIFY(apply->isEnabled() && error->isHidden());
+    apply->click();
+    auto* status = dialog->findChild<QLabel*>("statusMessage");
+    QTRY_VERIFY2(status->text().startsWith("Statement 1:") && status->text().contains("NOT NULL"),
+                 qPrintable(status->text()));
+    QVERIFY(dialog->isVisible());
+    QCOMPARE(apply->text(), QString("Retry"));
+    dialog->findChild<QPushButton*>("structureEditorCancel")->click();
+    QTRY_VERIFY(!window.findChild<StructureEditorDialog*>("structureEditorDialog"));
+
+    dialog = openEditor(schema, "designNewTable");
+    QVERIFY(dialog);
+    QVERIFY(!changeAction(dialog, "drop_column")->isEnabled());
+    column = addChange(dialog, "add_column");
+    column->findChild<QLineEdit*>("structureField_name")->setText("id");
+    column->findChild<QComboBox*>("structureField_type")->setEditText("INTEGER");
+    auto* key = addChange(dialog, "primary_key");
+    key->findChild<QLineEdit*>("structureField_columns")->setText("id");
+    apply = dialog->findChild<QPushButton*>("structureEditorApply");
+    QTRY_COMPARE(dialog->findChild<QLabel*>("structureEditorError")->text(),
+                 QString("Enter a name for the new table."));
+    QVERIFY(!apply->isEnabled());
+    dialog->findChild<QLineEdit*>("structureEditorTableName")->setText("made");
+    QTRY_VERIFY(apply->isEnabled());
+    apply->click();
+    QTRY_VERIFY(!window.findChild<StructureEditorDialog*>("structureEditorDialog"));
+    counts.clear();
+    run("SELECT count(*) FROM pragma_table_info('made') WHERE name = 'id' AND pk = 1");
+    QTRY_COMPARE(counts, QList<qint64>{1});
 }

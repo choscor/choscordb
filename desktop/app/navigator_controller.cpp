@@ -593,6 +593,21 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
         });
     }
     if (SqlTemplateService::createParent(objectKind)) {
+        auto* createTable = menu->addAction(tr("Design new table…"));
+        createTable->setObjectName("designNewTable");
+        connect(createTable, &QAction::triggered, this, [this, index] {
+            if (!index.isValid() || index.model() != model_)
+                return;
+            StructureTable table;
+            table.existing = false;
+            table.parentKind = index.data(NavigatorModel::KindRole).toString();
+            table.parentQualified = index.data(NavigatorModel::QualifiedNameRole).toString();
+            const auto parent = index.data(NavigatorModel::ObjectIdRole).toString();
+            emit structureEditRequested(index.data(NavigatorModel::ConnectionRole).toULongLong(),
+                                        table, {}, index.data(Qt::DisplayRole).toString(), parent);
+        });
+    }
+    if (SqlTemplateService::createParent(objectKind)) {
         const auto parentConnection = index.data(NavigatorModel::ConnectionRole).toULongLong();
         const auto parentDriver =
             driverResolver_ ? driverResolver_(parentConnection).toLower() : QString{};
@@ -709,6 +724,21 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                     TableImportRequest request;
                     request.objectId = objectId;
                     emit tableImportRequested(connection, request, qualifiedName, {});
+                });
+    }
+    if (traits.relation) {
+        auto* structure = menu->addAction(tr("Edit structure…"));
+        structure->setObjectName("editStructure");
+        disableWithReason(structure,
+                          EngineAdapter::structureUnavailableReason(objectKind, subtype));
+        connect(structure, &QAction::triggered, this,
+                [this, requestStillMatches, connection, objectId, qualifiedName] {
+                    if (!requestStillMatches())
+                        return;
+                    StructureTable table;
+                    table.qualifiedName = qualifiedName;
+                    emit structureEditRequested(connection, table, objectId, qualifiedName,
+                                                objectId);
                 });
     }
     menu->addSeparator();

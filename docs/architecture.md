@@ -159,6 +159,20 @@ Each driver puts the index of the failed statement in `DriverError::failed_state
 A new table gets `TEXT` columns. The actor creates the table first and drops it again when the rows fail.
 Cancel stops the import before the write. During the write, it asks the driver to cancel the statement.
 
+### Structure editor
+
+The navigator "Edit structure…" item on a table and "Design new table…" on a connection, database or schema open the structure editor.
+`structure_edit_unavailable` in `core` permits only plain tables.
+`StructureChangeKind` in `driver-api` gives the changes and the fields of each change.
+The changes add, change or drop a column, add or drop an index, set the primary key, add a foreign key or drop a key.
+`StructureChangeKind::unavailable` gives the reason when a driver cannot do a change. SQLite needs a table rebuild for a primary key, a foreign key or a dropped key. A new table permits only the changes that create columns, indexes and keys.
+The dialog makes one form for each change from the field descriptors. It does not know the SQL rules.
+`plan_structure` makes the SQL for each driver. A new table gets one `CREATE TABLE` with its columns and constraints, then the comments and the indexes.
+The dialog shows the SQL before Apply. The SQL comes from `structure_plan` in the bridge, and `apply_structure` makes the same plan again in Rust.
+`Engine::apply_ddl` sends one `ApplyDdl` command. The actor runs the statements in order and stops at the first failure.
+The error message starts with `Statement N:`. MySQL and MariaDB commit each DDL statement, so the statements before the failure stay applied.
+After Apply, the navigator loads the children of the table or the parent again.
+
 ### Result tabs for each statement
 
 `Run all` runs each statement as a separate query.

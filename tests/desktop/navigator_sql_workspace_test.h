@@ -25,6 +25,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void runAllShowsOneResultTabPerStatement();
     void exportTablesFromTheNavigator();
     void importCsvIntoTablesFromTheNavigator();
+    void editTableStructureFromTheNavigator();
     void statusLineShowsTheTargetOfEachDocument();
     void changeConnectionMenuRebindsOnlyIdleSqlTabs();
     void tabContextMenuFollowsCursor();

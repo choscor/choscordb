@@ -461,9 +461,16 @@ pub fn plan_table_import(
     Ok(planned)
 }
 
+fn plain_table(kind: &str, relation_subtype: &str) -> bool {
+    kind == "table" && relation_subtype.is_empty()
+}
+
 pub fn table_import_unavailable(kind: &str, relation_subtype: &str) -> Option<&'static str> {
-    (kind != "table" || !relation_subtype.is_empty())
-        .then_some("Only tables can receive imported rows.")
+    (!plain_table(kind, relation_subtype)).then_some("Only tables can receive imported rows.")
+}
+
+pub fn structure_edit_unavailable(kind: &str, relation_subtype: &str) -> Option<&'static str> {
+    (!plain_table(kind, relation_subtype)).then_some("Only tables have a structure to edit.")
 }
 
 pub fn import_failure_row(error: &DriverError) -> Option<u64> {

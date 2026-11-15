@@ -31,8 +31,8 @@ pub use table_import::{
     CsvReadOptions, IMPORT_NEW_COLUMN_TYPE, IMPORT_PREVIEW_ROWS, ImportData, ImportEncoding,
     ImportFile, ImportFileFormat, ImportMapping, ImportRead, MAX_IMPORT_COLUMNS,
     MAX_IMPORT_FILE_BYTES, MAX_IMPORT_ROWS, PlannedImport, TableImportRequest, TableImportTarget,
-    import_failure_row, plan_table_import, read_import_file, table_import_mapping_error,
-    table_import_unavailable,
+    import_failure_row, plan_table_import, read_import_file, structure_edit_unavailable,
+    table_import_mapping_error, table_import_unavailable,
 };
 mod operation;
 mod preview_capture;
@@ -714,6 +714,26 @@ impl Engine {
             connection,
             actor::Command::Edit {
                 batch,
+                request_token,
+            },
+        )
+    }
+    pub fn apply_ddl(
+        &self,
+        connection: ConnectionId,
+        statements: Vec<String>,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        if statements.is_empty()
+            || statements.len() > 1000
+            || statements.iter().any(|sql| sql.len() > MAX_SQL_BYTES)
+        {
+            return Err(SubmitError::InvalidInput);
+        }
+        self.submit(
+            connection,
+            actor::Command::ApplyDdl {
+                statements,
                 request_token,
             },
         )
