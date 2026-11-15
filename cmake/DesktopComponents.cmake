@@ -110,6 +110,7 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/export_dialog/export_dialog.cpp
   desktop/widgets/table_export_dialog/table_export_dialog.cpp
   desktop/widgets/table_import_dialog/table_import_dialog.cpp
+  desktop/widgets/backup_dialog/backup_dialog.cpp
   desktop/widgets/sql_file_dialog/sql_file_dialog.cpp
   desktop/widgets/text_prompt_dialog/text_prompt_dialog.cpp
   desktop/widgets/structure_editor_dialog/structure_editor_dialog.cpp

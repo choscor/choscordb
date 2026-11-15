@@ -247,6 +247,17 @@ pub enum Event {
         import: ExportId,
         rows: u64,
     },
+    BackupOutput {
+        run: ExportId,
+        line: String,
+    },
+    BackupFinished {
+        run: ExportId,
+    },
+    BackupFailed {
+        run: ExportId,
+        error: DriverError,
+    },
     TableImportFailed {
         import: ExportId,
         row: Option<u64>,

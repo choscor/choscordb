@@ -24,6 +24,7 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Export tables or views from the navigator to CSV, JSON, JSON Lines, Excel or SQL with structure, DROP and data.
 - Import CSV, JSON or JSON Lines files into a table or a new table with a preview and column mapping.
 - Run a SQL file or a dump. Stop at the first error, continue after errors, or run it in one transaction.
+- Back up and restore a database with `pg_dump`, `pg_restore`, `mysqldump` and `mysql`. Back up SQLite into a new file.
 - Edit the columns, indexes and keys of a table or create a table. Review the SQL before you apply it.
 - Set the CSV delimiter, quote, line break, NULL text and header row.
 - Browse schemas, tables, views, indexes and keys. See the DDL and an ERD of each table.

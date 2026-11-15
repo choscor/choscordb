@@ -236,6 +236,32 @@ std::optional<quint64> EngineAdapter::runSqlFile(quint64 connection, const QStri
     }
     return reply.id;
 }
+BackupForm EngineAdapter::backupForm(const QString& driver, bool restore) {
+    const auto bytes = driver.toUtf8();
+    const auto dto = backup_form(engine_adapter_detail::utf8View(bytes), restore);
+    BackupForm form;
+    for (const auto& option : dto.options)
+        form.options.append({fromRust(option.code), fromRust(option.label), option.default_on});
+    form.unavailable = fromRust(dto.unavailable);
+    form.usesTool = dto.uses_tool;
+    return form;
+}
+std::optional<quint64> EngineAdapter::startBackup(quint64 connection, const BackupRequest& request,
+                                                  QString* error) {
+    BackupRequestDto dto;
+    dto.driver = toRust(request.driver);
+    dto.restore = request.restore;
+    dto.file = toRust(request.file);
+    dto.tool_folder = toRust(request.toolFolder);
+    dto.options = toRustStrings(request.options);
+    const auto reply = start_backup(*d_->engine, connection, dto);
+    if (!reply.accepted) {
+        if (error)
+            *error = fromRust(reply.error);
+        return std::nullopt;
+    }
+    return reply.id;
+}
 QString EngineAdapter::structureUnavailableReason(const QString& kind, const QString& subtype) {
     return fromRust(structure_unavailable_reason(toRust(kind), toRust(subtype)));
 }

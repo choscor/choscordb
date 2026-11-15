@@ -1,4 +1,5 @@
 #include "app/query_workspace.h"
+#include "widgets/backup_dialog/backup_dialog.h"
 #include "widgets/sql_file_dialog/sql_file_dialog.h"
 
 namespace choscordb {
@@ -15,6 +16,22 @@ void QueryWorkspace::runSqlFile() {
                                       connectionTags_.value(*connection).safety,
                                       source ? source->name : driverForConnection(*connection)},
                                      widgets_.dialogParent);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->open();
+}
+void QueryWorkspace::backupDatabase(bool restore) {
+    const auto connection = selectedConnection();
+    if (!connection || !connectionAvailable(*connection)) {
+        message(restore ? tr("Connect to a database to restore a backup.")
+                        : tr("Connect to a database to back it up."));
+        return;
+    }
+    const auto source = connectionSource(*connection);
+    auto* dialog = new BackupDialog(
+        adapter_,
+        {*connection, driverForConnection(*connection), connectionTags_.value(*connection).safety,
+         source ? source->name : driverForConnection(*connection), restore},
+        widgets_.dialogParent);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->open();
 }

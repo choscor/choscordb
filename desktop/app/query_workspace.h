@@ -118,6 +118,7 @@ class QueryWorkspace final : public QObject {
     std::optional<SavedProfile> connectionSource(quint64 connection) const;
     std::optional<quint64> selectedConnection() const;
     void runSqlFile();
+    void backupDatabase(bool restore);
     void showProfiles(const QString& profileId = {});
     void manageSavedProfile(const QString& profileId, const QString& action);
     void disconnectConnection(quint64 connection);

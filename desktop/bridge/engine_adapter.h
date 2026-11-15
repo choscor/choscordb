@@ -1,6 +1,7 @@
 #pragma once
 #include "bridge/database_action.h"
 #include "bridge/structure_types.h"
+#include "bridge/table_transfer.h"
 #include "bridge/trigger_script.h"
 #include "bridge/value_preview.h"
 #include "models/result_table_model.h"
@@ -177,43 +178,6 @@ struct CellFilterOption {
     QString label;
     bool enabled;
     QString reason;
-};
-struct TableExportFormatChoice {
-    QString code, label;
-    bool csvOptions = false, sqlOptions = false;
-};
-struct TableExportObject {
-    QString objectId, qualifiedName, kind, relationSubtype;
-};
-struct TableExportRequest {
-    QString driver;
-    QList<TableExportObject> objects;
-    QString format, delimiter, quote, lineBreak, nullText;
-    bool header = true, structure = true, drop = false, data = true, folder = true;
-    QString path, pattern;
-};
-struct TableImportMapping {
-    QString target;
-    int source = -1;
-};
-struct TableImportRequest {
-    QString driver, path, format, delimiter, quote, nullText, encoding;
-    bool header = true, existing = true;
-    QString objectId, parentKind, parentQualified, tableName;
-    QList<TableImportMapping> mapping;
-    QString conflict;
-};
-struct TableImportPreview {
-    bool valid = false;
-    QString error;
-    QStringList columns;
-    int rowCount = 0;
-    QStringList cells;
-    QList<bool> nulls;
-};
-struct TableImportReview {
-    bool valid = false;
-    QString error, sql;
 };
 struct DatabaseList {
     QList<CodeLabel> choices;
@@ -776,6 +740,9 @@ class EngineAdapter final : public QObject {
     std::optional<quint64> runSqlFile(quint64 connection, const QString& path,
                                       const QString& driver, const QString& sqlMode,
                                       const QString& mode, QString* error);
+    static BackupForm backupForm(const QString& driver, bool restore);
+    std::optional<quint64> startBackup(quint64 connection, const BackupRequest& request,
+                                       QString* error);
     static QString structureUnavailableReason(const QString& kind, const QString& subtype);
     static QList<StructureChangeKindInfo> structureChangeKinds(const QString& driver,
                                                                bool newTable);
@@ -850,6 +817,8 @@ class EngineAdapter final : public QObject {
     static Presentation exportPresentation(ExportState state, const QString& detail = {});
     static Presentation importPresentation(ExportState state, const QString& detail = {});
     static Presentation sqlFilePresentation(ExportState state, const QString& detail = {});
+    static Presentation backupPresentation(ExportState state, bool restore,
+                                           const QString& detail = {});
     static Transition<ExportState> exportTransition(ExportState state, ExportEvent event);
     static Presentation updaterPresentation(UpdaterState state, const QString& detail = {});
     static Transition<UpdaterState> updaterTransition(UpdaterState state, UpdaterEvent event);

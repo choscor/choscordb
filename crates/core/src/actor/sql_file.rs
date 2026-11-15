@@ -38,7 +38,7 @@ fn file_error(error: std::io::Error) -> DriverError {
     )
 }
 
-async fn execute(
+pub(super) async fn execute(
     connection: &mut dyn Connection,
     sql: &str,
     cancellation: &Cancellation,

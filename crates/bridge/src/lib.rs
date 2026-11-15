@@ -20,6 +20,7 @@ mod grid_edit;
 mod metadata_policy;
 mod quick_filter;
 pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy};
+mod backup;
 mod database_action;
 mod result_copy;
 mod sql_file;
@@ -43,6 +44,7 @@ pub use value_preview::{value_preview, value_preview_error};
 mod structure_edit;
 mod table_export;
 mod table_import;
+pub use backup::{backup_form, backup_presentation, start_backup};
 pub use sql_file::{run_sql_file, sql_file_modes};
 pub use structure_edit::{
     apply_structure, structure_change_kinds, structure_plan, structure_types,
@@ -473,6 +475,23 @@ pub mod ffi {
     struct CodeLabelDto {
         code: String,
         label: String,
+    }
+    struct BackupOptionDto {
+        code: String,
+        label: String,
+        default_on: bool,
+    }
+    struct BackupFormDto {
+        options: Vec<BackupOptionDto>,
+        unavailable: String,
+        uses_tool: bool,
+    }
+    struct BackupRequestDto {
+        driver: String,
+        restore: bool,
+        file: String,
+        tool_folder: String,
+        options: Vec<String>,
     }
     #[derive(Default)]
     struct CopyResultDto {
@@ -2057,6 +2076,11 @@ pub mod ffi {
         fn export_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
         fn import_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
         fn sql_file_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
+        fn backup_presentation(
+            state: ExportStateDto,
+            detail: &str,
+            restore: bool,
+        ) -> PresentationDto;
         fn export_transition(state: ExportStateDto, event: ExportEventDto) -> ExportTransitionDto;
         fn updater_presentation(state: UpdaterStateDto, detail: &str) -> PresentationDto;
         fn updater_transition(
@@ -2525,6 +2549,12 @@ pub mod ffi {
         fn trigger_script_kinds() -> Vec<TriggerScriptKindDto>;
         fn trigger_script(request: &TriggerScriptDto) -> SqlPlanDto;
         fn sql_file_modes() -> Vec<CodeLabelDto>;
+        fn backup_form(driver: &str, restore: bool) -> BackupFormDto;
+        fn start_backup(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            request: &BackupRequestDto,
+        ) -> Submit;
         fn run_sql_file(
             engine: &mut BridgeEngine,
             connection: u64,

@@ -251,6 +251,23 @@ A run with failed statements does not show a success message.
 Cancel asks the driver to cancel the current statement. A transaction run rolls back when it fails or stops.
 The splitter does not run `psql` commands. The `COPY … FROM stdin` data of a `pg_dump` file fails. Use `pg_dump --inserts` for these files.
 
+### Backup and restore
+
+File → "Back up database…" and "Restore database…" open `BackupDialog` for the selected connection.
+`BackupRequest::new` in `core` checks the file, the tool folder and the option codes. It rejects "Schema only" with "Data only".
+`backup_options` gives the options and their defaults for each driver. `backup_unavailable` gives the reason when a driver cannot do the operation.
+The connection actor keeps a `BackupTarget` that it makes from the connection options before it connects.
+`plan_backup` finds the client tool in the tool folder or on `PATH`. ChoscorDB does not include the client tools.
+PostgreSQL uses `pg_dump` and `pg_restore`. MySQL uses `mysqldump` and `mysql`. MariaDB tries `mariadb-dump` and `mariadb` first.
+The password goes to the tool in `PGPASSWORD` or `MYSQL_PWD`. The first output line shows the command without the password.
+`pg_restore` accepts only custom and tar archives. Run a plain SQL backup with "Run SQL file".
+The `mysql` tool reads the backup file from its standard input.
+Backup and restore cannot use an SSH tunnel, a SOCKS proxy or a client certificate. The tools connect to the server directly.
+SQLite backs up with `VACUUM INTO` into a new file. SQLite restore is not available because the database file is open.
+The dialog shows the tool output live. The engine sends the first 2,000 lines and cuts each line at 4 KiB.
+Cancel stops the tool. A tool that stops with an error code gives a failure with that code.
+The safety level applies to a restore like a SQL file run. A backup only reads data.
+
 ### Saved queries
 
 The Saved queries panel shows the `.sql` files in the `sql` folder beside the application database.

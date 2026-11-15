@@ -54,6 +54,12 @@ pub use value_preview::{
 };
 mod explain;
 pub use explain::{MAX_PLAN_NODES, PlanNode, explain_sql, parse_explain};
+mod backup;
+pub use backup::{
+    BACKUP_OUTPUT_TRUNCATED, BackupDirection, BackupOption, BackupPlan, BackupRequest,
+    BackupTarget, MAX_BACKUP_LINE_BYTES, MAX_BACKUP_OUTPUT_LINES, ToolCommand, backup_options,
+    backup_output_line, backup_unavailable, backup_uses_tool, plan_backup,
+};
 mod sql_file;
 pub use sql_file::{
     MAX_SQL_FILE_ERRORS, MAX_SQL_FILE_STATEMENT_BYTES, SQL_FILE_PROGRESS_STATEMENTS,
@@ -549,6 +555,17 @@ impl Engine {
         self.start_transfer(connection, |run, cancellation| actor::Command::RunSqlFile {
             run,
             request,
+            cancellation,
+        })
+    }
+    pub fn start_backup(
+        &mut self,
+        connection: ConnectionId,
+        request: BackupRequest,
+    ) -> std::result::Result<ExportId, SubmitError> {
+        self.start_transfer(connection, |run, cancellation| actor::Command::Backup {
+            run,
+            request: Box::new(request),
             cancellation,
         })
     }
@@ -1086,7 +1103,9 @@ impl Engine {
         | Event::TableImportFinished { import: export, .. }
         | Event::TableImportFailed { import: export, .. }
         | Event::SqlFileFinished { run: export, .. }
-        | Event::SqlFileFailed { run: export, .. } = &event
+        | Event::SqlFileFailed { run: export, .. }
+        | Event::BackupFinished { run: export }
+        | Event::BackupFailed { run: export, .. } = &event
             && let Some(slot) = self.exports.remove(*export)
         {
             self.export_owners.remove(&slot.connection);

@@ -49,5 +49,15 @@ void MainWindow::addRunSqlFileAction(QMenu* fileMenu) {
         if (workspace_)
             workspace_->runSqlFile();
     });
+    for (const bool restore : {false, true}) {
+        auto* transfer =
+            fileMenu->addAction(restore ? tr("Restore database…") : tr("Back up database…"));
+        transfer->setObjectName(restore ? "restoreDatabase" : "backupDatabase");
+        preferences_->addAction(restore ? "restore_database" : "backup_database", transfer);
+        connect(transfer, &QAction::triggered, this, [this, restore] {
+            if (workspace_)
+                workspace_->backupDatabase(restore);
+        });
+    }
 }
 }

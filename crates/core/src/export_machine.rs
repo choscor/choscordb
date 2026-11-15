@@ -105,6 +105,24 @@ const SQL_FILE_TEXTS: TransferTexts = TransferTexts {
     failed: "The SQL file run failed",
 };
 
+const BACKUP_TEXTS: TransferTexts = TransferTexts {
+    preparing: "Preparing the backup…",
+    running: "Backing up…",
+    cancelling: "Stopping the backup…",
+    complete: "The backup is complete.",
+    cancelled: "The backup stopped. The backup file can be incomplete.",
+    failed: "The backup failed",
+};
+
+const RESTORE_TEXTS: TransferTexts = TransferTexts {
+    preparing: "Preparing the restore…",
+    running: "Restoring…",
+    cancelling: "Stopping the restore…",
+    complete: "The restore is complete.",
+    cancelled: "The restore stopped. The database can contain part of the backup.",
+    failed: "The restore failed",
+};
+
 fn present_transfer(state: &ExportState, detail: &str, texts: &TransferTexts) -> Presentation {
     use ExportState as S;
     match state {
@@ -133,4 +151,19 @@ pub fn present_import(state: &ExportState, detail: &str) -> Presentation {
 
 pub fn present_sql_file(state: &ExportState, detail: &str) -> Presentation {
     present_transfer(state, detail, &SQL_FILE_TEXTS)
+}
+
+pub fn present_backup(
+    state: &ExportState,
+    detail: &str,
+    direction: crate::BackupDirection,
+) -> Presentation {
+    present_transfer(
+        state,
+        detail,
+        match direction {
+            crate::BackupDirection::Backup => &BACKUP_TEXTS,
+            crate::BackupDirection::Restore => &RESTORE_TEXTS,
+        },
+    )
 }

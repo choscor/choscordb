@@ -362,6 +362,16 @@ pub fn sql_file_presentation(state: ffi::ExportStateDto, detail: &str) -> ffi::P
     }
 }
 
+pub(crate) fn transfer_presentation(
+    state: ffi::ExportStateDto,
+    present: impl FnOnce(&ExportState) -> Presentation,
+) -> ffi::PresentationDto {
+    match export_state(state) {
+        Ok(state) => presentation(present(&state)),
+        Err(error) => invalid(error),
+    }
+}
+
 pub fn export_transition(
     state: ffi::ExportStateDto,
     event: ffi::ExportEventDto,

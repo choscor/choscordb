@@ -1,3 +1,4 @@
+mod backup;
 mod export;
 mod sql_file;
 mod table_export;
@@ -59,6 +60,11 @@ pub(crate) enum Command {
     RunSqlFile {
         run: crate::ExportId,
         request: crate::SqlFileRun,
+        cancellation: choscordb_export::Cancellation,
+    },
+    Backup {
+        run: crate::ExportId,
+        request: Box<crate::BackupRequest>,
         cancellation: choscordb_export::Cancellation,
     },
     Export {
@@ -654,6 +660,7 @@ pub(crate) async fn run(
     let (route, fallback) = catalog;
     let events = EventSink::with_diagnostics(events, shutdown.clone(), diagnostics, driver.id());
     let probe_timeout = session_probe_timeout(&options);
+    let backup_target = crate::BackupTarget::from_options(&options);
     let attempt_timeout = attempt_timeout.unwrap_or(probe_timeout);
     let attempt_deadline = Instant::now() + attempt_timeout;
     let raw_limit = memory.raw_limit();
@@ -2059,6 +2066,23 @@ pub(crate) async fn run(
                     connection.as_mut(),
                     run,
                     request,
+                    cancellation,
+                    &events,
+                    &shutdown,
+                )
+                .await
+            }
+            Command::Backup {
+                run,
+                request,
+                cancellation,
+            } => {
+                close_active(active, &events).await;
+                backup::run(
+                    connection.as_mut(),
+                    &backup_target,
+                    run,
+                    *request,
                     cancellation,
                     &events,
                     &shutdown,

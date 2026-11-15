@@ -620,6 +620,20 @@ pub fn event(
             error(&mut e, err);
             "sql_file_failed"
         }
+        Event::BackupOutput { run, line } => {
+            e.id = pack(run);
+            e.object = line;
+            "backup_output"
+        }
+        Event::BackupFinished { run } => {
+            e.id = pack(run);
+            "backup_finished"
+        }
+        Event::BackupFailed { run, error: err } => {
+            e.id = pack(run);
+            error(&mut e, err);
+            "backup_failed"
+        }
         Event::TableImportProgress { import, rows } => {
             e.id = pack(import);
             e.exported_rows = rows;
