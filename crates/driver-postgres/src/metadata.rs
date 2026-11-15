@@ -757,7 +757,7 @@ async fn relation_children<C: GenericClient + Sync>(
         ));
         result.push(child);
     }
-    let rows=bounded_query(client, "SELECT t.oid, t.tgname::text AS name, t.tgtype::int4 AS kind, pg_catalog.pg_get_triggerdef(t.oid,true) AS definition FROM pg_catalog.pg_trigger t WHERE t.tgrelid=$1 AND NOT t.tgisinternal ORDER BY t.tgname LIMIT 10001", &[(&oid, Type::OID)]).await?;
+    let rows=bounded_query(client, "SELECT t.oid, t.tgname::text AS name, t.tgtype::int4 AS kind, pg_catalog.rtrim(pg_catalog.pg_get_functiondef(t.tgfoid), E'\n') || E';\n\n' || pg_catalog.pg_get_triggerdef(t.oid,true) AS definition FROM pg_catalog.pg_trigger t WHERE t.tgrelid=$1 AND NOT t.tgisinternal ORDER BY t.tgname LIMIT 10001", &[(&oid, Type::OID)]).await?;
     check(&rows)?;
     for row in rows {
         let id: u32 = row.get("oid");
@@ -1070,7 +1070,10 @@ mod live_tests {
         let trigger = children.iter().find(|o| o.kind == ObjectKind::Trigger).unwrap();
         assert_eq!(trigger.name, "touch odd");
         assert_eq!(trigger.properties.iter().map(|p| p.value.as_str()).take(2).collect::<Vec<_>>(), ["BEFORE", "INSERT OR UPDATE"]);
-        assert!(trigger.properties[2].value.starts_with("CREATE TRIGGER \"touch odd\" BEFORE INSERT OR UPDATE"));
+        let definition = &trigger.properties[2].value;
+        assert!(definition.starts_with("CREATE OR REPLACE FUNCTION \"metadata odd\".touch()"), "{definition}");
+        assert!(definition.contains("BEGIN RETURN NEW; END;"), "{definition}");
+        assert!(definition.contains(";\n\nCREATE TRIGGER \"touch odd\" BEFORE INSERT OR UPDATE"), "{definition}");
         assert!(children.iter().any(|o| o.kind == ObjectKind::PrimaryKey));
         assert!(children.iter().any(|o| o.kind == ObjectKind::UniqueKey));
         let index = children.iter().find(|o| o.name == "index odd").unwrap();
