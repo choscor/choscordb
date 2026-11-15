@@ -54,6 +54,83 @@ class WorkspaceShortcutsTest : public QObject {
         QVERIFY(defaults.contains("replace"));
         QVERIFY(QStringList({"", "Ctrl+H"}).contains(defaults.value("replace")));
     }
+    void catalogHasNoConflictInEachPlatformKeyboardScheme() {
+        QTemporaryDir folder;
+        choscordb::MainWindow window(nullptr, folder.filePath("settings.store"));
+        QVERIFY(ready(window));
+        const auto catalog = window.findChild<choscordb::EditorPreferencesController*>()->catalog();
+        using Bindings = QHash<QString, QStringList>;
+        const Bindings common = {
+            {"new_query", {"Ctrl+N"}}, {"open_sql_file", {"Ctrl+O"}}, {"save_sql_file", {"Ctrl+S"}},
+            {"find", {"Ctrl+F"}},      {"preferences", {}},
+        };
+        const Bindings unix = {
+            {"close_tab", {"Ctrl+W"}},
+            {"quit", {"Ctrl+Q"}},
+            {"undo", {"Ctrl+Z", "F14"}},
+            {"redo", {"Ctrl+Shift+Z"}},
+            {"cut", {"Ctrl+X", "Shift+Del", "F20"}},
+            {"copy", {"Ctrl+C", "Ctrl+Ins", "F16"}},
+            {"paste", {"Ctrl+V", "Ctrl+Shift+Ins", "Shift+Ins", "F18"}},
+            {"find_next", {"F3"}},
+            {"find_previous", {"Shift+F3"}},
+            {"replace", {}},
+        };
+        const auto with = [&](Bindings scheme, const Bindings& changes) {
+            for (auto it = common.cbegin(); it != common.cend(); ++it)
+                scheme.insert(it.key(), it.value());
+            for (auto it = changes.cbegin(); it != changes.cend(); ++it)
+                scheme.insert(it.key(), it.value());
+            return scheme;
+        };
+        const QList<std::pair<QString, Bindings>> schemes = {
+            {"Windows", with({}, {{"close_tab", {"Ctrl+F4", "Ctrl+W"}},
+                                  {"quit", {}},
+                                  {"undo", {"Ctrl+Z", "Alt+Backspace"}},
+                                  {"redo", {"Ctrl+Y", "Alt+Shift+Backspace", "Ctrl+Shift+Z"}},
+                                  {"cut", {"Ctrl+X", "Shift+Del"}},
+                                  {"copy", {"Ctrl+C", "Ctrl+Ins"}},
+                                  {"paste", {"Ctrl+V", "Shift+Ins"}},
+                                  {"find_next", {"F3", "Ctrl+G"}},
+                                  {"find_previous", {"Shift+F3", "Ctrl+Shift+G"}},
+                                  {"replace", {"Ctrl+H"}}})},
+            {"X11", with(unix, {})},
+            {"KDE", with(unix, {{"replace", {"Ctrl+H"}}})},
+            {"GNOME", with(unix, {{"find_next", {"Ctrl+G", "F3"}},
+                                  {"find_previous", {"Ctrl+Shift+G", "Shift+F3"}},
+                                  {"replace", {"Ctrl+H"}}})},
+            {"macOS", with({}, {{"close_tab", {"Ctrl+W", "Ctrl+F4"}},
+                                {"quit", {"Ctrl+Q"}},
+                                {"undo", {"Ctrl+Z"}},
+                                {"redo", {"Ctrl+Shift+Z"}},
+                                {"cut", {"Ctrl+X", "Meta+K"}},
+                                {"copy", {"Ctrl+C"}},
+                                {"paste", {"Ctrl+V", "Meta+Y"}},
+                                {"find_next", {"Ctrl+G"}},
+                                {"find_previous", {"Ctrl+Shift+G"}},
+                                {"preferences", {"Ctrl+,"}},
+                                {"replace", {}}})},
+        };
+        for (const auto& [name, bindings] : schemes) {
+            QList<choscordb::ShortcutDescriptor> platform;
+            int found = 0;
+            for (auto descriptor : catalog) {
+                const auto keys = bindings.value(descriptor.id);
+                if (bindings.contains(descriptor.id)) {
+                    ++found;
+                    descriptor.defaultSequence = keys.value(0);
+                    for (qsizetype extra = 1; extra < keys.size(); ++extra)
+                        platform.append({descriptor.id + QStringLiteral("_alternate_%1").arg(extra),
+                                         descriptor.label, keys.at(extra), false,
+                                         descriptor.scope});
+                }
+                platform.append(descriptor);
+            }
+            QCOMPARE(found, bindings.size());
+            const auto validation = choscordb::validateShortcuts({}, platform);
+            QVERIFY2(validation.ok(), qPrintable(name + ": " + validation.message));
+        }
+    }
     void tabNumbersAndTheResultsToggleChangeTheView() {
         QTemporaryDir folder;
         choscordb::MainWindow window(nullptr, folder.filePath("settings.store"));
