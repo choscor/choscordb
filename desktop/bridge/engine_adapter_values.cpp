@@ -526,6 +526,10 @@ Presentation EngineAdapter::importPresentation(ExportState state, const QString&
     const auto bytes = detail.toUtf8();
     return fromDto(import_presentation(static_cast<ExportStateDto>(state), utf8View(bytes)));
 }
+Presentation EngineAdapter::sqlFilePresentation(ExportState state, const QString& detail) {
+    const auto bytes = detail.toUtf8();
+    return fromDto(sql_file_presentation(static_cast<ExportStateDto>(state), utf8View(bytes)));
+}
 Transition<ExportState> EngineAdapter::exportTransition(ExportState state, ExportEvent event) {
     return fromDto<ExportState>(
         export_transition(static_cast<ExportStateDto>(state), static_cast<ExportEventDto>(event)));

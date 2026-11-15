@@ -1,4 +1,5 @@
 mod export;
+mod sql_file;
 mod table_export;
 mod table_import;
 use crate::{
@@ -52,6 +53,11 @@ pub(crate) enum Command {
     ImportTable {
         import: crate::ExportId,
         request: Box<crate::TableImportRequest>,
+        cancellation: choscordb_export::Cancellation,
+    },
+    RunSqlFile {
+        run: crate::ExportId,
+        request: crate::SqlFileRun,
         cancellation: choscordb_export::Cancellation,
     },
     Export {
@@ -2021,6 +2027,22 @@ pub(crate) async fn run(
                     connection.as_mut(),
                     import,
                     *request,
+                    cancellation,
+                    &events,
+                    &shutdown,
+                )
+                .await
+            }
+            Command::RunSqlFile {
+                run,
+                request,
+                cancellation,
+            } => {
+                close_active(active, &events).await;
+                sql_file::run(
+                    connection.as_mut(),
+                    run,
+                    request,
                     cancellation,
                     &events,
                     &shutdown,

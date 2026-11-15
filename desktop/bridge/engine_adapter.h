@@ -752,6 +752,10 @@ class EngineAdapter final : public QObject {
                                                const QStringList& fileColumns);
     std::optional<quint64> importTable(quint64 connection, const TableImportRequest& request,
                                        QString* error);
+    static QList<CodeLabel> sqlFileModes();
+    std::optional<quint64> runSqlFile(quint64 connection, const QString& path,
+                                      const QString& driver, const QString& sqlMode,
+                                      const QString& mode, QString* error);
     static QString structureUnavailableReason(const QString& kind, const QString& subtype);
     static QList<StructureChangeKindInfo> structureChangeKinds(const QString& driver,
                                                                bool newTable);
@@ -823,6 +827,7 @@ class EngineAdapter final : public QObject {
                                              const QString& error = {});
     static Presentation exportPresentation(ExportState state, const QString& detail = {});
     static Presentation importPresentation(ExportState state, const QString& detail = {});
+    static Presentation sqlFilePresentation(ExportState state, const QString& detail = {});
     static Transition<ExportState> exportTransition(ExportState state, ExportEvent event);
     static Presentation updaterPresentation(UpdaterState state, const QString& detail = {});
     static Transition<UpdaterState> updaterTransition(UpdaterState state, UpdaterEvent event);

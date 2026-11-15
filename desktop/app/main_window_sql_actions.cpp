@@ -38,4 +38,14 @@ void MainWindow::addSqlTextActions(QMenu* editMenu) {
     sqlTextAction("switch_database", tr("Switch database…"), QKeySequence(Qt::CTRL | Qt::Key_K),
                   [this] { switchDatabase(); });
 }
+void MainWindow::addRunSqlFileAction(QMenu* fileMenu) {
+    auto* action = fileMenu->addAction(tr("Run SQL file…"));
+    action->setObjectName("runSqlFile");
+    action->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_O));
+    preferences_->addAction("run_sql_file", action);
+    connect(action, &QAction::triggered, this, [this] {
+        if (workspace_)
+            workspace_->runSqlFile();
+    });
+}
 }

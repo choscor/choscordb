@@ -21,9 +21,11 @@ mod metadata_policy;
 mod quick_filter;
 pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy};
 mod result_copy;
+mod sql_file;
 mod structure_edit;
 mod table_export;
 mod table_import;
+pub use sql_file::{run_sql_file, sql_file_modes};
 pub use structure_edit::{
     apply_structure, structure_change_kinds, structure_plan, structure_types,
     structure_unavailable_reason,
@@ -45,7 +47,7 @@ pub use screen_state::{
     grid_edit_transition, import_presentation, panel_observation, panel_presentation,
     panel_transition, profile_operation_presentation, profile_test_presentation,
     profile_test_transition, query_presentation, query_result_state, query_transition,
-    ssh_trust_note, updater_presentation, updater_transition,
+    sql_file_presentation, ssh_trust_note, updater_presentation, updater_transition,
 };
 mod result_json;
 pub use choscordb_core::CLIPBOARD_SQL_TABLE_REQUIRED;
@@ -1973,6 +1975,7 @@ pub mod ffi {
         ) -> PanelObservationDto;
         fn export_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
         fn import_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
+        fn sql_file_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
         fn export_transition(state: ExportStateDto, event: ExportEventDto) -> ExportTransitionDto;
         fn updater_presentation(state: UpdaterStateDto, detail: &str) -> PresentationDto;
         fn updater_transition(
@@ -2426,6 +2429,15 @@ pub mod ffi {
             changes: Vec<StructureChangeDto>,
             request_token: u64,
         ) -> Submit;
+        fn sql_file_modes() -> Vec<CodeLabelDto>;
+        fn run_sql_file(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            path: &str,
+            driver: &str,
+            sql_mode: &str,
+            mode: &str,
+        ) -> Submit;
         fn table_import_formats() -> Vec<TableExportFormatDto>;
         fn table_import_encodings() -> Vec<CodeLabelDto>;
         fn table_import_conflicts(driver: &str) -> Vec<CodeLabelDto>;
@@ -2488,6 +2500,13 @@ pub struct BridgeEngine {
     error: String,
     leases: Arc<Mutex<Arena<choscordb_core::PageLease>>>,
 }
+pub(crate) fn code_label(code: &str, label: &str) -> ffi::CodeLabelDto {
+    ffi::CodeLabelDto {
+        code: code.into(),
+        label: label.into(),
+    }
+}
+
 fn pack(id: Handle) -> u64 {
     (u64::from(id.generation) << 32) | u64::from(id.slot)
 }

@@ -27,7 +27,7 @@ Each crate name starts with `choscordb-`.
 | `pins` | Pin storage and pin identity. | `driver-api` |
 | `diagnostics` | Local diagnostics with privacy limits. It never records SQL, row values or paths. | None |
 | `update` | Signed update metadata and package verification. | None |
-| `core` | Composes the services and schedules I/O on per-connection actors. | `credentials`, `diagnostics`, `driver-api`, `export`, `result-cache`, `result-store`, `storage` |
+| `core` | Composes the services and schedules I/O on per-connection actors. | `credentials`, `diagnostics`, `driver-api`, `export`, `result-cache`, `result-store`, `sql-language`, `storage` |
 | `bridge` | The CXX bridge and the composition root. | `core`, the drivers and most other crates |
 
 `driver-api` has no Qt dependency and no concrete driver.
@@ -177,6 +177,20 @@ The actor reads the file on a blocking thread, inspects the table with `Connecti
 Each driver puts the index of the failed statement in `DriverError::failed_statement`. The bridge adds `Row N:` to the error message.
 A new table gets `TEXT` columns. The actor creates the table first and drops it again when the rows fail.
 Cancel stops the import before the write. During the write, it asks the driver to cancel the statement.
+
+### Run a SQL file
+
+File → "Run SQL file…" (Ctrl+Alt+O) runs each statement of a SQL file on the selected connection.
+The run mode is "Stop at the first error", "Continue after errors" or "Run in one transaction and roll back on error".
+The connection safety level applies to the whole file. A read-only session rejects the run. "Confirm writes" and "Confirm all" ask one time.
+`Engine::run_sql_file` sends one `RunSqlFile` command to the connection actor.
+The actor reads the file in parts of 1 MiB. `SqlFileSplitter` gives the complete statements of each part with their line numbers.
+`split_script` in `sql-language` splits the text. For MySQL and MariaDB, it obeys `DELIMITER` lines from `mysqldump` files.
+The splitter rejects text that is not UTF-8 and a statement that is larger than 64 MiB.
+Each error message starts with `Line N:`. "Continue after errors" keeps the first 100 errors, and the dialog shows them.
+A run with failed statements does not show a success message.
+Cancel asks the driver to cancel the current statement. A transaction run rolls back when it fails or stops.
+The splitter does not run `psql` commands. The `COPY … FROM stdin` data of a `pg_dump` file fails. Use `pg_dump --inserts` for these files.
 
 ### Structure editor
 

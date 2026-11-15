@@ -210,6 +210,21 @@ EngineAdapter::importTable(quint64 connection, const TableImportRequest& request
     }
     return reply.id;
 }
+QList<CodeLabel> EngineAdapter::sqlFileModes() {
+    return codeLabels(sql_file_modes());
+}
+std::optional<quint64> EngineAdapter::runSqlFile(quint64 connection, const QString& path,
+                                                 const QString& driver, const QString& sqlMode,
+                                                 const QString& mode, QString* error) {
+    const auto reply = run_sql_file(*d_->engine, connection, toRust(path), toRust(driver),
+                                    toRust(sqlMode), toRust(mode));
+    if (!reply.accepted) {
+        if (error)
+            *error = fromRust(reply.error);
+        return std::nullopt;
+    }
+    return reply.id;
+}
 QString EngineAdapter::structureUnavailableReason(const QString& kind, const QString& subtype) {
     return fromRust(structure_unavailable_reason(toRust(kind), toRust(subtype)));
 }

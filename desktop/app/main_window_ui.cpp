@@ -86,6 +86,7 @@ MainWindow::Ui MainWindow::buildUi() {
     save->setObjectName("saveSql");
     auto* saveAs = fileMenu->addAction(tr("Save SQL file as…"));
     saveAs->setObjectName("saveSqlAs");
+    addRunSqlFileAction(fileMenu);
     save->setShortcut(QKeySequence::Save);
     auto* closeTab = fileMenu->addAction(tr("Close tab"));
     closeTab->setObjectName("closeWorkspaceTab");

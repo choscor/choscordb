@@ -6,8 +6,10 @@
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QApplication>
+#include <QComboBox>
 #include <QContextMenuEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -296,4 +298,72 @@ void NavigatorSqlWorkspaceTest::explainShowsThePlanWithoutRunningTheStatement() 
     QTRY_VERIFY(sheet->isVisible());
     QTRY_VERIFY2(status->text().contains("no such table"), qPrintable(status->text()));
     QCOMPARE(tree->topLevelItemCount(), 0);
+}
+void NavigatorSqlWorkspaceTest::runSqlFileReportsEachFailedStatement() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto path = dir.filePath("load.sql");
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("CREATE TABLE t (a INTEGER UNIQUE);\nINSERT INTO t VALUES (1);\n"
+                   "INSERT INTO t VALUES (1);\nINSERT INTO t VALUES (2);\n");
+    }
+    choscordb::MainWindow window;
+    window.show();
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(
+        window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+    auto* runButton = window.findChild<QPushButton*>("runStatementButton");
+    auto* action = window.findChild<QAction*>("runSqlFile");
+    QVERIFY(editor && runButton && action);
+    QCOMPARE(action->shortcut(), QKeySequence("Ctrl+Alt+O"));
+    workspace->connectSqlite(":memory:");
+    QTRY_VERIFY(runButton->isEnabled());
+    auto* safety = window.findChild<QComboBox*>("safetyLevel");
+    const auto setSafety = [safety](const char* code) {
+        const auto index = safety->findData(code);
+        safety->setCurrentIndex(index);
+        emit safety->activated(index);
+    };
+    setSafety("silent");
+    action->trigger();
+    auto* dialog = window.findChild<QDialog*>("sqlFileDialog");
+    QVERIFY(dialog);
+    QTRY_VERIFY(dialog->isVisible());
+    auto* start = dialog->findChild<QPushButton*>("sqlFileStart");
+    auto* mode = dialog->findChild<QComboBox*>("sqlFileMode");
+    auto* errors = dialog->findChild<QPlainTextEdit*>("sqlFileErrors");
+    auto* status =
+        dialog->findChild<QWidget*>("sqlFileStatusLine")->findChild<QLabel*>("statusMessage");
+    QVERIFY(start && mode && errors && status);
+    start->click();
+    QTRY_VERIFY2(status->text().contains("Choose a SQL file to run."), qPrintable(status->text()));
+    dialog->findChild<QLineEdit*>("sqlFilePath")->setText(path);
+    mode->setCurrentIndex(mode->findData("continue"));
+    start->click();
+    QTRY_VERIFY2(status->text().contains("Ran 3 statement(s). 1 statement(s) failed."),
+                 qPrintable(status->text()));
+    QVERIFY(errors->isVisible());
+    QVERIFY2(errors->toPlainText().startsWith("Line 3: "), qPrintable(errors->toPlainText()));
+    QCOMPARE(start->text(), QString("Retry"));
+    dialog->findChild<QPushButton*>("sqlFileCancel")->click();
+    QTRY_VERIFY(!dialog->isVisible());
+    editor->setText("SELECT count(*) FROM t;");
+    runButton->click();
+    auto* grid = window.findChild<QTableView*>("queryResults");
+    QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("2"));
+
+    setSafety("read_only");
+    action->trigger();
+    QTRY_VERIFY(window.findChildren<QDialog*>("sqlFileDialog").size() == 1);
+    dialog = window.findChildren<QDialog*>("sqlFileDialog").constLast();
+    dialog->findChild<QLineEdit*>("sqlFilePath")->setText(path);
+    dialog->findChild<QPushButton*>("sqlFileStart")->click();
+    QString fieldError;
+    for (auto* label : dialog->findChildren<QLabel*>())
+        if (label->property("designRole").toString() == "fieldError" && label->isVisible())
+            fieldError = label->text();
+    QVERIFY2(fieldError.contains("read-only"), qPrintable(fieldError));
 }

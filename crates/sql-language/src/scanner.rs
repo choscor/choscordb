@@ -10,14 +10,35 @@ pub(crate) fn scan_with_mode(
     sql: &str,
     mode: Option<crate::MysqlSqlMode>,
 ) -> (Vec<Token>, Vec<usize>, bool) {
+    let scan = scan_script(sql, mode, b";", false);
+    (scan.tokens, scan.ends, scan.valid)
+}
+
+pub(crate) struct Scan {
+    pub(crate) tokens: Vec<Token>,
+    pub(crate) ends: Vec<usize>,
+    pub(crate) valid: bool,
+    pub(crate) directive: Option<usize>,
+}
+
+pub(crate) fn scan_script(
+    sql: &str,
+    mode: Option<crate::MysqlSqlMode>,
+    delimiter: &[u8],
+    stop_at_directive: bool,
+) -> Scan {
     let mysql = mode.is_some();
+    let custom = delimiter != b";";
     let b = sql.as_bytes();
     let (mut i, mut depth) = (0, 0usize);
-    let (mut tokens, mut ends) = (Vec::new(), Vec::new());
+    let (mut tokens, mut ends): (Vec<Token>, Vec<usize>) = (Vec::new(), Vec::new());
     let mut valid = true;
     while i < b.len() {
         let start = i;
-        if (b[i..].starts_with(b"--")
+        if custom && b[i..].starts_with(delimiter) {
+            i += delimiter.len();
+            ends.push(i);
+        } else if (b[i..].starts_with(b"--")
             && (!mysql || b.get(i + 2).is_some_and(|c| c.is_ascii_whitespace())))
             || (mysql && b[i] == b'#')
         {
@@ -104,11 +125,19 @@ pub(crate) fn scan_with_mode(
             {
                 i += 1;
             }
-            tokens.push(Token {
-                word: sql[start..i].to_ascii_uppercase(),
-                start,
-                depth,
-            });
+            let word = sql[start..i].to_ascii_uppercase();
+            let first = tokens
+                .last()
+                .is_none_or(|last| ends.last().is_some_and(|end| last.start < *end));
+            if stop_at_directive && mysql && first && word == "DELIMITER" {
+                return Scan {
+                    tokens,
+                    ends,
+                    valid,
+                    directive: Some(start),
+                };
+            }
+            tokens.push(Token { word, start, depth });
         } else {
             match b[i] {
                 b'(' => depth += 1,
@@ -121,13 +150,18 @@ pub(crate) fn scan_with_mode(
                     valid &= depth > 0;
                     depth = depth.saturating_sub(1);
                 }
-                b';' if depth == 0 => ends.push(i + 1),
+                b';' if depth == 0 && !custom => ends.push(i + 1),
                 _ => {}
             }
             i += 1;
         }
     }
-    (tokens, ends, valid && depth == 0)
+    Scan {
+        tokens,
+        ends,
+        valid: valid && depth == 0,
+        directive: None,
+    }
 }
 
 pub fn statement_ranges(sql: &str) -> Vec<Range<usize>> {

@@ -24,6 +24,8 @@ pub use highlight::{HighlightKind, HighlightSpan, highlight};
 pub use history_preview::{HistoryPreview, history_sql_preview};
 mod safety;
 mod scanner;
+mod script;
+pub use script::{ScriptChunk, ScriptError, split_script};
 mod search;
 pub use search::{
     MAX_SEARCH_PATTERN_BYTES, MAX_SEARCH_SOURCE_BYTES, Replacement, SearchError, SearchMatch,

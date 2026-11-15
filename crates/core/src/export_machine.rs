@@ -96,6 +96,15 @@ const IMPORT_TEXTS: TransferTexts = TransferTexts {
     failed: "Import failed",
 };
 
+const SQL_FILE_TEXTS: TransferTexts = TransferTexts {
+    preparing: "Opening the SQL file…",
+    running: "Running the SQL file…",
+    cancelling: "Stopping the SQL file run…",
+    complete: "The SQL file ran.",
+    cancelled: "The SQL file run stopped.",
+    failed: "The SQL file run failed",
+};
+
 fn present_transfer(state: &ExportState, detail: &str, texts: &TransferTexts) -> Presentation {
     use ExportState as S;
     match state {
@@ -120,4 +129,8 @@ pub fn present(state: &ExportState, detail: &str) -> Presentation {
 
 pub fn present_import(state: &ExportState, detail: &str) -> Presentation {
     present_transfer(state, detail, &IMPORT_TEXTS)
+}
+
+pub fn present_sql_file(state: &ExportState, detail: &str) -> Presentation {
+    present_transfer(state, detail, &SQL_FILE_TEXTS)
 }

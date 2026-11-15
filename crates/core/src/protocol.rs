@@ -220,6 +220,24 @@ pub enum Event {
         import: ExportId,
         rows: u64,
     },
+    SqlFileProgress {
+        run: ExportId,
+        statements: u64,
+        failed: u64,
+        bytes: u64,
+        total_bytes: u64,
+    },
+    SqlFileFinished {
+        run: ExportId,
+        statements: u64,
+        failed: u64,
+        errors: Vec<String>,
+    },
+    SqlFileFailed {
+        run: ExportId,
+        statements: u64,
+        error: DriverError,
+    },
     TableImportFinished {
         import: ExportId,
         rows: u64,

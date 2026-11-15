@@ -407,6 +407,7 @@ dependencies = [
  "choscordb-export",
  "choscordb-result-cache",
  "choscordb-result-store",
+ "choscordb-sql-language",
  "choscordb-storage",
  "csv",
  "fs2",

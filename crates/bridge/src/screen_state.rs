@@ -355,6 +355,13 @@ pub fn import_presentation(state: ffi::ExportStateDto, detail: &str) -> ffi::Pre
     }
 }
 
+pub fn sql_file_presentation(state: ffi::ExportStateDto, detail: &str) -> ffi::PresentationDto {
+    match export_state(state) {
+        Ok(state) => presentation(export_machine::present_sql_file(&state, detail)),
+        Err(error) => invalid(error),
+    }
+}
+
 pub fn export_transition(
     state: ffi::ExportStateDto,
     event: ffi::ExportEventDto,

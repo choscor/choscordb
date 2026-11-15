@@ -1,4 +1,4 @@
-use crate::{BridgeEngine, ffi, pack, submit, unpack};
+use crate::{BridgeEngine, code_label, ffi, pack, submit, unpack};
 use choscordb_core::{
     CsvReadOptions, ImportData, ImportEncoding, ImportFile, ImportFileFormat, ImportMapping,
     ImportRead, TableImportRequest, TableImportTarget, plan_table_import, read_import_file,
@@ -8,13 +8,6 @@ use choscordb_driver_api::{
     EditColumn, EditTarget, GridEditDriver, ImportConflict, ObjectId, quote_import_identifier,
 };
 use choscordb_sql_language::create_template_parent;
-
-fn code_label(code: &str, label: &str) -> ffi::CodeLabelDto {
-    ffi::CodeLabelDto {
-        code: code.into(),
-        label: label.into(),
-    }
-}
 
 fn import_driver(name: &str) -> Result<GridEditDriver, String> {
     crate::grid_edit::grid_driver(name).map_err(|_| "This connection cannot import files.".into())

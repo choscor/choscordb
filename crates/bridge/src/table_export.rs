@@ -1,15 +1,8 @@
-use crate::{BridgeEngine, ffi, pack, submit, unpack};
+use crate::{BridgeEngine, code_label, ffi, pack, submit, unpack};
 use choscordb_core::{
     CsvOptions, DEFAULT_TABLE_EXPORT_PATTERN, LineBreak, TableExportDestination, TableExportFormat,
     TableExportObject, TableExportRequest, plan_table_export,
 };
-
-fn code_label(code: &str, label: &str) -> ffi::CodeLabelDto {
-    ffi::CodeLabelDto {
-        code: code.into(),
-        label: label.into(),
-    }
-}
 
 pub fn table_export_formats() -> Vec<ffi::TableExportFormatDto> {
     let format = |code: &str, label: &str| ffi::TableExportFormatDto {

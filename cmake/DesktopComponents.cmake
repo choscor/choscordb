@@ -110,6 +110,7 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/export_dialog/export_dialog.cpp
   desktop/widgets/table_export_dialog/table_export_dialog.cpp
   desktop/widgets/table_import_dialog/table_import_dialog.cpp
+  desktop/widgets/sql_file_dialog/sql_file_dialog.cpp
   desktop/widgets/structure_editor_dialog/structure_editor_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog_actions.cpp
@@ -158,6 +159,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_workspace_cell_edit.cpp
   desktop/app/query_workspace_json.cpp
   desktop/app/query_workspace_explain.cpp
+  desktop/app/query_workspace_sql_file.cpp
   desktop/app/query_workspace_events.cpp
   desktop/app/query_workspace_lifecycle.cpp
   desktop/app/query_workspace_view.cpp

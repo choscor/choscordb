@@ -584,6 +584,42 @@ pub fn event(
             error(&mut e, err);
             "table_export_failed"
         }
+        Event::SqlFileProgress {
+            run,
+            statements,
+            failed,
+            bytes,
+            total_bytes,
+        } => {
+            e.id = pack(run);
+            e.exported_rows = statements;
+            e.exported_tables = failed;
+            e.exported_bytes = bytes;
+            e.total_bytes = total_bytes;
+            "sql_file_progress"
+        }
+        Event::SqlFileFinished {
+            run,
+            statements,
+            failed,
+            errors,
+        } => {
+            e.id = pack(run);
+            e.exported_rows = statements;
+            e.exported_tables = failed;
+            e.warnings = errors;
+            "sql_file_finished"
+        }
+        Event::SqlFileFailed {
+            run,
+            statements,
+            error: err,
+        } => {
+            e.id = pack(run);
+            e.exported_rows = statements;
+            error(&mut e, err);
+            "sql_file_failed"
+        }
         Event::TableImportProgress { import, rows } => {
             e.id = pack(import);
             e.exported_rows = rows;

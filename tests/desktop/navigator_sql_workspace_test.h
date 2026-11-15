@@ -24,6 +24,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void runModesRunCurrentStatementOrWholeDocument();
     void runAllShowsOneResultTabPerStatement();
     void explainShowsThePlanWithoutRunningTheStatement();
+    void runSqlFileReportsEachFailedStatement();
     void exportTablesFromTheNavigator();
     void importCsvIntoTablesFromTheNavigator();
     void editTableStructureFromTheNavigator();

@@ -78,6 +78,7 @@ class MainWindow final : public QMainWindow {
     struct PendingObjectAction;
     Ui buildUi();
     void addSqlTextActions(QMenu* editMenu);
+    void addRunSqlFileAction(QMenu* fileMenu);
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);

@@ -36,6 +36,11 @@ pub use table_import::{
 };
 mod explain;
 pub use explain::{MAX_PLAN_NODES, PlanNode, explain_sql, parse_explain};
+mod sql_file;
+pub use sql_file::{
+    MAX_SQL_FILE_ERRORS, MAX_SQL_FILE_STATEMENT_BYTES, SQL_FILE_PROGRESS_STATEMENTS,
+    SQL_FILE_READ_BYTES, SqlFileError, SqlFileMode, SqlFileRun, SqlFileSplitter, SqlFileStatement,
+};
 mod grid_paste;
 pub use grid_paste::{GridRect, MAX_PASTE_CELLS, PasteCell, plan_grid_paste};
 mod operation;
@@ -510,6 +515,17 @@ impl Engine {
                 request: Box::new(request),
                 cancellation,
             }
+        })
+    }
+    pub fn run_sql_file(
+        &mut self,
+        connection: ConnectionId,
+        request: SqlFileRun,
+    ) -> std::result::Result<ExportId, SubmitError> {
+        self.start_transfer(connection, |run, cancellation| actor::Command::RunSqlFile {
+            run,
+            request,
+            cancellation,
         })
     }
     pub fn cancel_export(&self, export: ExportId) -> std::result::Result<(), SubmitError> {
@@ -1012,7 +1028,9 @@ impl Engine {
         | Event::TableExportFinished { export, .. }
         | Event::TableExportFailed { export, .. }
         | Event::TableImportFinished { import: export, .. }
-        | Event::TableImportFailed { import: export, .. } = &event
+        | Event::TableImportFailed { import: export, .. }
+        | Event::SqlFileFinished { run: export, .. }
+        | Event::SqlFileFailed { run: export, .. } = &event
             && let Some(slot) = self.exports.remove(*export)
         {
             self.export_owners.remove(&slot.connection);
