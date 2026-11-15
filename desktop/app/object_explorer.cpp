@@ -525,6 +525,22 @@ void ObjectExplorer::selectPane(int index) {
         return;
     tabs_->setCurrentIndex(index);
 }
+void ObjectExplorer::stepPane(int delta) {
+    for (int index = tabs_->currentIndex() + delta; index >= 0 && index < tabs_->count();
+         index += delta)
+        if (tabs_->isTabVisible(index)) {
+            tabs_->setCurrentIndex(index);
+            return;
+        }
+}
+QString ObjectExplorer::reload() {
+    if (!connection_)
+        return tr("Reconnect this tab before you reload it.");
+    if (!refreshAllowed())
+        return tr("The tab is still loading. Reload it when it is ready.");
+    refreshAction_->trigger();
+    return {};
+}
 void ObjectExplorer::setDisconnected() {
     connection_.reset();
     restoredInert_ = true;

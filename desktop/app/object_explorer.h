@@ -39,6 +39,8 @@ class ObjectExplorer final : public QWidget {
     bool needsConnection() const { return !connection_.has_value(); }
     bool operationInFlight() const { return requestToken_ != 0 || operationBusy_; }
     void selectPane(int index);
+    void stepPane(int delta);
+    [[nodiscard]] QString reload();
     void setDisconnected();
     void installDataWidget(QWidget* widget);
     void setOperationBusy(bool busy);

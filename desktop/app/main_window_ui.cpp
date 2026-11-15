@@ -573,7 +573,7 @@ MainWindow::Ui MainWindow::buildUi() {
         workspaceTabs->workspaceBar()->setHeaderVisible(
             sql || workspaceTabs->workspaceBar()->property("recoveryActive").toBool());
         if (sqlResultArea_)
-            sqlResultArea_->setVisible(sql);
+            sqlResultArea_->setVisible(sql && !resultsHidden_);
         if (search_ && !sql)
             search_->hide();
         completion_->setEditor(qobject_cast<SqlEditor*>(editors_->currentWidget()));
@@ -656,6 +656,7 @@ MainWindow::Ui MainWindow::buildUi() {
     listTabs->setObjectName("listEditorTabs");
     listTabs->setShortcut(QKeySequence("Ctrl+Shift+L"));
     preferences_->addAction("editor_tabs", listTabs);
+    addNavigationShortcuts(viewMenu);
     connect(listTabs, &QAction::triggered, this, [this] {
         auto* menu = new QMenu(this);
         menu->setObjectName("editorTabOverflow");
@@ -828,7 +829,7 @@ MainWindow::Ui MainWindow::buildUi() {
         });
     };
     searchAction("find", tr("Find…"), QKeySequence::Find, &SearchPanel::showFind);
-    searchAction("replace", tr("Replace…"), QKeySequence::Replace, &SearchPanel::showReplace);
+    searchAction("replace", tr("Replace…"), replaceShortcut(), &SearchPanel::showReplace);
     searchAction("find_next", tr("Find next"), QKeySequence::FindNext, &SearchPanel::findNext);
     searchAction("find_previous", tr("Find previous"), QKeySequence::FindPrevious,
                  &SearchPanel::findPrevious);

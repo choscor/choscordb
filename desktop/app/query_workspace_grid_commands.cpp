@@ -42,6 +42,7 @@ constexpr std::array<GridCommandSpec, 10> gridCommands = {{
      "pasteCells"},
 }};
 constexpr auto setNullAlternate = "Backspace";
+constexpr auto applyEditsAlternate = "Ctrl+Shift+P";
 QString gridLabel(std::size_t command) {
     return QueryWorkspace::tr(gridCommands[command].label);
 }
@@ -64,6 +65,8 @@ QList<ShortcutDescriptor> QueryWorkspace::gridShortcuts() {
                      ShortcutScope::ResultGrid});
     rows.append({"grid_set_null_alternate", tr("Set NULL (alternate)"), setNullAlternate, false,
                  ShortcutScope::ResultGrid});
+    rows.append({"grid_apply_edits_alternate", tr("Review changes (alternate)"),
+                 applyEditsAlternate, false, ShortcutScope::ResultGrid});
     rows.append({"grid_copy", tr("Copy"),
                  QKeySequence(QKeySequence::Copy).toString(QKeySequence::PortableText), false,
                  ShortcutScope::ResultGrid});
@@ -81,6 +84,8 @@ void QueryWorkspace::setGridShortcut(const QString& id, const QKeySequence& prim
             keys.append(primary);
         if (static_cast<GridCommand>(i) == GridCommand::SetNull)
             keys.append(QKeySequence::fromString(setNullAlternate, QKeySequence::PortableText));
+        if (static_cast<GridCommand>(i) == GridCommand::ApplyEdits)
+            keys.append(QKeySequence::fromString(applyEditsAlternate, QKeySequence::PortableText));
         gridActions_[i]->setShortcuts(keys);
     }
     updateApplyToolTip();

@@ -144,6 +144,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/main_window_quick_search.cpp
   desktop/app/main_window_ui.cpp
   desktop/app/main_window_sql_actions.cpp
+  desktop/app/main_window_shortcuts.cpp
   desktop/app/main_window_ui_pins.cpp
   desktop/app/main_window_ui_connection.cpp
   desktop/app/main_window_workspace.cpp

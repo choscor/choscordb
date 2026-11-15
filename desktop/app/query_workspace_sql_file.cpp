@@ -1,6 +1,7 @@
 #include "app/query_workspace.h"
 #include "widgets/backup_dialog/backup_dialog.h"
 #include "widgets/sql_file_dialog/sql_file_dialog.h"
+#include <QPushButton>
 
 namespace choscordb {
 void QueryWorkspace::runSqlFile() {
@@ -34,5 +35,13 @@ void QueryWorkspace::backupDatabase(bool restore) {
         widgets_.dialogParent);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->open();
+}
+void QueryWorkspace::stepResultPage(bool next) {
+    if (auto* button = next ? widgets_.nextPage : widgets_.previousPage)
+        button->click();
+}
+void QueryWorkspace::exportResult() {
+    if (widgets_.exportResult)
+        widgets_.exportResult->click();
 }
 }

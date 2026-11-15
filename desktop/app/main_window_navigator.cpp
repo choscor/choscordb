@@ -239,7 +239,7 @@ void MainWindow::connectNavigator(const Ui& ui) {
             });
     auto* refreshNavigatorAction = new QAction(tr("Refresh"), tree);
     refreshNavigatorAction->setObjectName("navigatorRefreshAction");
-    refreshNavigatorAction->setShortcut(QKeySequence::Refresh);
+    refreshNavigatorAction->setShortcut(QKeySequence(Qt::Key_F5));
     refreshNavigatorAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     refreshNavigatorAction->setEnabled(false);
     preferences_->addAction("refresh", refreshNavigatorAction);

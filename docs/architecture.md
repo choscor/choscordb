@@ -237,6 +237,20 @@ Each driver puts the index of the failed statement in `DriverError::failed_state
 A new table gets `TEXT` columns. The actor creates the table first and drops it again when the rows fail.
 Cancel stops the import before the write. During the write, it asks the driver to cancel the statement.
 
+### Workspace shortcuts
+
+`addNavigationShortcuts` in `desktop/app/main_window_shortcuts.cpp` adds the View commands below. Each command has a catalog entry.
+
+- Ctrl+Shift+K opens the connection picker. It moves the current query tab to another open connection.
+- Ctrl+R reloads the current object tab. F5 refreshes the navigator when it has focus.
+  The Replace command uses Ctrl+H on platforms that have a Replace key. Thus Ctrl+R does not conflict on KDE.
+- Ctrl+Alt+[ and Ctrl+Alt+] go to the previous or next visible pane of an object tab.
+- Ctrl+Alt+Left and Ctrl+Alt+Right go to the previous or next result page.
+- Ctrl+Shift+E exports the result. Ctrl+` shows or hides the result area of query tabs.
+- Ctrl+1 to Ctrl+9 go to the tab with that number.
+- Ctrl+Shift+P in the result grid is a second key for "Apply…". It opens the review of the staged changes before they apply.
+- On macOS, the system can use Cmd+` to cycle windows. On GNOME, Ctrl+Alt+Left and Ctrl+Alt+Right can switch workspaces.
+
 ### Run a SQL file
 
 File → "Run SQL file…" (Ctrl+Alt+O) runs each statement of a SQL file on the selected connection.
@@ -254,15 +268,23 @@ The splitter does not run `psql` commands. The `COPY … FROM stdin` data of a `
 ### Backup and restore
 
 File → "Back up database…" and "Restore database…" open `BackupDialog` for the selected connection.
-`BackupRequest::new` in `core` checks the file, the tool folder and the option codes. It rejects "Schema only" with "Data only".
-`backup_options` gives the options and their defaults for each driver. `backup_unavailable` gives the reason when a driver cannot do the operation.
-The connection actor keeps a `BackupTarget` that it makes from the connection options before it connects.
+`BackupRequest::new` in `core` checks the file and the tool folder.
+`BackupFamily` gives the options and their defaults for each driver, and the reason when a driver cannot do the operation.
+The planner checks the option codes against the family of the open connection. It rejects "Schema only" with "Data only".
+For a saved connection, `ProfileBackup` keeps the target with the resolved credentials after each connect.
+A restore on a read-only connection fails in the engine with an `Unsupported` error.
+For other connections, the actor makes the `BackupTarget` from the connection options before it connects.
 `plan_backup` finds the client tool in the tool folder or on `PATH`. ChoscorDB does not include the client tools.
 PostgreSQL uses `pg_dump` and `pg_restore`. MySQL uses `mysqldump` and `mysql`. MariaDB tries `mariadb-dump` and `mariadb` first.
-The password goes to the tool in `PGPASSWORD` or `MYSQL_PWD`. The first output line shows the command without the password.
+The password goes to the tool in `PGPASSWORD` or `MYSQL_PWD`. Without a password, the engine removes that variable from the tool environment.
+The first output line shows the command without the password.
+`pg_dump` and `pg_restore` get the database as `dbname='…'`. Thus a name with `=` cannot change the connection string.
+The MySQL and MariaDB tools get `--protocol=TCP`. Thus `localhost` does not use the local socket and the port applies.
 `pg_restore` accepts only custom and tar archives. Run a plain SQL backup with "Run SQL file".
 The `mysql` tool reads the backup file from its standard input.
 Backup and restore cannot use an SSH tunnel, a SOCKS proxy or a client certificate. The tools connect to the server directly.
+The tools can still read `~/.pgpass`, `~/.my.cnf` and their other option files.
+On macOS, an app that starts from Finder has a short `PATH`. Choose the tool folder for Homebrew or Postgres.app tools.
 SQLite backs up with `VACUUM INTO` into a new file. SQLite restore is not available because the database file is open.
 The dialog shows the tool output live. The engine sends the first 2,000 lines and cuts each line at 4 KiB.
 Cancel stops the tool. A tool that stops with an error code gives a failure with that code.

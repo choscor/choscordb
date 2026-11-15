@@ -24,6 +24,7 @@ class EditorPreferencesController final : public QObject {
     void setAppearanceController(AppearanceController* appearance);
     void open(PreferencesPage page);
     const EditorPreferences& preferences() const { return preferences_; }
+    QList<ShortcutDescriptor> catalog() const;
 
   signals:
     void queryPreferencesSaveSubmitted(quint64 token);
@@ -37,7 +38,6 @@ class EditorPreferencesController final : public QObject {
   private:
     void apply(const EditorPreferences& value);
     void applyFont(SqlEditor* editor);
-    QList<ShortcutDescriptor> catalog() const;
     void applyGridShortcuts(QueryWorkspace* grid);
     QKeySequence effectiveSequence(const ShortcutDescriptor& descriptor) const;
     MainWindow* window_;

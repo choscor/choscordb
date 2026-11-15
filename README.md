@@ -11,6 +11,7 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Set a row limit for `SELECT` statements on each connection.
 - Run all statements and see one result tab for each statement. Name a tab with a `-- name:` comment, pin a tab, and stop on the first error.
 - Switch the database of a SQL tab (Ctrl+K). For SQLite, switch to another database file in the same folder.
+- Move a query tab to another open connection (Ctrl+Shift+K). Go to a tab with Ctrl+1 to Ctrl+9.
 - Tag each connection with an environment and a color. The sidebar and the result footer show the tag.
 - Set a safety level for each connection: run without confirmation, confirm destructive statements, confirm each statement, or read-only.
 - Read large results page by page. Filter, sort and edit table rows.

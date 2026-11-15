@@ -80,6 +80,10 @@ class MainWindow final : public QMainWindow {
     Ui buildUi();
     void addSqlTextActions(QMenu* editMenu);
     void addRunSqlFileAction(QMenu* fileMenu);
+    void addNavigationShortcuts(QMenu* viewMenu);
+    static QKeySequence replaceShortcut();
+    void showConnectionPicker();
+    void renderConnectionPicker();
     void connectWorkspace(const Ui& ui, const QString& storagePath);
     QString connectSavedSql(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
@@ -228,6 +232,8 @@ class MainWindow final : public QMainWindow {
     SearchPanel* search_ = nullptr;
     design::QuickSearchDialog* quickSearch_ = nullptr;
     design::QuickSearchDialog* databasePicker_ = nullptr;
+    design::QuickSearchDialog* connectionPicker_ = nullptr;
+    bool resultsHidden_ = false;
     DatabaseList databaseChoices_;
     quint64 databaseListToken_ = 0, databaseListConnection_ = 0;
     bool databaseListForActions_ = false;

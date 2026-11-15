@@ -419,7 +419,7 @@ The shared cascade paints stock `QPushButton` controls with the same values.
   They show only icons, because the sidebar is narrow. The tooltip and the accessible name give the label.
   The arrow keys move between them.
 - **Refresh:** One `Refresh` command reloads each panel. F5 refreshes the navigator when it has focus.
-  The object pane and history refresh with their `Refresh` button.
+  The object pane and history refresh with their `Refresh` button. Ctrl+R reloads the current object tab.
 - The cascade gives painted buttons a transparent background. Thus a Ghost or Outline button shows its surface.
 
 ## Dialog contract
