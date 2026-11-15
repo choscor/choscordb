@@ -28,6 +28,11 @@ pub(crate) enum Command {
         statements: Vec<String>,
         request_token: u64,
     },
+    Explain {
+        driver: GridEditDriver,
+        sql: String,
+        request_token: u64,
+    },
     EditQuery {
         sql: String,
         result_columns: Vec<String>,
@@ -299,6 +304,28 @@ async fn send(events: &EventSink, event: Event) {
             }
         }
     }
+}
+async fn explain_plan(
+    connection: &mut dyn Connection,
+    driver: GridEditDriver,
+    sql: &str,
+) -> Result<Vec<crate::PlanNode>> {
+    let mut cursor = connection.execute(sql, QueryOptions::default()).await?;
+    let mut rows = Vec::new();
+    let read = async {
+        loop {
+            let page = cursor.fetch_page(PageSize::new(MAX_PAGE_SIZE)?).await?;
+            rows.extend(page.rows);
+            if !page.has_more || rows.len() > crate::MAX_PLAN_NODES {
+                return Ok(());
+            }
+        }
+    }
+    .await;
+    let closed = cursor.close().await;
+    read.and(closed)?;
+    crate::parse_explain(driver, &rows)
+        .map_err(|message| DriverError::new(ErrorKind::Query, message))
 }
 pub(super) async fn execute_ddl(connection: &mut dyn Connection, sql: &str) -> Result<()> {
     let mut cursor = connection.execute(sql, QueryOptions::default()).await?;
@@ -965,6 +992,26 @@ pub(crate) async fn run(
                     *cache = None;
                 }
                 catalog_read(&mut *connection, id, read, &mut shutdown, &events).await;
+            }
+            Command::Explain {
+                driver,
+                sql,
+                request_token,
+            } => {
+                close_active(active, &events).await;
+                let event = match explain_plan(connection.as_mut(), driver, &sql).await {
+                    Ok(nodes) => Event::ExplainReady {
+                        connection: id,
+                        request_token,
+                        nodes,
+                    },
+                    Err(error) => Event::ExplainFailed {
+                        connection: id,
+                        request_token,
+                        error,
+                    },
+                };
+                send(&events, event).await
             }
             Command::ApplyDdl {
                 statements,

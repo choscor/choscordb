@@ -16,6 +16,8 @@
 #include <QTabWidget>
 #include <QTableView>
 #include <QTemporaryDir>
+#include <QToolBar>
+#include <QTreeWidget>
 #include <QtTest>
 
 void NavigatorSqlWorkspaceTest::runModesRunCurrentStatementOrWholeDocument() {
@@ -242,4 +244,56 @@ void NavigatorSqlWorkspaceTest::changeConnectionMenuRebindsOnlyIdleSqlTabs() {
                                       "table");
     QVERIFY(qobject_cast<choscordb::ObjectExplorer*>(tabs->currentWidget()));
     QVERIFY(!openMenu());
+}
+
+void NavigatorSqlWorkspaceTest::explainShowsThePlanWithoutRunningTheStatement() {
+    choscordb::MainWindow window;
+    window.show();
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(
+        window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+    auto* grid = window.findChild<QTableView*>("queryResults");
+    auto* runButton = window.findChild<QPushButton*>("runStatementButton");
+    auto* explainButton = window.findChild<QPushButton*>("explainStatementButton");
+    auto* explain = window.findChild<QAction*>("explainStatement");
+    QVERIFY(editor && grid && runButton && explainButton && explain);
+    QCOMPARE(explain->shortcut(), QKeySequence("Ctrl+Alt+E"));
+    auto* toolbar = window.findChild<QToolBar*>("queryToolbar");
+    const auto position = [toolbar](const char* name) {
+        return toolbar->findChild<QWidget*>(name)->mapTo(toolbar, QPoint()).x();
+    };
+    QVERIFY(!explainButton->isEnabled());
+    workspace->connectSqlite(":memory:");
+    QTRY_VERIFY(runButton->isEnabled() && explainButton->isEnabled());
+    QVERIFY(position("rowLimit") < position("explainStatementButton"));
+    editor->setText("CREATE TABLE t (a INTEGER); CREATE INDEX t_a ON t (a);");
+    window.findChild<QAction*>("runAll")->trigger();
+    QTRY_VERIFY(runButton->isEnabled());
+    editor->setText("INSERT INTO t VALUES (1);");
+    runButton->click();
+    QTRY_VERIFY(runButton->isEnabled());
+    editor->setText("SELECT 1;\nDELETE FROM t WHERE a = 1;");
+    editor->SendScintilla(QsciScintilla::SCI_GOTOPOS,
+                          static_cast<unsigned long>(editor->text().size() - 2));
+    explainButton->click();
+    auto* sheet = window.findChild<QDialog*>("queryPlanSheet");
+    QVERIFY(sheet);
+    QTRY_VERIFY(sheet->isVisible());
+    auto* tree = sheet->findChild<QTreeWidget*>("queryPlanTree");
+    auto* status = sheet->findChild<QLabel*>("queryPlanStatus");
+    QTRY_COMPARE(tree->topLevelItemCount(), 1);
+    QVERIFY2(tree->topLevelItem(0)->text(0).startsWith("SEARCH t USING INDEX t_a"),
+             qPrintable(tree->topLevelItem(0)->text(0)));
+    QCOMPARE(status->text(), QString("1 step(s). The statement did not run."));
+    sheet->findChild<QPushButton*>("queryPlanClose")->click();
+    QTRY_VERIFY(!sheet->isVisible());
+    editor->setText("SELECT count(*) FROM t;");
+    runButton->click();
+    QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("1"));
+    editor->setText("SELECT * FROM missing;");
+    explain->trigger();
+    QTRY_VERIFY(sheet->isVisible());
+    QTRY_VERIFY2(status->text().contains("no such table"), qPrintable(status->text()));
+    QCOMPARE(tree->topLevelItemCount(), 0);
 }

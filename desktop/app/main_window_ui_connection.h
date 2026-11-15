@@ -1,7 +1,9 @@
 #pragma once
 
+class QAction;
 class QComboBox;
 class QLabel;
+class QMenu;
 class QToolBar;
 class QWidget;
 
@@ -13,9 +15,10 @@ class StatusLine;
 struct ConnectionToolbar {
     QComboBox* safetyLevel;
     QComboBox* rowLimit;
+    QAction* explain;
 };
 
-ConnectionToolbar buildConnectionToolbar(QToolBar* toolbar);
+ConnectionToolbar buildConnectionToolbar(QToolBar* toolbar, QMenu* queryMenu);
 
 struct ResultFooterRow {
     QWidget* row;

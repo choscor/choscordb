@@ -496,7 +496,7 @@ MainWindow::Ui MainWindow::buildUi() {
     cancelButton->setVariant(design::ButtonVariant::Outline);
     cancelButton->setEnabled(false);
     auto* cancelSlot = toolbar->addWidget(cancelButton);
-    const auto connectionToolbar = buildConnectionToolbar(toolbar);
+    const auto connectionToolbar = buildConnectionToolbar(toolbar, queryMenu);
     cancelSlot->setVisible(false);
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
     connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton, cancelSlot] {
@@ -525,6 +525,7 @@ MainWindow::Ui MainWindow::buildUi() {
     preferences_->addAction("run_statement", run);
     preferences_->addAction("run_all", runAll);
     preferences_->addAction("cancel_query", cancel);
+    preferences_->addAction("explain_statement", connectionToolbar.explain);
     const auto refreshIcons = [this, addConnection, refreshNavigator, toolbar] {
         const auto resolved = theme_->resolvedTheme();
         toolbar->setIconSize(QSize(design::dimension(design::Dimension::Icon),
@@ -986,6 +987,7 @@ MainWindow::Ui MainWindow::buildUi() {
         .stopOnFirstError = stopOnFirstError,
         .rowLimit = connectionToolbar.rowLimit,
         .safetyLevel = connectionToolbar.safetyLevel,
+        .explain = connectionToolbar.explain,
         .connectionTag = footerRow.connectionTag,
         .messages = messages,
         .searchActions = searchActions,

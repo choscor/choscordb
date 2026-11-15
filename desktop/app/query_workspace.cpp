@@ -154,6 +154,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     });
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleRowJsonEvent);
+    connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleExplainEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleCopyEvent);
     connect(adapter_, &EngineAdapter::valueChunkSubmissionFailed, this,
             [this](quint64 query, quint64 handle, quint64 offset, const QString& error) {
@@ -211,6 +212,8 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
         updateActions();
     });
     connect(widgets_.run, &QAction::triggered, this, [this] { execute(RunScope::Current); });
+    if (widgets_.explain)
+        connect(widgets_.explain, &QAction::triggered, this, &QueryWorkspace::explainStatement);
     connect(widgets_.runAll, &QAction::triggered, this, [this] { execute(RunScope::All); });
     connect(widgets_.cancel, &QAction::triggered, this, [this] {
         if (gridEdit_.edits == EditPhase::Planning)
@@ -749,6 +752,8 @@ void QueryWorkspace::updateActions() {
     widgets_.grid->setVisible(displayedResult);
     widgets_.run->setEnabled(connected && !inFlight && querySettings_->isReady());
     widgets_.runAll->setEnabled(widgets_.run->isEnabled());
+    if (widgets_.explain)
+        widgets_.explain->setEnabled(widgets_.run->isEnabled());
     if (widgets_.statementResults) {
         widgets_.statementResults->setVisible(displayedResult && statementResults_.size() > 1);
         widgets_.statementResults->setEnabled(!inFlight);

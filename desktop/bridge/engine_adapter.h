@@ -804,6 +804,8 @@ class EngineAdapter final : public QObject {
     static GridSetValue gridSetValue(const QString& kind, const QString& driver,
                                      const QString& databaseType, bool inserted,
                                      std::optional<bool> nullable);
+    bool explain(quint64 connection, const QString& driver, const QString& statement,
+                 quint64 requestToken, QString* error);
     static GridPastePlan gridPastePlan(const QString& text, int top, int left, int rows,
                                        int columns, int gridRows, int gridColumns);
     static const ProfileTagOptions& profileTagOptions();

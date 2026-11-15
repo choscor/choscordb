@@ -1,10 +1,12 @@
 #include "app/main_window_ui_connection.h"
+#include "design_system/button/button.h"
 #include "design_system/metrics/metrics.h"
 #include "design_system/status_line/status_line.h"
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QToolBar>
 
 namespace choscordb {
@@ -23,12 +25,28 @@ QString tr(const char* text) {
 }
 }
 
-ConnectionToolbar buildConnectionToolbar(QToolBar* toolbar) {
+ConnectionToolbar buildConnectionToolbar(QToolBar* toolbar, QMenu* queryMenu) {
     auto* safety = addSelect(toolbar, "safetyLevel", tr("Safety level"),
                              tr("Safety level for this connection"));
     auto* rowLimit =
         addSelect(toolbar, "rowLimit", tr("Row limit for SELECT"), tr("Row limit for SELECT"));
-    return {safety, rowLimit};
+    auto* explain = queryMenu->addAction(tr("Explain"));
+    explain->setObjectName("explainStatement");
+    explain->setShortcut(QKeySequence("Ctrl+Alt+E"));
+    explain->setEnabled(false);
+    auto* button = new design::Button(explain->text(), toolbar);
+    button->setObjectName("explainStatementButton");
+    button->setVariant(design::ButtonVariant::Outline);
+    button->setButtonSize(design::ButtonSize::Small);
+    button->setEnabled(false);
+    toolbar->addWidget(button);
+    QObject::connect(button, &QPushButton::clicked, explain, &QAction::trigger);
+    QObject::connect(explain, &QAction::changed, button, [explain, button] {
+        button->setEnabled(explain->isEnabled());
+        button->setToolTip(tr("Show the query plan of the statement at the cursor") + " · " +
+                           explain->shortcut().toString(QKeySequence::NativeText));
+    });
+    return {safety, rowLimit, explain};
 }
 
 ResultFooterRow buildResultFooterRow(design::StatusLine* footer) {

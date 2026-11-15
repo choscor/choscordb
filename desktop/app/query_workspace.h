@@ -21,6 +21,7 @@ class QPlainTextEdit;
 class QMenu;
 class QTableView;
 class QTabBar;
+class QTreeWidget;
 class QWidget;
 namespace choscordb::design {
 class RightSheet;
@@ -77,6 +78,7 @@ class QueryWorkspace final : public QObject {
         QLabel* connectionTag = nullptr;
         QTabBar* statementResults = nullptr;
         QAction* stopOnFirstError = nullptr;
+        QAction* explain = nullptr;
     };
     struct LiveConnection {
         quint64 id = 0;
@@ -263,6 +265,8 @@ class QueryWorkspace final : public QObject {
     void failRowJson(const QString& error);
     void clearRowJson();
     void handleRowJsonEvent(const BridgeEvent& event);
+    void explainStatement();
+    void handleExplainEvent(const BridgeEvent& event);
     void applySqlEdit(SqlEditor* editor, const SqlTextEdit& edit);
     void copyResult(int scope, const QString& format = QStringLiteral("tsv"));
     std::optional<ResultTableModel::CopySnapshot>
@@ -305,6 +309,11 @@ class QueryWorkspace final : public QObject {
     ResultTableModel* model_;
     ValueDetailDialog* detail_ = nullptr;
     QPointer<design::RightSheet> rowJsonSheet_;
+    QPointer<design::RightSheet> planSheet_;
+    QTreeWidget* planTree_ = nullptr;
+    design::StatusLine* planStatus_ = nullptr;
+    quint64 explainToken_ = 0;
+    quint64 explainConnection_ = 0;
     QPointer<QPlainTextEdit> rowJsonText_;
     QPointer<QPushButton> rowJsonCopy_;
     QPointer<design::StatusLine> rowJsonStatus_;

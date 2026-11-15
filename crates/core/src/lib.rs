@@ -34,6 +34,8 @@ pub use table_import::{
     import_failure_row, plan_table_import, read_import_file, structure_edit_unavailable,
     table_import_mapping_error, table_import_unavailable,
 };
+mod explain;
+pub use explain::{MAX_PLAN_NODES, PlanNode, explain_sql, parse_explain};
 mod grid_paste;
 pub use grid_paste::{GridRect, MAX_PASTE_CELLS, PasteCell, plan_grid_paste};
 mod operation;
@@ -739,6 +741,27 @@ impl Engine {
                 request_token,
             },
         )
+    }
+    pub fn explain(
+        &self,
+        connection: ConnectionId,
+        driver: GridEditDriver,
+        statement: &str,
+        request_token: u64,
+    ) -> std::result::Result<(), String> {
+        let sql = explain_sql(driver, statement)?;
+        if sql.len() > MAX_SQL_BYTES {
+            return Err(SubmitError::InvalidInput.to_string());
+        }
+        self.submit(
+            connection,
+            actor::Command::Explain {
+                driver,
+                sql,
+                request_token,
+            },
+        )
+        .map_err(|error| error.to_string())
     }
     pub fn edit_target_request(
         &self,

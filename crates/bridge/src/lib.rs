@@ -468,6 +468,14 @@ pub mod ffi {
         key: bool,
         duplicable: bool,
     }
+    struct PlanNodeDto {
+        depth: u32,
+        operation: String,
+        target: String,
+        cost: String,
+        rows: String,
+        detail: String,
+    }
     #[derive(Default)]
     struct EditTargetDto {
         qualified_name: String,
@@ -1359,6 +1367,7 @@ pub mod ffi {
         objects: Vec<MetadataDto>,
         edit_affected_rows: Vec<u64>,
         edit_target: EditTargetDto,
+        plan: Vec<PlanNodeDto>,
         result_cell_metadata: Vec<ResultCellMetadataDto>,
         capabilities: u64,
     }
@@ -2403,6 +2412,13 @@ pub mod ffi {
             table: &StructureTableDto,
             changes: Vec<StructureChangeDto>,
         ) -> StructurePlanDto;
+        fn explain(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            driver: &str,
+            statement: &str,
+            request_token: u64,
+        ) -> Submit;
         fn apply_structure(
             engine: &mut BridgeEngine,
             connection: u64,
@@ -4296,4 +4312,19 @@ impl Default for ffi::ObjectGraphDto {
 
 pub fn profile_proxy_needs_password_policy(driver: &str, options: &str) -> bool {
     choscordb_driver_api::profile_proxy_needs_password(driver, options)
+}
+
+pub fn explain(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    driver: &str,
+    statement: &str,
+    request_token: u64,
+) -> ffi::Submit {
+    let driver = grid_edit::grid_driver(driver)
+        .map_err(|_| "This connection cannot explain statements.".to_owned());
+    submit(engine, |e| {
+        e.explain(unpack(connection), driver?, statement, request_token)
+            .map(|()| connection)
+    })
 }

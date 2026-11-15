@@ -350,6 +350,36 @@ pub fn event(
             error(&mut e, err);
             "edit_failed"
         }
+        Event::ExplainReady {
+            connection,
+            request_token,
+            nodes,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            e.plan = nodes
+                .into_iter()
+                .map(|node| ffi::PlanNodeDto {
+                    depth: node.depth,
+                    operation: node.operation,
+                    target: node.target,
+                    cost: node.cost,
+                    rows: node.rows,
+                    detail: node.detail,
+                })
+                .collect();
+            "explain_ready"
+        }
+        Event::ExplainFailed {
+            connection,
+            request_token,
+            error: err,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            error(&mut e, err);
+            "explain_failed"
+        }
         Event::AppearanceLayout {
             request_token,
             appearance,

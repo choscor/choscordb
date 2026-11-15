@@ -695,6 +695,14 @@ GridTemporalText EngineAdapter::gridTemporalText(const QString& kind, const QDat
     const auto dto = grid_temporal_text_policy(utf8View(bytes), parts);
     return {fromRust(dto.text), fromRust(dto.error)};
 }
+bool EngineAdapter::explain(quint64 connection, const QString& driver, const QString& statement,
+                            quint64 requestToken, QString* error) {
+    const auto reply = choscordb::explain(*d_->engine, connection, toRust(driver),
+                                          toRust(statement), requestToken);
+    if (!reply.accepted && error)
+        *error = fromRust(reply.error);
+    return reply.accepted;
+}
 GridPastePlan EngineAdapter::gridPastePlan(const QString& text, int top, int left, int rows,
                                            int columns, int gridRows, int gridColumns) {
     const auto unsignedValue = [](int value) { return static_cast<uint32_t>(std::max(0, value)); };

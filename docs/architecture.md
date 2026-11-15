@@ -97,6 +97,16 @@ The grid stages an expression as `GridEditRow::expressions`. `plan_grid_edits` w
 `GridTemporalKind::text` makes the ISO text of a picked date and time.
 `read_cell_file` and `write_cell_file` in `core` read and write a binary cell. A cell file can have up to `MAX_GRID_BINARY_BYTES` (64 KiB).
 
+### Query plan
+
+The Explain toolbar button (Ctrl+Alt+E) shows the plan of the statement at the cursor in the Query plan sheet.
+`explain_sql` in `core` adds the plan syntax of the driver: `EXPLAIN (FORMAT JSON)` for PostgreSQL, `EXPLAIN FORMAT=JSON` for MySQL and MariaDB, and `EXPLAIN QUERY PLAN` for SQLite.
+These forms do not run the statement. `explain_sql` refuses an empty statement and a statement that is already an `EXPLAIN`.
+`Engine::explain` sends one `Explain` command. The actor reads the plan rows, and `parse_explain` makes a list of `PlanNode` values.
+Each node has a depth, an operation, an object, a cost, a row estimate and a detail.
+A plan has at most `MAX_PLAN_NODES` (10,000) steps. A plan that the parser cannot read is an error.
+The sheet shows the nodes as a tree in the order that Rust returns.
+
 ### Paste and bulk edit
 
 The grid Paste command (Ctrl+V) stages the clipboard text in the selected cells.

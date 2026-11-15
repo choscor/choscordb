@@ -92,6 +92,7 @@ struct MainWindow::Ui {
     QAction* stopOnFirstError{};
     QComboBox* rowLimit{};
     QComboBox* safetyLevel{};
+    QAction* explain{};
     QLabel* connectionTag{};
     QPlainTextEdit* messages{};
     QList<QAction*> searchActions{};

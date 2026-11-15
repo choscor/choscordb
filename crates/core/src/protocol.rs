@@ -109,6 +109,16 @@ pub enum Event {
         request_token: u64,
         error: DriverError,
     },
+    ExplainReady {
+        connection: ConnectionId,
+        request_token: u64,
+        nodes: Vec<crate::PlanNode>,
+    },
+    ExplainFailed {
+        connection: ConnectionId,
+        request_token: u64,
+        error: DriverError,
+    },
     AppearanceLayout {
         request_token: u64,
         appearance: Option<crate::AppearanceLayout>,
