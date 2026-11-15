@@ -141,7 +141,7 @@ class SecondaryDesignTest final : public QObject {
                      QPoint(preferences.width() / 2, preferences.height() - 5) *
                      footerCapture.devicePixelRatio()),
                  QColor("#f8f8f8"));
-        QCOMPARE(preferences.height(), 412);
+        QCOMPARE(preferences.height(), 452);
         auto* tabs = preferences.findChild<QTabWidget*>("preferencesSections");
         const int inset = design::spacing(design::Spacing::Six);
         QCOMPARE(tabs->tabBar()->mapTo(&preferences, QPoint{}).x(), inset);
@@ -171,7 +171,7 @@ class SecondaryDesignTest final : public QObject {
         theme.applyTo(preferences);
         preferences.show();
         QCoreApplication::processEvents();
-        QCOMPARE(preferences.height(), 412);
+        QCOMPARE(preferences.height(), 452);
         auto* tabs = preferences.findChild<QTabWidget*>("preferencesSections");
         QVERIFY(tabs);
         tabs->setCurrentIndex(5);
