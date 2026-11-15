@@ -757,6 +757,32 @@ async fn relation_children<C: GenericClient + Sync>(
         ));
         result.push(child);
     }
+    let rows=bounded_query(client, "SELECT t.oid, t.tgname::text AS name, t.tgtype::int4 AS kind, pg_catalog.pg_get_triggerdef(t.oid,true) AS definition FROM pg_catalog.pg_trigger t WHERE t.tgrelid=$1 AND NOT t.tgisinternal ORDER BY t.tgname LIMIT 10001", &[(&oid, Type::OID)]).await?;
+    check(&rows)?;
+    for row in rows {
+        let id: u32 = row.get("oid");
+        let name = text(&row, "name")?;
+        let (timing, event) = trigger_timing_and_event(row.get("kind"));
+        let mut child = object(
+            format!("pg:trigger:{id}"),
+            Some(parent.clone()),
+            name.clone(),
+            quote(&name),
+            ObjectKind::Trigger,
+            false,
+        );
+        child
+            .properties
+            .push(MetadataProperty::available("Timing", timing));
+        child
+            .properties
+            .push(MetadataProperty::available("Event", event));
+        child.properties.push(MetadataProperty::available(
+            "Definition",
+            text(&row, "definition")?,
+        ));
+        result.push(child);
+    }
     if result.len() > MAX_OBJECTS
         || result
             .iter()
@@ -776,6 +802,26 @@ async fn relation_children<C: GenericClient + Sync>(
         return Err(limit());
     }
     Ok(result)
+}
+fn trigger_timing_and_event(kind: i32) -> (&'static str, String) {
+    let timing = if kind & 2 != 0 {
+        "BEFORE"
+    } else if kind & 64 != 0 {
+        "INSTEAD OF"
+    } else {
+        "AFTER"
+    };
+    let events: Vec<&str> = [
+        (4, "INSERT"),
+        (16, "UPDATE"),
+        (8, "DELETE"),
+        (32, "TRUNCATE"),
+    ]
+    .into_iter()
+    .filter(|(bit, _)| kind & bit != 0)
+    .map(|(_, event)| event)
+    .collect();
+    (timing, events.join(" OR "))
 }
 fn numeric_modifiers(typ: u32, modifier: i32) -> (Option<u32>, Option<i32>) {
     if typ == 1700 && modifier >= 4 {
@@ -961,6 +1007,21 @@ mod tests {
         );
         assert_eq!(quote("a\"b"), "\"a\"\"b\"");
     }
+    #[test]
+    fn trigger_types_become_timing_and_events() {
+        assert_eq!(
+            trigger_timing_and_event(1 | 2 | 4 | 16),
+            ("BEFORE", "INSERT OR UPDATE".to_string())
+        );
+        assert_eq!(
+            trigger_timing_and_event(8 | 32),
+            ("AFTER", "DELETE OR TRUNCATE".to_string())
+        );
+        assert_eq!(
+            trigger_timing_and_event(1 | 64 | 4),
+            ("INSTEAD OF", "INSERT".to_string())
+        );
+    }
 }
 
 #[cfg(test)]
@@ -977,6 +1038,7 @@ mod live_tests {
             .unwrap();
         let task = tokio::spawn(connection);
         client.batch_execute("BEGIN; CREATE SCHEMA \"metadata odd\"; CREATE TABLE \"metadata odd\".\"a\"\"b\" (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, amount numeric(12,-2), stamp timestamptz, label text DEFAULT 'x', doubled numeric GENERATED ALWAYS AS (amount * 2) STORED, UNIQUE(label)); CREATE INDEX \"index odd\" ON \"metadata odd\".\"a\"\"b\" (amount); CREATE VIEW \"metadata odd\".\"view odd\" AS SELECT amount FROM \"metadata odd\".\"a\"\"b\";").await.unwrap();
+        client.batch_execute("CREATE FUNCTION \"metadata odd\".touch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$; CREATE TRIGGER \"touch odd\" BEFORE INSERT OR UPDATE ON \"metadata odd\".\"a\"\"b\" FOR EACH ROW EXECUTE FUNCTION \"metadata odd\".touch();").await.unwrap();
         client.batch_execute("CREATE SEQUENCE \"metadata odd\".counter; CREATE FUNCTION \"metadata odd\".overloaded(value integer) RETURNS integer LANGUAGE sql AS 'SELECT value'; CREATE FUNCTION \"metadata odd\".overloaded(value text) RETURNS text LANGUAGE sql AS 'SELECT value';").await.unwrap();
         let database = load_metadata(&client, None).await.unwrap().remove(0);
         let schema = load_metadata(&client, Some(database.id))
@@ -1003,6 +1065,10 @@ mod live_tests {
         assert_eq!((amount.precision, amount.scale), (Some(12), Some(-2)));
         assert_eq!(children.iter().find(|o|o.name=="label").unwrap().properties.iter().find(|p|p.name=="Default").map(|p|p.value.as_str()), Some("'x'::text"));
         assert!(children.iter().find(|o|o.name=="index odd").unwrap().properties.iter().any(|p|p.name=="Definition" && p.value.contains("USING btree (amount)")));
+        let trigger = children.iter().find(|o| o.kind == ObjectKind::Trigger).unwrap();
+        assert_eq!(trigger.name, "touch odd");
+        assert_eq!(trigger.properties.iter().map(|p| p.value.as_str()).take(2).collect::<Vec<_>>(), ["BEFORE", "INSERT OR UPDATE"]);
+        assert!(trigger.properties[2].value.starts_with("CREATE TRIGGER \"touch odd\" BEFORE INSERT OR UPDATE"));
         assert!(children.iter().any(|o| o.kind == ObjectKind::PrimaryKey));
         assert!(children.iter().any(|o| o.kind == ObjectKind::UniqueKey));
         let index = children.iter().find(|o| o.name == "index odd").unwrap();

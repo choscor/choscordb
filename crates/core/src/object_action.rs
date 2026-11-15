@@ -130,7 +130,7 @@ fn valid_name(name: &str, driver: &str, is_new: bool) -> bool {
     }
 }
 
-fn quoted(name: &str, delimiter: char) -> String {
+pub(crate) fn quoted(name: &str, delimiter: char) -> String {
     let escaped = name.replace(delimiter, &format!("{delimiter}{delimiter}"));
     format!("{delimiter}{escaped}{delimiter}")
 }
@@ -158,7 +158,11 @@ fn quoted_part(input: &str, position: &mut usize) -> Option<String> {
     None
 }
 
-fn identity(driver: &str, object_id: &str, qualified_name: &str) -> Option<(String, String)> {
+pub(crate) fn identity(
+    driver: &str,
+    object_id: &str,
+    qualified_name: &str,
+) -> Option<(String, String)> {
     if object_id.encode_utf16().count() > MAX_NAME_UNITS * 2
         || qualified_name.encode_utf16().count() > MAX_NAME_UNITS * 2
     {

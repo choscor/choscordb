@@ -288,6 +288,15 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
                 if (openGeneratedSql_)
                     openGeneratedSql_(connection, sql);
             });
+    connect(explorer, &ObjectExplorer::triggerScriptRequested, this,
+            [this, explorer](quint64 connection, TriggerScriptRequest request) {
+                request.driver = workspace_->driverForConnection(connection);
+                const auto plan = EngineAdapter::triggerScript(request);
+                if (!plan.error.isEmpty())
+                    explorer->showError(plan.error);
+                else if (openGeneratedSql_)
+                    openGeneratedSql_(connection, plan.sql);
+            });
     connect(explorer, &ObjectExplorer::reconnectRequested, this, [this, explorer] {
         const auto context =
             EngineAdapter::parseObjectTabContext(explorer->property("objectProfileId").toString());

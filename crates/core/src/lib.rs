@@ -43,6 +43,8 @@ mod database_action;
 pub use database_action::{
     DatabaseActionFields, DatabaseActionKind, DatabaseActionRequest, plan_database_action,
 };
+mod trigger_script;
+pub use trigger_script::{TriggerScript, TriggerScriptRequest, trigger_script};
 mod value_preview;
 pub use value_preview::{
     JsonPreviewNode, MAX_JSON_PREVIEW_NODES, VALUE_PREVIEW_MAX_BYTES, ValuePreview,

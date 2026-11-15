@@ -24,6 +24,20 @@ mod database_action;
 mod result_copy;
 mod sql_file;
 pub use database_action::{apply_database_action, database_action_kinds, database_action_plan};
+mod trigger_script;
+fn sql_plan(result: std::result::Result<String, String>) -> ffi::SqlPlanDto {
+    match result {
+        Ok(sql) => ffi::SqlPlanDto {
+            sql,
+            error: String::new(),
+        },
+        Err(error) => ffi::SqlPlanDto {
+            sql: String::new(),
+            error,
+        },
+    }
+}
+pub use trigger_script::{trigger_script, trigger_script_kinds};
 mod value_preview;
 pub use value_preview::{value_preview, value_preview_error};
 mod structure_edit;
@@ -1503,9 +1517,22 @@ pub mod ffi {
         nodes: Vec<JsonPreviewNodeDto>,
         image_format: String,
     }
-    struct DatabaseActionPlanDto {
+    struct SqlPlanDto {
         sql: String,
         error: String,
+    }
+    struct TriggerScriptKindDto {
+        code: String,
+        label: String,
+        needs_trigger: bool,
+    }
+    struct TriggerScriptDto {
+        driver: String,
+        kind: String,
+        table_id: String,
+        table_name: String,
+        trigger: String,
+        definition: String,
     }
     struct StructurePlanDto {
         valid: bool,
@@ -2484,13 +2511,15 @@ pub mod ffi {
             request_token: u64,
         ) -> Submit;
         fn database_action_kinds() -> Vec<DatabaseActionKindDto>;
-        fn database_action_plan(action: &DatabaseActionDto) -> DatabaseActionPlanDto;
+        fn database_action_plan(action: &DatabaseActionDto) -> SqlPlanDto;
         fn apply_database_action(
             engine: &mut BridgeEngine,
             connection: u64,
             action: &DatabaseActionDto,
             request_token: u64,
         ) -> Submit;
+        fn trigger_script_kinds() -> Vec<TriggerScriptKindDto>;
+        fn trigger_script(request: &TriggerScriptDto) -> SqlPlanDto;
         fn sql_file_modes() -> Vec<CodeLabelDto>;
         fn run_sql_file(
             engine: &mut BridgeEngine,

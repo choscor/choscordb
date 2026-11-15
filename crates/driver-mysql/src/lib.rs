@@ -1050,6 +1050,14 @@ fn parse_table(object: &ObjectId) -> Result<(String, String)> {
     }
     Ok((parts[0].clone(), parts[1].clone()))
 }
+type RelationChildRow = (i64, i64, String, String, String, String, String, String);
+fn trigger_definition(name: &str, timing: &str, event: &str, table: &str, body: &str) -> String {
+    format!(
+        "CREATE TRIGGER {} {timing} {event} ON {} FOR EACH ROW {body}",
+        quote(name),
+        quote(table)
+    )
+}
 async fn metadata(
     conn: &mut Conn,
     flavor: Flavor,
@@ -1081,17 +1089,33 @@ async fn metadata(
                 });
             }
         } else if parts.len() == 2 {
-            let rows: Vec<(String,String,String)> = conn.exec("SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION LIMIT ? OFFSET ?", (&parts[0],&parts[1],count,offset)).await.map_err(normalize)?;
-            for (name, typ, nullable) in rows {
+            let rows: Vec<RelationChildRow> = conn.exec("SELECT 0, CAST(ORDINAL_POSITION AS SIGNED), COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, '', '', '' FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? UNION ALL SELECT 1, CAST(ACTION_ORDER AS SIGNED), TRIGGER_NAME, '', '', ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT FROM information_schema.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ? ORDER BY 1, 2, 3 LIMIT ? OFFSET ?", (&parts[0],&parts[1],&parts[0],&parts[1],count,offset)).await.map_err(normalize)?;
+            for (kind, _, name, typ, nullable, timing, event, statement) in rows {
+                let qualified_name =
+                    format!("{}.{}.{}", quote(&parts[0]), quote(&parts[1]), quote(&name));
+                if kind == 1 {
+                    let definition =
+                        trigger_definition(&name, &timing, &event, &parts[1], &statement);
+                    out.push(SchemaObject {
+                        id: id(&[&parts[0], &parts[1], "trigger", &name]),
+                        parent: Some(parent.clone()),
+                        qualified_name: format!("{}.{}", quote(&parts[0]), quote(&name)),
+                        properties: vec![
+                            MetadataProperty::available("Timing", timing),
+                            MetadataProperty::available("Event", event),
+                            MetadataProperty::available("Definition", definition),
+                        ],
+                        name,
+                        kind: ObjectKind::Trigger,
+                        has_children: false,
+                        column: None,
+                    });
+                    continue;
+                }
                 out.push(SchemaObject {
                     id: id(&[&parts[0], &parts[1], &name]),
                     parent: Some(parent.clone()),
-                    qualified_name: format!(
-                        "{}.{}.{}",
-                        quote(&parts[0]),
-                        quote(&parts[1]),
-                        quote(&name)
-                    ),
+                    qualified_name,
                     name: name.clone(),
                     kind: ObjectKind::Column,
                     has_children: false,
@@ -1127,6 +1151,13 @@ async fn metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn trigger_definitions_are_create_statements() {
+        assert_eq!(
+            trigger_definition("a`b", "BEFORE", "INSERT", "orders", "SET NEW.x = 1"),
+            "CREATE TRIGGER `a``b` BEFORE INSERT ON `orders` FOR EACH ROW SET NEW.x = 1"
+        );
+    }
     #[test]
     fn identifies_mysql_and_advertises_supported_features() {
         assert_eq!(MysqlDriver.id(), "mysql");

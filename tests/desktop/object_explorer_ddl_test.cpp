@@ -32,6 +32,79 @@ using namespace choscordb;
 class ObjectExplorerDdlTest final : public QObject {
     Q_OBJECT
   private slots:
+    void triggersPaneListsTriggersAndRequestsTheirSql() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        const QString definition = "CREATE TRIGGER audit_insert AFTER INSERT ON orders BEGIN "
+                                   "INSERT INTO audit VALUES (NEW.id); END";
+        int expected = 0;
+        for (const auto& sql : {QString("CREATE TABLE orders(id INTEGER PRIMARY KEY, total REAL)"),
+                                QString("CREATE TABLE audit(id INTEGER)"), definition}) {
+            const auto query = adapter.execute(*connection, sql);
+            QVERIFY(query);
+            adapter.fetchPage(*query);
+            ++expected;
+            QTRY_COMPARE(finished, expected);
+        }
+        ObjectExplorer explorer(&adapter);
+        explorer.show();
+        QSignalSpy inspection(&adapter, &EngineAdapter::objectInspectionReady);
+        QList<TriggerScriptRequest> requests;
+        connect(&explorer, &ObjectExplorer::triggerScriptRequested, this,
+                [&](quint64 target, const TriggerScriptRequest& request) {
+                    QCOMPARE(target, *connection);
+                    requests.append(request);
+                });
+        explorer.openObject(*connection, R"(["main","orders"])", "main.orders", "table");
+        auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
+        auto* table = explorer.findChild<QTableView*>("objectMetadata");
+        auto* button = explorer.findChild<QPushButton*>("objectTriggerSql");
+        QVERIFY(button);
+        QCOMPARE(tabs->tabText(6), QString("Triggers"));
+        QVERIFY(tabs->isTabVisible(6));
+        QTRY_COMPARE(inspection.count(), 1);
+        QVERIFY(!button->isVisible());
+        QTest::mouseClick(tabs, Qt::LeftButton, Qt::NoModifier, tabs->tabRect(6).center());
+        QTRY_COMPARE(inspection.count(), 2);
+        QVERIFY(button->isVisible());
+        auto* model = table->model();
+        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QString("Timing"));
+        QCOMPARE(model->index(0, 0).data().toString(), QString("audit_insert"));
+        QCOMPARE(model->index(0, 1).data().toString(), QString("AFTER"));
+        QCOMPARE(model->index(0, 2).data().toString(), QString("INSERT"));
+        auto* menu = button->menu();
+        QVERIFY(menu);
+        auto action = [&](const QString& code) {
+            emit menu->aboutToShow();
+            return menu->findChild<QAction*>("objectTrigger_" + code);
+        };
+        table->setCurrentIndex(QModelIndex());
+        QVERIFY(action("create")->isEnabled());
+        QVERIFY(!action("edit")->isEnabled());
+        table->setCurrentIndex(model->index(0, 0));
+        action("edit")->trigger();
+        QCOMPARE(requests.size(), 1);
+        auto request = requests.first();
+        QCOMPARE(request.kind, QString("edit"));
+        QCOMPARE(request.trigger, QString("audit_insert"));
+        request.driver = "sqlite";
+        const auto plan = EngineAdapter::triggerScript(request);
+        QCOMPARE(plan.error, QString());
+        QCOMPARE(plan.sql, "DROP TRIGGER \"main\".\"audit_insert\";\n\n" + definition + ";");
+        explorer.restoreObject(std::nullopt, R"(["main","ix"])", "main.ix", "index");
+        QVERIFY(!tabs->isTabVisible(6));
+    }
     void ddlTextHasTopAndLeftBreathingRoom() {
         EngineAdapter adapter;
         ObjectExplorer explorer(&adapter);

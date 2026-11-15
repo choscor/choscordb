@@ -1,5 +1,5 @@
 #pragma once
-#include <QString>
+#include "bridge/sql_plan.h"
 
 namespace choscordb {
 struct DatabaseActionKindInfo {
@@ -8,8 +8,5 @@ struct DatabaseActionKindInfo {
 };
 struct DatabaseAction {
     QString driver, kind, current, name, newName, encoding, collation, confirmation;
-};
-struct DatabaseActionPlan {
-    QString sql, error;
 };
 }

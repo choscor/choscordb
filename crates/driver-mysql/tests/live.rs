@@ -605,7 +605,27 @@ async fn metadata_ddl_and_independent_object_cursor() {
         .unwrap();
     assert_eq!(table.kind, ObjectKind::Table);
     assert_eq!(table.qualified_name, "`choscordb_test`.`mysql``browse`");
-    let fields = conn.load_metadata(Some(table.id.clone())).await.unwrap();
+    conn.execute(
+        "CREATE TRIGGER IF NOT EXISTS `browse_guard` BEFORE INSERT ON `mysql``browse` FOR EACH ROW BEGIN IF NEW.id < 0 THEN SET NEW.id = 0; END IF; END",
+        QueryOptions::default(),
+    )
+    .await
+    .unwrap();
+    let mut fields = conn.load_metadata(Some(table.id.clone())).await.unwrap();
+    let trigger = fields.pop().unwrap();
+    assert_eq!(trigger.kind, ObjectKind::Trigger);
+    assert_eq!(
+        trigger
+            .properties
+            .iter()
+            .map(|property| property.value.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "BEFORE",
+            "INSERT",
+            "CREATE TRIGGER `browse_guard` BEFORE INSERT ON `mysql``browse` FOR EACH ROW BEGIN IF NEW.id < 0 THEN SET NEW.id = 0; END IF; END"
+        ]
+    );
     assert_eq!(fields.len(), 2);
     assert_eq!(
         fields[1].qualified_name,

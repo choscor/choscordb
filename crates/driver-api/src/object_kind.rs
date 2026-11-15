@@ -43,6 +43,7 @@ pub fn object_kind_traits(kind: &str) -> ObjectKindTraits {
             "index" => Some(1),
             "ddl" => Some(3),
             "data" | "table" => Some(5),
+            "trigger" => Some(6),
             _ if key(kind) => Some(2),
             _ => None,
         },

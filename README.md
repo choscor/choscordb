@@ -29,6 +29,7 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Browse schemas, tables, views, indexes and keys. See the DDL and an ERD of each table.
 - Start a new table, view, function, procedure or schema from a SQL template in the navigator.
 - Rename, clone, truncate or drop a table from the navigator. Each action shows its SQL before it runs. Copy the CREATE, DROP, TRUNCATE or SELECT script of an object.
+- See the triggers of a table. Create, edit or drop a trigger from SQL that opens in a query tab.
 - Pin objects, and find objects, tabs and SQL text with quick search.
 - Save queries, run queries again from the history, and recover unsaved SQL after a crash.
 - Keep the original rows of each applied grid change in the query history.

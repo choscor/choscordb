@@ -210,8 +210,8 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     tabs_->setObjectName("objectTabs");
     tabs_->setAccessibleName(tr("Object inspection panes"));
     tabs_->setExpanding(false);
-    for (const auto& title :
-         {tr("Columns"), tr("Indexes"), tr("Keys"), tr("DDL"), tr("ERD"), tr("Data")})
+    for (const auto& title : {tr("Columns"), tr("Indexes"), tr("Keys"), tr("DDL"), tr("ERD"),
+                              tr("Data"), tr("Triggers")})
         tabs_->addTab(title);
     pages_ = new QStackedWidget(this);
     table_ = new QTableView(pages_);
@@ -230,6 +230,14 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     pages_->addWidget(table_);
+    table_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(table_, &QWidget::customContextMenuRequested, this, [this](const QPoint& position) {
+        if (tabs_->currentIndex() != int(ObjectInspectionPane::Triggers))
+            return;
+        QMenu menu(table_);
+        fillTriggerMenu(menu, table_->indexAt(position).row());
+        design::execContextMenu(menu, table_->viewport()->mapToGlobal(position));
+    });
     ddl_ = new DdlEditor(pages_);
     ddl_->setObjectName("objectDdl");
     ddl_->setAccessibleName(tr("Object DDL"));
@@ -323,8 +331,18 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         connect(action, &QAction::triggered, this, [this, kind] { generateSql(kind); });
     }
     generate_->hide();
+    auto* triggers = new design::Button(tr("Trigger SQL"), headerBody);
+    triggers->setVariant(design::ButtonVariant::Outline);
+    triggers_ = triggers;
+    triggers_->setObjectName("objectTriggerSql");
+    auto* triggerMenu = new QMenu(triggers_);
+    triggers_->setMenu(triggerMenu);
+    connect(triggerMenu, &QMenu::aboutToShow, this,
+            [this, triggerMenu] { fillTriggerMenu(*triggerMenu, table_->currentIndex().row()); });
+    triggers_->hide();
+    header->addWidget(triggers_);
     header->addStretch(1);
-    for (auto* button : {refresh_, open_, generate_}) {
+    for (auto* button : {refresh_, open_, generate_, triggers_}) {
         button->setAccessibleName(button->text());
         button->setToolTip(button->text());
         button->setText({});
@@ -332,6 +350,7 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
         iconButton->setButtonSize(design::ButtonSize::IconSmall);
         iconButton->setDesignIcon(button == open_       ? design::Icon::File
                                   : button == generate_ ? design::Icon::Code
+                                  : button == triggers_ ? design::Icon::Add
                                                         : design::Icon::Refresh);
     }
     setTabOrder(tabs_, refresh_);
@@ -447,7 +466,7 @@ void ObjectExplorer::openObject(quint64 connection, const QString& object, const
     updateActions();
     const bool basic = basicObject(kind);
     tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
-    for (int i = 1; i < 6; ++i)
+    for (int i = 1; i < tabs_->count(); ++i)
         tabs_->setTabVisible(i, (!basic || i == 3) &&
                                     (i != 4 || EngineAdapter::objectKindTraits(kind).diagram));
     requestToken_ = 0;
@@ -478,7 +497,7 @@ void ObjectExplorer::restoreObject(std::optional<quint64> connection, const QStr
     ddl_->clear();
     const bool basic = basicObject(kind);
     tabs_->setTabText(0, basic ? tr("Details") : tr("Columns"));
-    for (int i = 1; i < 6; ++i)
+    for (int i = 1; i < tabs_->count(); ++i)
         tabs_->setTabVisible(i, (!basic || i == 3) &&
                                     (i != 4 || EngineAdapter::objectKindTraits(kind).diagram));
     reconnect_->setEnabled(!connection_);
@@ -520,6 +539,7 @@ void ObjectExplorer::setDisconnected() {
     emit objectChanged();
 }
 void ObjectExplorer::requestPane() {
+    triggers_->setVisible(tabs_->currentIndex() == int(ObjectInspectionPane::Triggers));
     if (!connection_ || operationBusy_)
         return;
     requestToken_ = 0;
@@ -834,6 +854,8 @@ void ObjectExplorer::updateActions() {
     open_->setToolTip(ready ? tr("Open a new query draft for this object.") : unavailable);
     generate_->setEnabled(ready);
     generate_->setToolTip(ready ? tr("Generate SQL without running it.") : unavailable);
+    triggers_->setEnabled(ready);
+    triggers_->setToolTip(ready ? tr("Open trigger SQL in a new query tab.") : unavailable);
     for (auto it = generationActions_.begin(); it != generationActions_.end(); ++it) {
         const auto reason =
             SqlTemplateService::unavailableReason(it.key(), columnsLoaded_, !columns_.isEmpty());
@@ -863,5 +885,33 @@ bool ObjectExplorer::refreshAllowed() const {
 void ObjectExplorer::setRefreshEnabled(bool enabled) {
     refresh_->setEnabled(enabled);
     refreshAction_->setEnabled(enabled);
+}
+void ObjectExplorer::fillTriggerMenu(QMenu& menu, int row) {
+    menu.clear();
+    int definitionColumn = -1;
+    for (int column = 0; column < model_->columnCount(); ++column)
+        if (model_->horizontalHeaderItem(column)->text() == QStringLiteral("Definition"))
+            definitionColumn = column;
+    const bool hasTrigger = row >= 0 && row < model_->rowCount();
+    const bool ready = connection_.has_value() && !operationBusy_;
+    for (const auto& kind : EngineAdapter::triggerScriptKinds()) {
+        auto* action = menu.addAction(kind.label);
+        action->setObjectName("objectTrigger_" + kind.code);
+        action->setEnabled(ready && (!kind.needsTrigger || hasTrigger));
+        connect(action, &QAction::triggered, this, [this, kind, row, hasTrigger, definitionColumn] {
+            if (!connection_ || operationBusy_)
+                return;
+            TriggerScriptRequest request{{}, kind.code, object_, label_, {}, {}};
+            if (hasTrigger) {
+                request.trigger = model_->item(row, 0)->text();
+                if (definitionColumn >= 0)
+                    request.definition = model_->item(row, definitionColumn)->text();
+            }
+            emit triggerScriptRequested(*connection_, request);
+        });
+    }
+}
+void ObjectExplorer::showError(const QString& message) {
+    showStatus(message, Tone::Error, false);
 }
 }

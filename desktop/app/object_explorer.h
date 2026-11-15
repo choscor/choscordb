@@ -7,6 +7,7 @@
 #include <QWidget>
 #include <optional>
 class QAction;
+class QMenu;
 class QPushButton;
 class QTabBar;
 class QTimer;
@@ -43,11 +44,13 @@ class ObjectExplorer final : public QWidget {
     void setOperationBusy(bool busy);
     void showNotice(const QString& message, bool busy = false);
     PanelState panelState() const { return panelState_; }
+    void showError(const QString& message);
   signals:
     void dataRequested(quint64 connection, const QString& object, const QString& label,
                        const QString& relationSubtype);
     void objectChanged();
     void sqlGenerated(quint64 connection, const QString& sql);
+    void triggerScriptRequested(quint64 connection, const TriggerScriptRequest& request);
     void reconnectRequested();
     void paneChanged(int index);
     void relatedTableActivated(quint64 connection, const QString& objectId, const QString& label);
@@ -57,6 +60,7 @@ class ObjectExplorer final : public QWidget {
     [[nodiscard]] bool refreshAllowed() const;
     void setRefreshEnabled(bool enabled);
     void generateSql(const QString& kind);
+    void fillTriggerMenu(QMenu& menu, int row);
     void updateActions();
     void updateFooter();
     void render(const ObjectInspection& inspection);
@@ -80,6 +84,7 @@ class ObjectExplorer final : public QWidget {
     QPushButton* refresh_;
     QPushButton* open_;
     QPushButton* generate_;
+    QPushButton* triggers_;
     design::StatusLine* footer_;
     QPointer<QWidget> dataFooter_;
     QList<QPointer<QWidget>> dataHeaderActions_;

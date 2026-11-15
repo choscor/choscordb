@@ -1240,6 +1240,30 @@ fn load_inner(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObj
                     )?,
                 );
             }
+            let mut q = db
+                .prepare(&format!(
+                    "SELECT name,sql FROM {}.sqlite_schema WHERE type='trigger' AND tbl_name=?1 ORDER BY name",
+                    quote(schema)
+                ))
+                .map_err(normalize)?;
+            let mut rows = q.query([table]).map_err(normalize)?;
+            while let Some(r) = rows.next().map_err(normalize)? {
+                let name: String = r.get(0).map_err(normalize)?;
+                let definition: String = r.get(1).map_err(normalize)?;
+                let (timing, event) = trigger_timing_and_event(&definition);
+                let mut obj = budget.object(
+                    &[schema, table, "trigger", &name],
+                    Some(&parent),
+                    &name,
+                    &[schema, &name],
+                    ObjectKind::Trigger,
+                    false,
+                )?;
+                budget.available(&mut obj, "Timing", timing)?;
+                budget.available(&mut obj, "Event", event)?;
+                budget.available(&mut obj, "Definition", definition)?;
+                push(&mut output, obj);
+            }
             for obj in &mut output {
                 let p = parts(&obj.id)?;
                 match obj.kind {
@@ -1336,6 +1360,39 @@ fn load_inner(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObj
         }
         _ => Ok(vec![]),
     }
+}
+fn trigger_timing_and_event(definition: &str) -> (&'static str, &'static str) {
+    let mut timing = "BEFORE";
+    let mut quote: Option<char> = None;
+    let mut word = String::new();
+    for character in definition.chars().chain(std::iter::once(' ')) {
+        if let Some(close) = quote {
+            if character == close {
+                quote = None;
+            }
+            continue;
+        }
+        if character.is_ascii_alphanumeric() || character == '_' {
+            word.push(character.to_ascii_uppercase());
+            continue;
+        }
+        match word.as_str() {
+            "BEFORE" => timing = "BEFORE",
+            "AFTER" => timing = "AFTER",
+            "INSTEAD" => timing = "INSTEAD OF",
+            "INSERT" => return (timing, "INSERT"),
+            "UPDATE" => return (timing, "UPDATE"),
+            "DELETE" => return (timing, "DELETE"),
+            _ => {}
+        }
+        word.clear();
+        quote = match character {
+            '"' | '\'' | '`' => Some(character),
+            '[' => Some(']'),
+            _ => None,
+        };
+    }
+    (timing, "")
 }
 pub fn ddl(db: &Connection, object: ObjectId) -> Result<String> {
     let p = parts(&object)?;

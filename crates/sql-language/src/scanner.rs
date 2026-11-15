@@ -33,6 +33,7 @@ pub(crate) fn scan_script(
     let (mut i, mut depth) = (0, 0usize);
     let (mut tokens, mut ends): (Vec<Token>, Vec<usize>) = (Vec::new(), Vec::new());
     let mut valid = true;
+    let mut trigger = TriggerBlock::default();
     while i < b.len() {
         let start = i;
         if custom && b[i..].starts_with(delimiter) {
@@ -137,6 +138,7 @@ pub(crate) fn scan_script(
                     directive: Some(start),
                 };
             }
+            trigger.word(&word, first, depth);
             tokens.push(Token { word, start, depth });
         } else {
             match b[i] {
@@ -150,7 +152,7 @@ pub(crate) fn scan_script(
                     valid &= depth > 0;
                     depth = depth.saturating_sub(1);
                 }
-                b';' if depth == 0 && !custom => ends.push(i + 1),
+                b';' if depth == 0 && !custom && trigger.statement_end() => ends.push(i + 1),
                 _ => {}
             }
             i += 1;
@@ -161,6 +163,59 @@ pub(crate) fn scan_script(
         ends,
         valid: valid && depth == 0,
         directive: None,
+    }
+}
+
+#[derive(Default)]
+struct TriggerBlock {
+    prefix: bool,
+    definer: bool,
+    active: bool,
+    depth: usize,
+    after_end: bool,
+}
+
+impl TriggerBlock {
+    fn word(&mut self, word: &str, first: bool, paren_depth: usize) {
+        if first {
+            *self = Self {
+                prefix: word == "CREATE",
+                ..Self::default()
+            };
+            return;
+        }
+        if self.prefix {
+            match word {
+                "TRIGGER" if paren_depth == 0 => {
+                    self.prefix = false;
+                    self.active = true;
+                }
+                "DEFINER" => self.definer = true,
+                "OR" | "REPLACE" | "TEMP" | "TEMPORARY" | "CONSTRAINT" | "CURRENT_USER" => {}
+                _ if self.definer => {}
+                _ => self.prefix = false,
+            }
+            return;
+        }
+        if !self.active {
+            return;
+        }
+        let after_end = std::mem::take(&mut self.after_end);
+        match word {
+            "IF" | "LOOP" | "WHILE" | "REPEAT" if after_end => self.depth += 1,
+            "CASE" if after_end => {}
+            "BEGIN" | "CASE" => self.depth += 1,
+            "END" if self.depth > 0 => {
+                self.depth -= 1;
+                self.after_end = true;
+            }
+            _ => {}
+        }
+    }
+
+    fn statement_end(&mut self) -> bool {
+        self.after_end = false;
+        self.depth == 0
     }
 }
 

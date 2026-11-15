@@ -1556,3 +1556,70 @@ async fn timeout_interrupts_a_suspended_query_after_metadata_work() {
         ErrorKind::Timeout
     );
 }
+#[tokio::test]
+async fn table_children_list_triggers_with_timing_event_and_definition() {
+    let mut c = connect().await;
+    run(
+        &mut c,
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, total REAL)",
+        false,
+    )
+    .await;
+    run(&mut c, "CREATE TABLE audit (id INTEGER)", false).await;
+    run(
+        &mut c,
+        "CREATE TRIGGER \"after\" AFTER UPDATE OF total ON orders BEGIN INSERT INTO audit VALUES (NEW.id); END",
+        false,
+    )
+    .await;
+    run(
+        &mut c,
+        "CREATE TRIGGER guard BEFORE DELETE ON orders BEGIN SELECT RAISE(ABORT, 'no'); END",
+        false,
+    )
+    .await;
+    let children = c
+        .load_metadata(Some(ObjectId(r#"["main","orders"]"#.into())))
+        .await
+        .unwrap();
+    let triggers: Vec<_> = children
+        .iter()
+        .filter(|child| child.kind == ObjectKind::Trigger)
+        .map(|child| {
+            let property = |name: &str| {
+                child
+                    .properties
+                    .iter()
+                    .find(|property| property.name == name)
+                    .map(|property| property.value.clone())
+                    .unwrap()
+            };
+            (
+                child.id.0.clone(),
+                child.name.clone(),
+                property("Timing"),
+                property("Event"),
+                property("Definition"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        triggers,
+        [
+            (
+                r#"["main","orders","trigger","after"]"#.to_string(),
+                "after".to_string(),
+                "AFTER".to_string(),
+                "UPDATE".to_string(),
+                "CREATE TRIGGER \"after\" AFTER UPDATE OF total ON orders BEGIN INSERT INTO audit VALUES (NEW.id); END".to_string()
+            ),
+            (
+                r#"["main","orders","trigger","guard"]"#.to_string(),
+                "guard".to_string(),
+                "BEFORE".to_string(),
+                "DELETE".to_string(),
+                "CREATE TRIGGER guard BEFORE DELETE ON orders BEGIN SELECT RAISE(ABORT, 'no'); END".to_string()
+            ),
+        ]
+    );
+}

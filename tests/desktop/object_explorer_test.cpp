@@ -716,7 +716,7 @@ class ObjectExplorerTest final : public QObject {
         explorer.openObject(*connection, R"(["main","account"])", "\"main\".\"account\"");
         auto* table = explorer.findChild<QTableView*>("objectMetadata");
         auto* tabs = explorer.findChild<QTabBar*>("objectTabs");
-        QCOMPARE(tabs->count(), 6);
+        QCOMPARE(tabs->count(), 7);
         QCOMPARE(tabs->tabText(4), QString("ERD"));
         QCOMPARE(tabs->tabText(5), QString("Data"));
         QTRY_COMPARE(inspection.count(), 1);

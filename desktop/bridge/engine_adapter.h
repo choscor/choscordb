@@ -1,6 +1,7 @@
 #pragma once
 #include "bridge/database_action.h"
 #include "bridge/structure_types.h"
+#include "bridge/trigger_script.h"
 #include "bridge/value_preview.h"
 #include "models/result_table_model.h"
 #include <QDateTime>
@@ -613,7 +614,7 @@ struct SqlGate {
     SqlGateDecision decision = SqlGateDecision::Reject;
     QString title, message, accept;
 };
-enum class ObjectInspectionPane { Columns = 0, Indexes = 1, Keys = 2, Ddl = 3 };
+enum class ObjectInspectionPane { Columns = 0, Indexes = 1, Keys = 2, Ddl = 3, Triggers = 6 };
 enum class MetadataAvailability { Available, Unsupported, Unavailable };
 struct ObjectProperty {
     QString name, value;
@@ -762,7 +763,9 @@ class EngineAdapter final : public QObject {
     static QList<CodeLabel> sqlFileModes();
     static QList<CodeLabel> savedSqlSorts();
     static QList<DatabaseActionKindInfo> databaseActionKinds();
-    static DatabaseActionPlan databaseActionPlan(const DatabaseAction& action);
+    static SqlPlan databaseActionPlan(const DatabaseAction& action);
+    static QList<TriggerScriptKind> triggerScriptKinds();
+    static SqlPlan triggerScript(const TriggerScriptRequest& request);
     bool applyDatabaseAction(quint64 connection, const DatabaseAction& action, quint64 token,
                              QString* error);
     static QString savedSqlSetKeyword(const QString& root, const QString& path,

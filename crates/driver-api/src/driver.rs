@@ -34,6 +34,7 @@ pub enum ObjectKind {
     ForeignKey,
     UniqueKey,
     Index,
+    Trigger,
     Other,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -169,6 +169,16 @@ A binary value gets the image format from its first bytes. The desktop frontend 
 A PDF document gets a summary with the version and the page count. ChoscorDB does not render PDF pages.
 A geometry type gets WKT from WKB, EWKB or hexadecimal EWKB. A MySQL SRID prefix and an EWKB SRID become `SRID=n;`.
 
+### Triggers
+
+Each driver lists the triggers of a table or a view as `ObjectKind::Trigger` children of the relation.
+Each trigger has the Timing, Event and Definition properties. The Definition is a complete `CREATE TRIGGER` statement.
+MySQL and MariaDB read the columns and the triggers in one paged query, thus the page offsets stay correct.
+The Triggers pane of an object tab shows these children. The navigator does not show them.
+`trigger_script` in `core` makes the SQL to create, edit or drop a trigger. Edit gives a `DROP TRIGGER` statement and the definition.
+The desktop frontend opens the SQL in a new query tab. The user reads the SQL and then runs it.
+The SQL scanner keeps a `BEGIN ... END` trigger body in one statement. It counts `BEGIN`, `CASE` and the MySQL `END IF`, `END LOOP`, `END WHILE` and `END REPEAT` blocks.
+
 ### Excel export
 
 `ExportFormat::Xlsx` writes one worksheet with a header row. The `xlsx` module in `export` streams the sheet XML into a ZIP file.

@@ -1,4 +1,4 @@
-use crate::{BridgeEngine, ffi, submit, unpack};
+use crate::{BridgeEngine, ffi, sql_plan, submit, unpack};
 use choscordb_core::{DatabaseActionKind, DatabaseActionRequest, plan_database_action};
 
 pub fn database_action_kinds() -> Vec<ffi::DatabaseActionKindDto> {
@@ -33,17 +33,8 @@ fn planned(dto: &ffi::DatabaseActionDto) -> Result<String, String> {
     })
 }
 
-pub fn database_action_plan(dto: &ffi::DatabaseActionDto) -> ffi::DatabaseActionPlanDto {
-    match planned(dto) {
-        Ok(sql) => ffi::DatabaseActionPlanDto {
-            sql,
-            error: String::new(),
-        },
-        Err(error) => ffi::DatabaseActionPlanDto {
-            sql: String::new(),
-            error,
-        },
-    }
+pub fn database_action_plan(dto: &ffi::DatabaseActionDto) -> ffi::SqlPlanDto {
+    sql_plan(planned(dto))
 }
 
 pub fn apply_database_action(

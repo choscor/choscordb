@@ -292,7 +292,7 @@ QList<DatabaseActionKindInfo> EngineAdapter::databaseActionKinds() {
                       kind.settings, kind.confirmation});
     return kinds;
 }
-DatabaseActionPlan EngineAdapter::databaseActionPlan(const DatabaseAction& action) {
+SqlPlan EngineAdapter::databaseActionPlan(const DatabaseAction& action) {
     const auto plan = database_action_plan(databaseActionDto(action));
     return {fromRust(plan.sql), fromRust(plan.error)};
 }
@@ -303,5 +303,22 @@ bool EngineAdapter::applyDatabaseAction(quint64 connection, const DatabaseAction
     if (!reply.accepted && error)
         *error = fromRust(reply.error);
     return reply.accepted;
+}
+QList<TriggerScriptKind> EngineAdapter::triggerScriptKinds() {
+    QList<TriggerScriptKind> kinds;
+    for (const auto& kind : trigger_script_kinds())
+        kinds.append({fromRust(kind.code), fromRust(kind.label), kind.needs_trigger});
+    return kinds;
+}
+SqlPlan EngineAdapter::triggerScript(const TriggerScriptRequest& request) {
+    TriggerScriptDto dto;
+    dto.driver = toRust(request.driver);
+    dto.kind = toRust(request.kind);
+    dto.table_id = toRust(request.tableId);
+    dto.table_name = toRust(request.tableName);
+    dto.trigger = toRust(request.trigger);
+    dto.definition = toRust(request.definition);
+    const auto plan = trigger_script(dto);
+    return {fromRust(plan.sql), fromRust(plan.error)};
 }
 }
