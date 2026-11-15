@@ -707,13 +707,19 @@ QString EngineAdapter::valuePreviewError(quint64 bytes) {
 ValuePreview EngineAdapter::valuePreview(const QByteArray& bytes, bool binary,
                                          const QString& type) {
     const auto source = value_preview(bridge_detail::byteView(bytes), binary, toRust(type));
-    ValuePreview preview{fromRust(source.kind),         fromRust(source.summary),
-                         fromRust(source.pretty),       fromRust(source.minified),
-                         fromRust(source.image_format), {}};
+    ValuePreview preview{fromRust(source.kind),
+                         fromRust(source.summary),
+                         fromRust(source.pretty),
+                         fromRust(source.minified),
+                         fromRust(source.image_format),
+                         {},
+                         {}};
     preview.nodes.reserve(static_cast<qsizetype>(source.nodes.size()));
     for (const auto& node : source.nodes)
         preview.nodes.append({static_cast<qsizetype>(node.parent), fromRust(node.key),
                               fromRust(node.value), fromRust(node.kind)});
+    preview.pageImage = QByteArray(reinterpret_cast<const char*>(source.page_image.data()),
+                                   static_cast<qsizetype>(source.page_image.size()));
     return preview;
 }
 quint32 EngineAdapter::valueChunkBytes() {

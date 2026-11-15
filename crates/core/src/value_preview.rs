@@ -5,6 +5,8 @@ pub const MAX_JSON_PREVIEW_NODES: usize = 10_000;
 const MAX_JSON_PREVIEW_TEXT_CHARS: usize = 200;
 const MAX_GEOMETRY_DEPTH: usize = 32;
 const MAX_GEOMETRY_POINTS: u64 = 1_000_000;
+const PDF_PREVIEW_SCALE: f32 = 2.0;
+const PDF_PREVIEW_MAX_PIXELS: f32 = 1600.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ValuePreviewKind {
@@ -32,6 +34,7 @@ pub struct ValuePreview {
     pub nodes: Vec<JsonPreviewNode>,
     pub nodes_truncated: bool,
     pub image_format: String,
+    pub page_image: Vec<u8>,
 }
 
 impl ValuePreview {
@@ -44,6 +47,7 @@ impl ValuePreview {
             nodes: Vec::new(),
             nodes_truncated: false,
             image_format: String::new(),
+            page_image: Vec::new(),
         }
     }
 }
@@ -89,7 +93,7 @@ pub fn value_preview(bytes: &[u8], binary: bool, database_type: &str) -> ValuePr
             return preview;
         }
         if bytes.starts_with(b"%PDF-") {
-            return ValuePreview::new(ValuePreviewKind::Pdf, pdf_summary(bytes));
+            return pdf_preview(bytes);
         }
         return ValuePreview::new(
             ValuePreviewKind::None,
@@ -177,26 +181,86 @@ fn image_format(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-fn pdf_summary(bytes: &[u8]) -> String {
+fn pdf_version(bytes: &[u8]) -> String {
     let version: String = bytes[5..]
         .iter()
         .take_while(|byte| byte.is_ascii_digit() || **byte == b'.')
         .take(8)
         .map(|byte| *byte as char)
         .collect();
-    let pages = bytes
-        .windows(12)
-        .filter(|window| window.starts_with(b"/Type") && is_page_marker(window))
-        .count();
-    format!(
-        "PDF document, version {}, about {pages} page(s), {} bytes. ChoscorDB does not render PDF pages.",
-        if version.is_empty() {
-            "unknown"
-        } else {
-            &version
-        },
-        bytes.len()
-    )
+    if version.is_empty() {
+        "unknown".into()
+    } else {
+        version
+    }
+}
+
+fn pdf_preview(bytes: &[u8]) -> ValuePreview {
+    let version = pdf_version(bytes);
+    match render_first_pdf_page(bytes) {
+        Ok((pages, png)) => {
+            let mut preview = ValuePreview::new(
+                ValuePreviewKind::Pdf,
+                format!(
+                    "PDF document, version {version}, {pages} page(s), {} bytes. The preview shows page 1.",
+                    bytes.len()
+                ),
+            );
+            preview.page_image = png;
+            preview
+        }
+        Err(reason) => {
+            let pages = bytes
+                .windows(12)
+                .filter(|window| window.starts_with(b"/Type") && is_page_marker(window))
+                .count();
+            ValuePreview::new(
+                ValuePreviewKind::Pdf,
+                format!(
+                    "PDF document, version {version}, about {pages} page(s), {} bytes. ChoscorDB cannot render it: {reason}.",
+                    bytes.len()
+                ),
+            )
+        }
+    }
+}
+
+fn render_first_pdf_page(bytes: &[u8]) -> Result<(usize, Vec<u8>), &'static str> {
+    use hayro::hayro_interpret::InterpreterSettings;
+    use hayro::hayro_syntax::{LoadPdfError, Pdf};
+    use hayro::vello_cpu::color::palette::css::WHITE;
+    use hayro::{PixmapSettings, RenderCache, RenderSettings, render};
+    let data = bytes.to_vec();
+    std::panic::catch_unwind(move || {
+        let pdf = Pdf::new(data).map_err(|error| match error {
+            LoadPdfError::Decryption(_) => "the document is encrypted",
+            LoadPdfError::Invalid => "the document is not valid",
+        })?;
+        let pages = pdf.pages();
+        let page = pages.first().ok_or("the document has no pages")?;
+        let (width, height) = page.render_dimensions();
+        let longest = width.max(height);
+        if !(longest.is_finite() && longest >= 1.0) {
+            return Err("the first page has no size");
+        }
+        let scale = PDF_PREVIEW_SCALE.min(PDF_PREVIEW_MAX_PIXELS / longest);
+        let pixmap = render(
+            page,
+            &RenderCache::new(),
+            &InterpreterSettings::default(),
+            &RenderSettings::default(),
+            &PixmapSettings {
+                x_scale: scale,
+                y_scale: scale,
+                bg_color: WHITE,
+            },
+        );
+        let png = pixmap
+            .into_png()
+            .map_err(|_| "the page image cannot be encoded")?;
+        Ok((pages.len(), png))
+    })
+    .unwrap_or(Err("the renderer failed"))
 }
 
 fn is_page_marker(window: &[u8]) -> bool {

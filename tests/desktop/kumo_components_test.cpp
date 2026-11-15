@@ -600,6 +600,44 @@ class KumoComponentsTest final : public QObject {
         QVERIFY(ringPixels(profile) > 20);
         QVERIFY(ringPixels(history) > 20);
     }
+    void profileRowsPaintTheConnectionToneDot() {
+        using namespace choscordb::design;
+        QListWidget owner;
+        ThemeManager theme;
+        theme.setMode(ThemeMode::Light);
+        theme.applyTo(owner);
+        auto* item = new QListWidgetItem("Production", &owner);
+        item->setData(NavigationProfileDelegate::DriverRole, "postgres");
+        owner.show();
+        QCoreApplication::processEvents();
+        const auto colors = resolvedThemeForWidget(owner).colors;
+        const auto tonePixels = [&](const QColor& color) {
+            QStyleOptionViewItem option;
+            option.initFrom(&owner);
+            option.widget = &owner;
+            option.rect = QRect(0, 0, 320, dimension(Dimension::Row));
+            option.state = QStyle::State_Enabled;
+            QImage image(option.rect.size(), QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            NavigationProfileDelegate().paint(&painter, option, owner.model()->index(0, 0));
+            painter.end();
+            int count = 0;
+            for (int y = 0; y < image.height(); ++y)
+                for (int x = image.width() / 2; x < image.width(); ++x)
+                    count += image.pixelColor(x, y) == color;
+            return count;
+        };
+        const auto danger = statusToneColor(colors, StatusTone::Danger);
+        const auto success = statusToneColor(colors, StatusTone::Success);
+        QCOMPARE(tonePixels(danger), 0);
+        item->setData(NavigationProfileDelegate::ToneRole, int(StatusTone::Danger));
+        QVERIFY(tonePixels(danger) > 4);
+        QCOMPARE(tonePixels(success), 0);
+        item->setData(NavigationProfileDelegate::ToneRole, int(StatusTone::Success));
+        QVERIFY(tonePixels(success) > 4);
+        QCOMPARE(tonePixels(danger), 0);
+    }
     void choiceControlsShowTheRingAfterTabFocus() {
         using namespace choscordb::design;
         QWidget owner;

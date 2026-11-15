@@ -9,6 +9,7 @@
 #include "models/value_preview_model.h"
 #include "widgets/value_preview_dialog/value_preview_dialog.h"
 #include <QCloseEvent>
+#include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -16,6 +17,7 @@
 #include <QScrollBar>
 #include <QTableView>
 #include <QVBoxLayout>
+#include <QtConcurrent>
 #include <algorithm>
 #include <utility>
 
@@ -291,10 +293,19 @@ void ValueDetailDialog::handlePreviewChunk(const BridgeEvent& event) {
     finishPreview(std::exchange(previewBytes_, {}), fromRust(event.chunk_kind) == "binary");
 }
 void ValueDetailDialog::finishPreview(const QByteArray& bytes, bool binary) {
-    auto* dialog =
-        new ValuePreviewDialog(EngineAdapter::valuePreview(bytes, binary, type_), bytes, this);
-    dialog->open();
+    previewing_ = true;
     updateActions();
+    auto* watcher = new QFutureWatcher<ValuePreview>(this);
+    connect(watcher, &QFutureWatcher<ValuePreview>::finished, this, [this, watcher, bytes] {
+        watcher->deleteLater();
+        previewing_ = false;
+        auto* dialog = new ValuePreviewDialog(watcher->result(), bytes, this);
+        dialog->open();
+        updateActions();
+    });
+    watcher->setFuture(QtConcurrent::run([bytes, binary, type = type_] {
+        return EngineAdapter::valuePreview(bytes, binary, type);
+    }));
 }
 void ValueDetailDialog::handleEvent(const BridgeEvent& event) {
     if (previewing_ && query_ && event.id == *query_ && event.value_handle == handle_ &&

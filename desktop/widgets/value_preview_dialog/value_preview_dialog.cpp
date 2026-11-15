@@ -41,6 +41,18 @@ ValuePreviewDialog::ValuePreviewDialog(const ValuePreview& preview, const QByteA
             design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
         body->addWidget(text_, 1);
     };
+    const auto addImage = [body, sections](const QImage& image, const QString& name) {
+        auto* picture = new QLabel(sections);
+        picture->setObjectName("valuePreviewImage");
+        picture->setPixmap(QPixmap::fromImage(image));
+        picture->setAccessibleName(name);
+        auto* scroll = new QScrollArea(sections);
+        scroll->setObjectName("valuePreviewImageScroll");
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setAlignment(Qt::AlignCenter);
+        scroll->setWidget(picture);
+        body->addWidget(scroll, 1);
+    };
     if (preview.kind == QStringLiteral("json")) {
         auto* tree = new QTreeWidget(sections);
         tree->setObjectName("valuePreviewTree");
@@ -78,20 +90,14 @@ ValuePreviewDialog::ValuePreviewDialog(const ValuePreview& preview, const QByteA
             summary->setText(tr("The %1 image data cannot be decoded.").arg(preview.imageFormat));
             summary->setProperty("designRole", "fieldError");
         } else {
-            auto* picture = new QLabel(sections);
-            picture->setObjectName("valuePreviewImage");
-            picture->setPixmap(QPixmap::fromImage(image));
-            picture->setAccessibleName(tr("%1 image, %2 × %3")
-                                           .arg(preview.imageFormat)
-                                           .arg(image.width())
-                                           .arg(image.height()));
-            auto* scroll = new QScrollArea(sections);
-            scroll->setObjectName("valuePreviewImageScroll");
-            scroll->setFrameShape(QFrame::NoFrame);
-            scroll->setAlignment(Qt::AlignCenter);
-            scroll->setWidget(picture);
-            body->addWidget(scroll, 1);
+            addImage(image, tr("%1 image, %2 × %3")
+                                .arg(preview.imageFormat)
+                                .arg(image.width())
+                                .arg(image.height()));
         }
+    } else if (preview.kind == QStringLiteral("pdf") && !preview.pageImage.isEmpty()) {
+        const auto page = QImage::fromData(preview.pageImage, "PNG");
+        addImage(page, tr("PDF page 1, %1 × %2").arg(page.width()).arg(page.height()));
     }
     auto* close = sections->addAction(design::DialogActionRole::Dismiss, tr("Close"));
     close->setObjectName("valuePreviewClose");

@@ -397,12 +397,52 @@ class ResultCopyWorkspaceTest : public QObject {
         QVERIFY(buffer.open(QIODevice::WriteOnly) && image.save(&buffer, "PNG"));
         QCOMPARE(detail.openInlineValue(png, "bytea", true), QString());
         detail.findChild<QPushButton*>("valuePreviewOpen")->click();
-        auto* preview = detail.findChild<choscordb::ValuePreviewDialog*>();
-        QVERIFY(preview);
+        choscordb::ValuePreviewDialog* preview = nullptr;
+        QTRY_VERIFY((preview = detail.findChild<choscordb::ValuePreviewDialog*>()));
         auto* picture = preview->findChild<QLabel*>("valuePreviewImage");
         QVERIFY(picture);
         QCOMPARE(picture->pixmap().size(), QSize(3, 2));
         QCOMPARE(picture->accessibleName(), QString("PNG image, 3 × 2"));
+    }
+    void valuePreviewRendersTheFirstPdfPage() {
+        const QStringList objects = {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R >>",
+            "<< /Length 26 >>\nstream\n1 0 0 rg 0 0 100 100 re f\nendstream",
+        };
+        QByteArray pdf = "%PDF-1.4\n";
+        QList<qsizetype> offsets;
+        for (qsizetype index = 0; index < objects.size(); ++index) {
+            offsets.append(pdf.size());
+            pdf += QStringLiteral("%1 0 obj\n%2\nendobj\n")
+                       .arg(index + 1)
+                       .arg(objects.at(index))
+                       .toUtf8();
+        }
+        const auto xref = pdf.size();
+        pdf += QStringLiteral("xref\n0 5\n0000000000 65535 f \n").toUtf8();
+        for (const auto offset : offsets)
+            pdf += QStringLiteral("%1 00000 n \n").arg(offset, 10, 10, QChar('0')).toUtf8();
+        pdf += QStringLiteral("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n%1\n%%EOF\n")
+                   .arg(xref)
+                   .toUtf8();
+        choscordb::EngineAdapter adapter;
+        choscordb::ValueDetailDialog detail(&adapter);
+        QCOMPARE(detail.openInlineValue(pdf, "bytea", true), QString());
+        detail.findChild<QPushButton*>("valuePreviewOpen")->click();
+        choscordb::ValuePreviewDialog* preview = nullptr;
+        QTRY_VERIFY((preview = detail.findChild<choscordb::ValuePreviewDialog*>()));
+        QVERIFY(preview->findChild<QLabel*>("valuePreviewSummary")
+                    ->text()
+                    .endsWith(QStringLiteral("1 page(s), %1 bytes. The preview shows page 1.")
+                                  .arg(pdf.size())));
+        auto* picture = preview->findChild<QLabel*>("valuePreviewImage");
+        QVERIFY(picture);
+        QCOMPARE(picture->accessibleName(), QString("PDF page 1, 400 × 200"));
+        const auto page = picture->pixmap().toImage();
+        QCOMPARE(page.pixelColor(50, 100), QColor(Qt::red));
+        QCOMPARE(page.pixelColor(350, 100), QColor(Qt::white));
     }
     void sqlResultsCopyCompleteDeferredFallbackText() {
         choscordb::MainWindow window;

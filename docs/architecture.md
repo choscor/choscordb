@@ -133,6 +133,9 @@ Truncate is available only for tables. PostgreSQL gives `TRUNCATE TABLE` with op
 MySQL and MariaDB give `TRUNCATE TABLE`. SQLite gives `DELETE FROM`.
 Clone makes a new table in the same schema. PostgreSQL uses `LIKE ... INCLUDING ALL`, and MySQL and MariaDB use `CREATE TABLE ... LIKE`. An optional second statement copies the rows.
 SQLite cannot clone a table with its keys and indexes, so the engine returns a typed error.
+The desktop frontend sends the request to `apply_object_action` in `bridge`. The bridge makes the SQL again and runs it through `Engine::apply_ddl`.
+Thus MySQL and MariaDB run the DDL statements, which a grid edit batch does not accept.
+`apply_ddl` runs each statement alone. If the copy of the rows fails after Clone made the table, the new table stays and the error gives the statement number.
 `object_script` gives the text for Copy script as: `DROP`, `TRUNCATE`, or `SELECT` with `SCRIPT_SELECT_ROWS` (100) rows. For `CREATE` it tells the frontend to load the object DDL.
 
 ### New object templates
@@ -166,7 +169,12 @@ The value detail dialog has a Preview action. The dialog loads the complete valu
 `value_preview` in `core` reads the bytes and the database type, and returns one preview kind.
 JSON text gets a pretty form, a minified form and tree rows in document order. The tree stops at `MAX_JSON_PREVIEW_NODES` rows.
 A binary value gets the image format from its first bytes. The desktop frontend decodes and shows the image.
-A PDF document gets a summary with the version and the page count. ChoscorDB does not render PDF pages.
+A PDF document gets a summary with the version and the page count, and a PNG image of page 1.
+The `hayro` crate renders the page in Rust. The longest side of the image is at most 1600 pixels.
+If the document is encrypted or not valid, the summary gives the reason and the dialog shows no page.
+The desktop frontend makes the preview on a worker thread and then opens the preview dialog.
+The `embed-fonts` feature of `hayro` adds the 14 standard PDF fonts from PDFium. These fonts use a BSD-style license.
+The `embed-cmaps` feature is off, because it adds crates with a license that `deny.toml` does not allow.
 A geometry type gets WKT from WKB, EWKB or hexadecimal EWKB. A MySQL SRID prefix and an EWKB SRID become `SRID=n;`.
 
 ### Schema ER diagram
@@ -185,6 +193,7 @@ The navigator shows "Show ER diagram" for each kind with the `schema_diagram` tr
 
 Each driver lists the triggers of a table or a view as `ObjectKind::Trigger` children of the relation.
 Each trigger has the Timing, Event and Definition properties. The Definition is a complete `CREATE TRIGGER` statement.
+On PostgreSQL, the Definition starts with the `CREATE OR REPLACE FUNCTION` statement of the trigger function. Thus Edit can change the function body.
 MySQL and MariaDB read the columns and the triggers in one paged query, thus the page offsets stay correct.
 The Triggers pane of an object tab shows these children. The navigator does not show them.
 `trigger_script` in `core` makes the SQL to create, edit or drop a trigger. Edit gives a `DROP TRIGGER` statement and the definition.

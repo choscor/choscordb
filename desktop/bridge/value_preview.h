@@ -1,4 +1,5 @@
 #pragma once
+#include <QByteArray>
 #include <QList>
 #include <QString>
 
@@ -10,5 +11,6 @@ struct JsonPreviewNode {
 struct ValuePreview {
     QString kind, summary, pretty, minified, imageFormat;
     QList<JsonPreviewNode> nodes;
+    QByteArray pageImage;
 };
 }

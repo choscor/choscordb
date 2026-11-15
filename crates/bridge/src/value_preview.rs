@@ -30,5 +30,6 @@ pub fn value_preview(bytes: &[u8], binary: bool, database_type: &str) -> ffi::Va
             })
             .collect(),
         image_format: preview.image_format,
+        page_image: preview.page_image,
     }
 }
