@@ -1,4 +1,8 @@
 mod completion;
+mod create_templates;
+pub use create_templates::{
+    CreateTemplate, create_template, create_template_parent, create_template_unavailable,
+};
 mod completion_context;
 pub use completion_context::{completion_context, completion_source_supported};
 mod editor;

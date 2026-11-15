@@ -44,6 +44,53 @@ pub fn sql_template_unavailable_reason(
         .unwrap_or_default()
         .into()
 }
+pub fn create_templates() -> Vec<ffi::CodeLabelDto> {
+    language::CreateTemplate::ALL
+        .into_iter()
+        .map(|template| ffi::CodeLabelDto {
+            code: template.code().into(),
+            label: template.label().into(),
+        })
+        .collect()
+}
+
+pub fn create_template_parent_policy(parent_kind: &str) -> bool {
+    language::create_template_parent(parent_kind).is_some()
+}
+
+pub fn create_template_unavailable_reason(object: &str, driver: &str) -> String {
+    match language::CreateTemplate::from_code(object) {
+        Some(template) => language::create_template_unavailable(template, driver)
+            .unwrap_or_default()
+            .into(),
+        None => format!("Unknown object template {object}."),
+    }
+}
+
+pub fn create_template_policy(
+    object: &str,
+    driver: &str,
+    parent_kind: &str,
+    parent_qualified: &str,
+) -> ffi::SqlTemplateResultDto {
+    let result = language::CreateTemplate::from_code(object)
+        .ok_or("Unknown object template.")
+        .and_then(|template| {
+            language::create_template(template, driver, parent_kind, parent_qualified)
+        });
+    match result {
+        Ok(sql) => ffi::SqlTemplateResultDto {
+            valid: true,
+            sql,
+            error: String::new(),
+        },
+        Err(error) => ffi::SqlTemplateResultDto {
+            error: error.into(),
+            ..Default::default()
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

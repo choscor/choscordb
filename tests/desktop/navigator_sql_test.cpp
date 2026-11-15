@@ -11,6 +11,48 @@
 class NavigatorSqlTest : public QObject {
     Q_OBJECT
   private slots:
+    void newObjectTemplatesOpenForSchemasAndConnections() {
+        using namespace choscordb;
+        EngineAdapter engine;
+        QTreeView tree;
+        choscordb::FilterField filter;
+        NavigatorController controller(&engine, &tree, &filter);
+        QString driver = QStringLiteral("postgres");
+        controller.setDriverResolver([&driver](quint64) { return driver; });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        QVERIFY(model->addConnection(11, "fixture"));
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(
+            model->applyChildren(11, {}, requested.last().at(2).toULongLong(),
+                                 {{"pg:namespace:5", "sales", "\"sales\"", "schema", true, {}}}));
+        QSignalSpy generated(&controller, &NavigatorController::sqlGenerated);
+        QMenu schemaMenu;
+        controller.populateContextMenu(&schemaMenu, model->index(0, 0, root));
+        auto* view = schemaMenu.findChild<QAction*>("createObject_view");
+        QVERIFY(view && view->isEnabled());
+        view->trigger();
+        QCOMPARE(generated.count(), 1);
+        QCOMPARE(generated.first().at(0).toULongLong(), quint64(11));
+        QCOMPARE(generated.first().at(1).toString(),
+                 QString("CREATE VIEW \"sales\".new_view AS\nSELECT 1 AS value;"));
+
+        driver = QStringLiteral("sqlite");
+        QMenu rootMenu;
+        controller.populateContextMenu(&rootMenu, root);
+        auto* function = rootMenu.findChild<QAction*>("createObject_function");
+        auto* table = rootMenu.findChild<QAction*>("createObject_table");
+        QVERIFY(function && !function->isEnabled());
+        QCOMPARE(function->toolTip(), QString("SQLite does not support this object type."));
+        QVERIFY(table && table->isEnabled());
+        table->trigger();
+        QCOMPARE(generated.last().at(1).toString(),
+                 QString("CREATE TABLE new_table (\n  id INTEGER PRIMARY KEY\n);"));
+    }
     void unsupportedRelationSubtypesExplainWhyActionsAreUnavailable() {
         using namespace choscordb;
         EngineAdapter engine;

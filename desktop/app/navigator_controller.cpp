@@ -567,6 +567,40 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                               index.data(NavigatorModel::KindRole).toString(),
                               index.data(NavigatorModel::PropertiesRole).toList());
     });
+    if (SqlTemplateService::createParent(objectKind)) {
+        const auto parentConnection = index.data(NavigatorModel::ConnectionRole).toULongLong();
+        const auto parentDriver =
+            driverResolver_ ? driverResolver_(parentConnection).toLower() : QString{};
+        auto* create = menu->addMenu(tr("New"));
+        create->setObjectName("createObject");
+        for (const auto& kind : SqlTemplateService::createTemplates()) {
+            auto* action = create->addAction(kind.label);
+            action->setObjectName(QStringLiteral("createObject_") + kind.code);
+            const auto reason =
+                SqlTemplateService::createUnavailableReason(kind.code, parentDriver);
+            action->setEnabled(reason.isEmpty());
+            if (!reason.isEmpty()) {
+                action->setToolTip(reason);
+                create->setToolTipsVisible(true);
+            }
+            connect(action, &QAction::triggered, this,
+                    [this, index, code = kind.code, parentConnection, parentDriver] {
+                        if (!index.isValid() || index.model() != model_) {
+                            emit generationFailed(
+                                tr("The selected object is no longer available."));
+                            return;
+                        }
+                        const auto result = SqlTemplateService::create(
+                            code, parentDriver, index.data(NavigatorModel::KindRole).toString(),
+                            index.data(NavigatorModel::QualifiedNameRole).toString());
+                        if (!result.valid) {
+                            emit generationFailed(result.error);
+                            return;
+                        }
+                        emit sqlGenerated(parentConnection, result.sql);
+                    });
+        }
+    }
     if (!traits.objectActions)
         return;
     const auto connection = index.data(NavigatorModel::ConnectionRole).toULongLong();

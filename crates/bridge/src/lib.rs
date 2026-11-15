@@ -2175,6 +2175,15 @@ pub mod ffi {
             max_bytes: u32,
         ) -> Submit;
         fn load_value(engine: &mut BridgeEngine, query: u64, handle: u64) -> Submit;
+        fn create_templates() -> Vec<CodeLabelDto>;
+        fn create_template_parent_policy(parent_kind: &str) -> bool;
+        fn create_template_unavailable_reason(object: &str, driver: &str) -> String;
+        fn create_template_policy(
+            object: &str,
+            driver: &str,
+            parent_kind: &str,
+            parent_qualified: &str,
+        ) -> SqlTemplateResultDto;
         fn list_databases(engine: &mut BridgeEngine, connection: u64, request_token: u64)
         -> Submit;
         fn profile_with_database(profile: ProfileDto, target: &str) -> ProfileDatabaseDto;

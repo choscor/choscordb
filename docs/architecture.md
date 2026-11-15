@@ -107,6 +107,13 @@ Clone makes a new table in the same schema. PostgreSQL uses `LIKE ... INCLUDING 
 SQLite cannot clone a table with its keys and indexes, so the engine returns a typed error.
 `object_script` gives the text for Copy script as: `DROP`, `TRUNCATE`, or `SELECT` with `SCRIPT_SELECT_ROWS` (100) rows. For `CREATE` it tells the frontend to load the object DDL.
 
+### New object templates
+
+`create_template` in `sql-language` gives the SQL to start a new table, view, function, procedure or schema.
+A schema parent qualifies the new name. A connection or database parent does not.
+SQLite supports only tables and views, so the other templates return a reason, and the menu item is disabled.
+MySQL and MariaDB make a schema with `CREATE DATABASE`.
+
 ### Switch database
 
 `Connection::list_databases` gives the databases that a connection can switch to, and the current one.

@@ -28,4 +28,27 @@ QString SqlTemplateService::unavailableReason(const QString& kind, bool columnsL
     const auto bytes = kind.toUtf8();
     return fromRust(sql_template_unavailable_reason(utf8View(bytes), columnsLoaded, hasColumn));
 }
+QList<CreateTemplateKind> SqlTemplateService::createTemplates() {
+    QList<CreateTemplateKind> result;
+    for (const auto& kind : create_templates())
+        result.append({fromRust(kind.code), fromRust(kind.label)});
+    return result;
+}
+bool SqlTemplateService::createParent(const QString& parentKind) {
+    return create_template_parent_policy(toRust(parentKind));
+}
+QString SqlTemplateService::createUnavailableReason(const QString& object, const QString& driver) {
+    return fromRust(create_template_unavailable_reason(toRust(object), toRust(driver)));
+}
+SqlTemplateResult SqlTemplateService::create(const QString& object, const QString& driver,
+                                             const QString& parentKind,
+                                             const QString& parentQualified) {
+    if (!parentQualified.isValidUtf16())
+        return {false, {}, QStringLiteral("SQL template input is not valid Unicode.")};
+    const auto result = create_template_policy(toRust(object), toRust(driver), toRust(parentKind),
+                                               toRust(parentQualified));
+    if (!result.valid)
+        return {false, {}, fromRust(result.error)};
+    return {true, fromRust(result.sql), {}};
+}
 }
