@@ -23,7 +23,7 @@ Each crate name starts with `choscordb-`.
 | `credentials` | Access to the credential store of the operating system. | `driver-api` |
 | `result-store` | Temporary disk storage for result pages. | `driver-api` |
 | `result-cache` | The application-wide page cache with memory budgets. | `driver-api` |
-| `export` | Streams result rows to a file. It never runs SQL. | `driver-api` |
+| `export` | Streams result rows to a file and formats copied rows. It never runs SQL. | `driver-api` |
 | `pins` | Pin storage and pin identity. | `driver-api` |
 | `diagnostics` | Local diagnostics with privacy limits. It never records SQL, row values or paths. | None |
 | `update` | Signed update metadata and package verification. | None |

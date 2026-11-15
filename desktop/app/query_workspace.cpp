@@ -294,6 +294,15 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                                               : selected);
                 connect(action, &QAction::triggered, this, [this, scope] { copyResult(scope); });
             }
+            auto* copyAs = menu.addMenu(tr("Copy selected rows as"));
+            copyAs->setObjectName("copyRowsAs");
+            copyAs->setEnabled(selected);
+            for (const auto& format : EngineAdapter::copyFormats()) {
+                auto* action = copyAs->addAction(format.label);
+                action->setObjectName(QStringLiteral("copyRowsAs_") + format.code);
+                connect(action, &QAction::triggered, this,
+                        [this, code = format.code] { copyResult(1, code); });
+            }
             if (widgets_.addRow) {
                 menu.addSeparator();
                 for (auto command :

@@ -184,6 +184,36 @@ class ResultCopyWorkspaceTest : public QObject {
         QTimer::singleShot(0, &window, [&] {
             auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
             QVERIFY(menu);
+            auto* action = menu->findChild<QAction*>("copyRowsAs_markdown");
+            if (!action) {
+                menu->close();
+                QFAIL("missing Copy as Markdown action");
+            }
+            action->trigger();
+            menu->close();
+        });
+        emit grid.customContextMenuRequested(QPoint(0, 0));
+        QTRY_COMPARE(QApplication::clipboard()->text(),
+                     QString("| a | b |\n| --- | --- |\n| 2 | second |\n"));
+        workspace.setDriverForConnection(0, "sqlite");
+        QTimer::singleShot(0, &window, [&] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            QVERIFY(menu);
+            auto* action = menu->findChild<QAction*>("copyRowsAs_sql_insert");
+            if (!action) {
+                menu->close();
+                QFAIL("missing Copy as SQL action");
+            }
+            action->trigger();
+            menu->close();
+        });
+        emit grid.customContextMenuRequested(QPoint(0, 0));
+        QTRY_VERIFY(messages.toPlainText().contains("one table"));
+        QCOMPARE(QApplication::clipboard()->text(),
+                 QString("| a | b |\n| --- | --- |\n| 2 | second |\n"));
+        QTimer::singleShot(0, &window, [&] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            QVERIFY(menu);
             auto* action = menu->findChild<QAction*>("copyCurrentPage");
             if (!action) {
                 menu->close();

@@ -22,6 +22,8 @@ QString copyError(const CopyResultDto& result) {
                            "copy the complete value.");
     if (code == QLatin1String("limit"))
         return QObject::tr("Copied selection exceeds the clipboard size limit.");
+    if (code == QLatin1String("invalid_format"))
+        return fromRust(result.reason);
     return QObject::tr("A copied value is invalid.");
 }
 }
@@ -30,6 +32,12 @@ ResultTableModel::CopyEvaluation ResultTableModel::evaluateCopy(CopySnapshot sna
     CopyRequestDto request;
     request.byte_budget = snapshot.byteBudget;
     request.valid_unicode = true;
+    request.format = bridge_detail::toRust(snapshot.format);
+    request.driver = bridge_detail::toRust(snapshot.driver);
+    for (const auto& column : snapshot.columns)
+        request.columns.push_back(bridge_detail::toRust(column));
+    for (const auto& source : snapshot.sourceTables)
+        request.source_tables.push_back(bridge_detail::toRust(source));
     for (auto& row : snapshot.rows) {
         CopyRowDto rowDto;
         for (auto& selected : row) {
@@ -58,7 +66,7 @@ ResultTableModel::CopyEvaluation ResultTableModel::evaluateCopy(CopySnapshot sna
             bridge_detail::cellDto(resolution.resolved, false, &request.valid_unicode);
         request.resolutions.push_back(std::move(resolutionDto));
     }
-    const auto result = render_copy_tsv_policy(std::move(request));
+    const auto result = render_copy_policy(std::move(request));
     if (!result.error.empty())
         return {.text = {}, .error = copyError(result)};
     return {.text = fromRust(result.text), .error = {}};

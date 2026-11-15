@@ -46,7 +46,10 @@ pub enum SubmitError {
 }
 pub use crate::query_machine::QueryState;
 pub type ExportId = Handle;
-pub use choscordb_export::{ExportFormat, SqlDialect, sql_export_table_error};
+pub use choscordb_export::{
+    CLIPBOARD_SQL_TABLE_REQUIRED, ClipboardFormat, ExportFormat, SqlDialect, render_clipboard,
+    sql_export_table_error,
+};
 
 pub enum Event {
     SshHostKeysInspected {

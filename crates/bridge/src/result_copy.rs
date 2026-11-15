@@ -1,5 +1,67 @@
 use crate::{convert, ffi};
-use choscordb_result_store::{CopyCell, CopyError, CopyRequest, render_copy_tsv};
+use choscordb_core::{ClipboardFormat, SqlDialect, render_clipboard};
+use choscordb_result_store::{
+    CopyCell, CopyError, CopyRequest, render_copy_tsv, resolve_copy_rows,
+};
+
+const FORMATS: [(&str, &str); 7] = [
+    ("tsv", "Tab-separated values"),
+    ("csv", "CSV"),
+    ("csv_header", "CSV with header"),
+    ("markdown", "Markdown table"),
+    ("html", "HTML table"),
+    ("sql_insert", "SQL INSERT"),
+    ("json", "JSON"),
+];
+
+pub fn copy_format_options() -> Vec<ffi::CopyFormatOptionDto> {
+    FORMATS
+        .iter()
+        .map(|(code, label)| ffi::CopyFormatOptionDto {
+            code: (*code).into(),
+            label: (*label).into(),
+        })
+        .collect()
+}
+
+pub(crate) fn sql_dialect(driver: &str) -> Option<SqlDialect> {
+    match driver {
+        "sqlite" => Some(SqlDialect::Sqlite),
+        "postgres" | "postgresql" => Some(SqlDialect::Postgres),
+        "mysql" | "mariadb" => Some(SqlDialect::Mysql),
+        _ => None,
+    }
+}
+
+enum Rendered {
+    Copy(CopyError),
+    Format(String),
+}
+
+fn render(mut source: ffi::CopyRequestDto) -> Result<String, Rendered> {
+    let format = std::mem::take(&mut source.format);
+    let columns = std::mem::take(&mut source.columns);
+    let sources = std::mem::take(&mut source.source_tables);
+    let dialect = sql_dialect(&source.driver);
+    let request = request(source).map_err(Rendered::Copy)?;
+    if format == "tsv" {
+        return render_copy_tsv(request).map_err(Rendered::Copy);
+    }
+    let table = match sources.split_first() {
+        Some((first, rest)) if rest.iter().all(|source| source == first) => first.as_str(),
+        _ => "",
+    };
+    let budget = request.byte_budget / 2;
+    let format = ClipboardFormat::parse(&format, table, dialect)
+        .map_err(|error| Rendered::Format(error.message))?;
+    let rows = resolve_copy_rows(request).map_err(Rendered::Copy)?;
+    let text = render_clipboard(&format, &columns, &rows)
+        .map_err(|error| Rendered::Format(error.message))?;
+    if text.encode_utf16().count() > budget {
+        return Err(Rendered::Copy(CopyError::Limit));
+    }
+    Ok(text)
+}
 
 fn request(source: ffi::CopyRequestDto) -> Result<CopyRequest, CopyError> {
     if !source.valid_unicode {
@@ -50,13 +112,18 @@ fn request(source: ffi::CopyRequestDto) -> Result<CopyRequest, CopyError> {
     })
 }
 
-pub fn render_copy_tsv_policy(source: ffi::CopyRequestDto) -> ffi::CopyResultDto {
-    match request(source).and_then(render_copy_tsv) {
+pub fn render_copy_policy(source: ffi::CopyRequestDto) -> ffi::CopyResultDto {
+    match render(source) {
         Ok(text) => ffi::CopyResultDto {
             text,
             ..Default::default()
         },
-        Err(error) => {
+        Err(Rendered::Format(reason)) => ffi::CopyResultDto {
+            error: "invalid_format".into(),
+            reason,
+            ..Default::default()
+        },
+        Err(Rendered::Copy(error)) => {
             let (code, database_type, reason) = match error {
                 CopyError::InvalidInput => ("invalid_input", String::new(), String::new()),
                 CopyError::InvalidResolution => {

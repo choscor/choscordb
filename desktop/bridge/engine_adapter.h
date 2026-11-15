@@ -144,6 +144,10 @@ struct CellFilterOption {
     bool enabled;
     QString reason;
 };
+struct CopyFormatOption {
+    QString code;
+    QString label;
+};
 struct CellFilterComposition {
     QString expression;
     QString validationError;
@@ -638,6 +642,7 @@ class EngineAdapter final : public QObject {
     static QString gridRowInsertError(qsizetype rows);
     static ObjectKindTraits objectKindTraits(const QString& kind);
     static const NavigatorSearchBudget& navigatorSearchBudget();
+    static const QList<CopyFormatOption>& copyFormats();
     static DriverWorkflow driverWorkflow(const QString& driver);
     static const TransactionGuard& transactionGuard(bool transactionActive);
     static RowStatus rowStatus(RowStatusCause cause, const QString& detail = {});

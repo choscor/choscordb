@@ -650,6 +650,15 @@ quint32 EngineAdapter::recentHistoryRows() {
     static const quint32 rows = recent_history_rows();
     return rows;
 }
+const QList<CopyFormatOption>& EngineAdapter::copyFormats() {
+    static const QList<CopyFormatOption> formats = [] {
+        QList<CopyFormatOption> output;
+        for (const auto& option : copy_format_options())
+            output.append({fromRust(option.code), fromRust(option.label)});
+        return output;
+    }();
+    return formats;
+}
 const NavigatorSearchBudget& EngineAdapter::navigatorSearchBudget() {
     static const NavigatorSearchBudget budget = [] {
         const auto dto = navigator_search_budget();

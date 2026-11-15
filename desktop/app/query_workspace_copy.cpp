@@ -24,7 +24,19 @@ QString copyAssemblyError(const QString& code) {
 }
 }
 
-void QueryWorkspace::copyResult(int scope) {
+std::optional<ResultTableModel::CopySnapshot>
+QueryWorkspace::formattedCopySnapshot(const QItemSelection& selection, int scope,
+                                      const QString& format,
+                                      const ResultTableModel::ResolvedCells& resolved) const {
+    auto snapshot = model_->copySnapshot(selection, scope, resolved);
+    if (snapshot) {
+        snapshot->format = format;
+        snapshot->driver = driverForConnection(queryConnection_.value_or(0));
+    }
+    return snapshot;
+}
+
+void QueryWorkspace::copyResult(int scope, const QString& format) {
     ++copyGeneration_;
     pendingCopy_.reset();
     if (widgets_.grid->model() != model_ || !widgets_.grid->selectionModel() ||
@@ -37,12 +49,13 @@ void QueryWorkspace::copyResult(int scope) {
         return;
     PendingCopy request;
     request.scope = scope;
+    request.format = format;
     request.selectionGeneration = selectionGeneration_;
     request.anchor = model_->index(0, 0);
     request.query = query_.value_or(0);
     request.deferred = model_->copyDeferredCells(selection, scope);
     if (request.deferred.empty()) {
-        auto snapshot = model_->copySnapshot(selection, scope);
+        auto snapshot = formattedCopySnapshot(selection, scope, format);
         if (snapshot)
             renderCopy(std::move(*snapshot), request.anchor, request.query,
                        request.selectionGeneration, request.scope, copyGeneration_);
@@ -100,7 +113,8 @@ void QueryWorkspace::requestCopyChunk() {
     if (request.next == request.deferred.size()) {
         if (request.scope != 2 && request.selectionGeneration != selectionGeneration_)
             return failCopy(tr("The selection changed before copying completed."));
-        auto snapshot = model_->copySnapshot(request.selection, request.scope, request.resolved);
+        auto snapshot = formattedCopySnapshot(request.selection, request.scope, request.format,
+                                              request.resolved);
         const auto anchor = request.anchor;
         const auto query = request.query;
         const auto selectionGeneration = request.selectionGeneration;

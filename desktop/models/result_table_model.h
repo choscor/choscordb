@@ -98,6 +98,10 @@ class ResultTableModel final : public QAbstractTableModel {
         std::vector<std::vector<std::optional<CopyCellSnapshot>>> rows;
         std::vector<CopyResolutionSnapshot> resolutions;
         std::size_t byteBudget = 0;
+        QString format = QStringLiteral("tsv");
+        QString driver;
+        QStringList columns;
+        QStringList sourceTables;
     };
     struct CopyEvaluation {
         QString text;

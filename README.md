@@ -8,7 +8,8 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Keep passwords in the credential store of the operating system. Connect through an SSH tunnel or TLS.
 - Write SQL with completion, search and replace, and run options.
 - Read large results page by page. Filter, sort and edit table rows.
-- Copy rows, or export results to CSV, JSON, JSON Lines or SQL `INSERT` statements.
+- Copy rows as TSV, CSV, Markdown, HTML, JSON or SQL `INSERT` statements.
+- Export results to CSV, JSON, JSON Lines or SQL `INSERT` statements.
 - Browse schemas, tables, views, indexes and keys. See the DDL and an ERD of each table.
 - Pin objects, and find objects, tabs and SQL text with quick search.
 - Save queries, run queries again from the history, and recover unsaved SQL after a crash.

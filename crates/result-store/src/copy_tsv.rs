@@ -247,3 +247,46 @@ pub fn render_copy_tsv(request: CopyRequest) -> Result<String, CopyError> {
     }
     Ok(output.text)
 }
+
+pub fn resolve_copy_rows(request: CopyRequest) -> Result<Vec<Vec<Value>>, CopyError> {
+    if request
+        .rows
+        .iter()
+        .any(|row| row.len() != request.rows[0].len())
+    {
+        return Err(CopyError::InvalidInput);
+    }
+    for (original, resolved) in &request.resolutions {
+        validate_resolution(original.as_ref(), resolved)?;
+    }
+    request
+        .rows
+        .into_iter()
+        .map(|row| {
+            row.into_iter()
+                .map(|cell| {
+                    let Some(cell) = cell else {
+                        return Ok(Value::Null);
+                    };
+                    if let Some(loaded) = cell.resolved.as_ref() {
+                        validate_resolution(Some(&cell.original), loaded)?;
+                    }
+                    match cell.resolved.unwrap_or(cell.original) {
+                        Value::Unavailable {
+                            database_type,
+                            reason,
+                        } => Err(CopyError::Unavailable {
+                            database_type,
+                            reason,
+                        }),
+                        Value::Deferred { .. } | Value::DeferredFallback { .. } => {
+                            Err(CopyError::Deferred)
+                        }
+                        _ if cell.inserted_omitted => Ok(Value::Null),
+                        value => Ok(value),
+                    }
+                })
+                .collect()
+        })
+        .collect()
+}

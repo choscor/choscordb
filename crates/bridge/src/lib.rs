@@ -30,6 +30,7 @@ pub use screen_state::{
     updater_transition,
 };
 mod result_json;
+pub use choscordb_core::CLIPBOARD_SQL_TABLE_REQUIRED;
 pub use completion::*;
 pub use diagnostics::*;
 pub use document_io::{document_path_status, read_sql_document_file, write_sql_document_file};
@@ -42,7 +43,7 @@ pub use grid_edit::{
 pub use metadata_policy::{
     navigator_object_visible_policy, system_schema_node_policy, system_schemas_hidden_policy,
 };
-pub use result_copy::render_copy_tsv_policy;
+pub use result_copy::{copy_format_options, render_copy_policy};
 pub use result_json::{
     json_cell_readiness_policy, json_page_readiness_policy, json_row_readiness_policy,
     render_json_cell_policy, render_json_page_policy, render_json_row_policy,
@@ -371,6 +372,14 @@ pub mod ffi {
         resolutions: Vec<CopyResolutionDto>,
         byte_budget: u64,
         valid_unicode: bool,
+        format: String,
+        columns: Vec<String>,
+        source_tables: Vec<String>,
+        driver: String,
+    }
+    struct CopyFormatOptionDto {
+        code: String,
+        label: String,
     }
     #[derive(Default)]
     struct CopyResultDto {
@@ -1505,7 +1514,8 @@ pub mod ffi {
             budget: u64,
             valid_unicode: bool,
         ) -> JsonViewResultDto;
-        fn render_copy_tsv_policy(request: CopyRequestDto) -> CopyResultDto;
+        fn render_copy_policy(request: CopyRequestDto) -> CopyResultDto;
+        fn copy_format_options() -> Vec<CopyFormatOptionDto>;
         type RustDiagnostics;
         type DiagnosticCancellation;
         fn diagnostics_clone(service: &RustDiagnostics) -> Box<RustDiagnostics>;
@@ -2652,12 +2662,7 @@ pub fn start_export_dialect(
     dialect: &str,
 ) -> ffi::Submit {
     submit(engine, |e| {
-        let dialect = match dialect {
-            "sqlite" => choscordb_core::SqlDialect::Sqlite,
-            "postgres" => choscordb_core::SqlDialect::Postgres,
-            "mysql" => choscordb_core::SqlDialect::Mysql,
-            _ => return Err("Unknown SQL dialect".into()),
-        };
+        let dialect = result_copy::sql_dialect(dialect).ok_or("Unknown SQL dialect")?;
         let format = match format {
             "csv" => choscordb_core::ExportFormat::Csv,
             "json" => choscordb_core::ExportFormat::Json,

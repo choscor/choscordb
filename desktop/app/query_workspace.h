@@ -209,7 +209,10 @@ class QueryWorkspace final : public QObject {
     void failRowJson(const QString& error);
     void clearRowJson();
     void handleRowJsonEvent(const BridgeEvent& event);
-    void copyResult(int scope);
+    void copyResult(int scope, const QString& format = QStringLiteral("tsv"));
+    std::optional<ResultTableModel::CopySnapshot>
+    formattedCopySnapshot(const QItemSelection& selection, int scope, const QString& format,
+                          const ResultTableModel::ResolvedCells& resolved = {}) const;
     void renderCopy(ResultTableModel::CopySnapshot snapshot, QPersistentModelIndex anchor,
                     quint64 query, quint64 selectionGeneration, int scope, quint64 generation);
     void requestCopyChunk();
@@ -278,6 +281,7 @@ class QueryWorkspace final : public QObject {
     quint64 rowJsonResolvedBytes_ = 0;
     struct PendingCopy {
         int scope = 0;
+        QString format;
         QItemSelection selection;
         quint64 selectionGeneration = 0;
         QPersistentModelIndex anchor;

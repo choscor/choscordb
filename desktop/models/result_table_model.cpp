@@ -938,6 +938,13 @@ ResultTableModel::copySnapshot(const QItemSelection& selection, int scope,
             original = rows_[row][column];
         snapshot.resolutions.push_back({std::move(original), value});
     }
+    for (int column = shape->minColumn; column <= shape->maxColumn; ++column) {
+        snapshot.columns.append(columns_[static_cast<std::size_t>(column)].name);
+        snapshot.sourceTables.append(
+            column < static_cast<int>(cellMetadata_.size())
+                ? cellMetadata_[static_cast<std::size_t>(column)].sourceQualifiedName
+                : QString{});
+    }
     snapshot.rows.reserve(shape->rows.size());
     for (std::size_t line = 0; line < shape->rows.size(); ++line) {
         const int row = shape->rows[line];

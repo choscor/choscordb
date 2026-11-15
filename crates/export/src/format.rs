@@ -1,5 +1,5 @@
 use choscordb_driver_api::*;
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SqlDialect {
     Sqlite,
     Postgres,

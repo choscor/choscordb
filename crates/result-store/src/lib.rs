@@ -1,6 +1,6 @@
 mod codec;
 mod copy_tsv;
-pub use copy_tsv::{CopyCell, CopyError, CopyRequest, render_copy_tsv};
+pub use copy_tsv::{CopyCell, CopyError, CopyRequest, render_copy_tsv, resolve_copy_rows};
 mod deferred_assembler;
 pub use deferred_assembler::{
     CompletedDeferredValue, DeferredAssembler, DeferredAssemblerError, DeferredLoadPolicy,

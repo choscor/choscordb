@@ -1,5 +1,7 @@
 use choscordb_driver_api::{Handle, Value};
-use choscordb_result_store::{CopyCell, CopyError, CopyRequest, render_copy_tsv};
+use choscordb_result_store::{
+    CopyCell, CopyError, CopyRequest, render_copy_tsv, resolve_copy_rows,
+};
 
 fn cell(original: Value) -> Option<CopyCell> {
     Some(CopyCell {
@@ -130,4 +132,35 @@ fn real_values_use_grid_precision_and_normalize_negative_zero() {
         render_copy_tsv(selection).unwrap(),
         "0\t0.10000000000000001"
     );
+}
+
+#[test]
+fn resolves_rows_to_values_with_holes_as_null_and_loaded_values() {
+    let original = Value::Deferred {
+        handle: Handle {
+            slot: 1,
+            generation: 2,
+        },
+        byte_length: 3,
+        database_type: "text".into(),
+    };
+    let mut selection = request(vec![vec![cell(Value::Integer(7)), None, cell(original)]]);
+    assert_eq!(
+        resolve_copy_rows(selection.clone()),
+        Err(CopyError::Deferred)
+    );
+    selection.rows[0][2].as_mut().unwrap().resolved = Some(Value::Text("abc".into()));
+    selection.rows[0][0].as_mut().unwrap().inserted_omitted = true;
+    assert_eq!(
+        resolve_copy_rows(selection).unwrap(),
+        vec![vec![Value::Null, Value::Null, Value::Text("abc".into())]]
+    );
+    let unavailable = request(vec![vec![cell(Value::Unavailable {
+        database_type: "geo".into(),
+        reason: "codec".into(),
+    })]]);
+    assert!(matches!(
+        resolve_copy_rows(unavailable),
+        Err(CopyError::Unavailable { .. })
+    ));
 }
