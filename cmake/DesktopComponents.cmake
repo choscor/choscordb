@@ -82,6 +82,7 @@ choscordb_add_library(choscordb-desktop-services
   desktop/bridge/engine_adapter_graph.cpp
   desktop/bridge/engine_adapter_ssh_trust.cpp
   desktop/bridge/engine_adapter_storage.cpp
+  desktop/bridge/engine_adapter_table_export.cpp
   desktop/models/shortcut_catalog.cpp
   desktop/models/history_model.cpp
   desktop/models/result_table_model.cpp
@@ -107,6 +108,7 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/document_io/document_io.cpp
   desktop/widgets/value_detail_dialog/value_detail_dialog.cpp
   desktop/widgets/export_dialog/export_dialog.cpp
+  desktop/widgets/table_export_dialog/table_export_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog_actions.cpp
   desktop/widgets/profile_dialog/profile_dialog_security.cpp

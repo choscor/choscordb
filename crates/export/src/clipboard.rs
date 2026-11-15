@@ -117,7 +117,7 @@ pub fn render_clipboard(
     let mut output = String::new();
     match format {
         ClipboardFormat::Csv { header } => {
-            let format = ExportFormat::Csv;
+            let format = ExportFormat::Csv(Default::default());
             let columns = export_columns(columns);
             if *header {
                 output.push_str(&crate::format::header(&format, &columns)?);

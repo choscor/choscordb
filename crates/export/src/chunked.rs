@@ -60,7 +60,7 @@ pub(crate) async fn row(
         sender: config.sender,
     };
     let prefix = match format {
-        ExportFormat::Csv => String::new(),
+        ExportFormat::Csv(_) => String::new(),
         ExportFormat::Json => if first { "[" } else { ",[" }.into(),
         ExportFormat::JsonLines => "{\"row\":[".into(),
         ExportFormat::SqlInsert { table, dialect } => format!(
@@ -82,10 +82,10 @@ pub(crate) async fn row(
         if index != 0 {
             write(
                 sink,
-                if matches!(format, ExportFormat::SqlInsert { .. }) {
-                    ", "
-                } else {
-                    ","
+                &match format {
+                    ExportFormat::SqlInsert { .. } => ", ".to_string(),
+                    ExportFormat::Csv(options) => options.delimiter.to_string(),
+                    ExportFormat::Json | ExportFormat::JsonLines => ",".to_string(),
                 },
                 &mut count,
             )
@@ -148,8 +148,7 @@ pub(crate) async fn row(
             }
             crate::budget::row(format, columns, std::slice::from_ref(value), limits)?;
             let encoded = match format {
-                ExportFormat::Csv if matches!(value, Value::Null) => String::new(),
-                ExportFormat::Csv => csv_field(&plain(value)?),
+                ExportFormat::Csv(options) => options.value(value)?,
                 ExportFormat::Json | ExportFormat::JsonLines => json(value)?,
                 ExportFormat::SqlInsert { dialect, .. } => sql(value, *dialect)?,
             };
@@ -159,7 +158,7 @@ pub(crate) async fn row(
     write(
         sink,
         match format {
-            ExportFormat::Csv => "\r\n",
+            ExportFormat::Csv(options) => options.line_break.as_str(),
             ExportFormat::Json => "]",
             ExportFormat::JsonLines => "]}\n",
             ExportFormat::SqlInsert { .. } => ");\n",
@@ -220,17 +219,21 @@ async fn deferred(
         }
         if kind.is_none() {
             kind = Some(chunk.kind);
+            let csv_prefix;
             let prefix = if fallback_type.is_some()
                 && matches!(format, ExportFormat::Json | ExportFormat::JsonLines)
             {
                 "{\"fallback_text\":\""
             } else {
                 match (format, chunk.kind) {
-                    (ExportFormat::Csv, DeferredKind::Binary) => "\"\\x",
-                    (
-                        ExportFormat::Csv | ExportFormat::Json | ExportFormat::JsonLines,
-                        DeferredKind::Text,
-                    ) => "\"",
+                    (ExportFormat::Csv(options), kind) => {
+                        csv_prefix = match kind {
+                            DeferredKind::Binary => format!("{}\\x", options.quote),
+                            DeferredKind::Text => options.quote.to_string(),
+                        };
+                        &csv_prefix
+                    }
+                    (ExportFormat::Json | ExportFormat::JsonLines, DeferredKind::Text) => "\"",
                     (ExportFormat::Json | ExportFormat::JsonLines, DeferredKind::Binary) => {
                         "{\"binary_hex\":\""
                     }
@@ -290,7 +293,7 @@ async fn deferred(
                 Err(_) => return Err(invalid()),
             };
             let encoded = match format {
-                ExportFormat::Csv => valid.replace('"', "\"\""),
+                ExportFormat::Csv(options) => options.escape(valid),
                 ExportFormat::Json | ExportFormat::JsonLines => {
                     let s = serde_json::to_string(valid).map_err(|_| invalid())?;
                     s[1..s.len() - 1].to_owned()
@@ -326,9 +329,13 @@ async fn deferred(
         .await?;
         return Ok(());
     }
+    let csv_suffix;
     let suffix = match (format, kind.ok_or_else(invalid)?) {
-        (ExportFormat::Csv, _)
-        | (ExportFormat::Json | ExportFormat::JsonLines, DeferredKind::Text) => "\"",
+        (ExportFormat::Csv(options), _) => {
+            csv_suffix = options.quote.to_string();
+            &csv_suffix
+        }
+        (ExportFormat::Json | ExportFormat::JsonLines, DeferredKind::Text) => "\"",
         (ExportFormat::Json | ExportFormat::JsonLines, DeferredKind::Binary) => "\"}",
         (
             ExportFormat::SqlInsert {

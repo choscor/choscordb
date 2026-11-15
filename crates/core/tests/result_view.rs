@@ -304,7 +304,11 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
     let export_directory = tempfile::tempdir().unwrap();
     let destination = export_directory.path().join("filtered.csv");
     engine
-        .start_export(query, destination.clone(), ExportFormat::Csv)
+        .start_export(
+            query,
+            destination.clone(),
+            ExportFormat::Csv(Default::default()),
+        )
         .unwrap();
     event(
         &mut engine,
@@ -784,7 +788,11 @@ fn sqlite_declared_types_compare_against_typed_filter_operands() {
     });
     let zero_export = directory.path().join("zero.csv");
     engine
-        .start_export(query, zero_export.clone(), ExportFormat::Csv)
+        .start_export(
+            query,
+            zero_export.clone(),
+            ExportFormat::Csv(Default::default()),
+        )
         .unwrap();
     event(
         &mut engine,

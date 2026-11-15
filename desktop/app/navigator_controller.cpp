@@ -567,6 +567,16 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                               index.data(NavigatorModel::KindRole).toString(),
                               index.data(NavigatorModel::PropertiesRole).toList());
     });
+    if (traits.searchDescends && !traits.relation && !traits.connection &&
+        index.data(NavigatorModel::ChildrenLoadedRole).toBool()) {
+        auto* exportTables = menu->addAction(tr("Export tables…"));
+        exportTables->setObjectName("exportTables");
+        connect(exportTables, &QAction::triggered, this, [this, index] {
+            if (index.isValid() && index.model() == model_)
+                emit tableExportRequested(index.data(NavigatorModel::ConnectionRole).toULongLong(),
+                                          loadedRelations(index));
+        });
+    }
     if (SqlTemplateService::createParent(objectKind)) {
         const auto parentConnection = index.data(NavigatorModel::ConnectionRole).toULongLong();
         const auto parentDriver =
@@ -660,6 +670,17 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                         emit objectScriptRequested(code, connection, objectId, objectKind,
                                                    qualifiedName, subtype);
                 });
+    }
+    if (traits.relation) {
+        auto* exportAction = menu->addAction(tr("Export…"));
+        exportAction->setObjectName("exportObject");
+        connect(
+            exportAction, &QAction::triggered, this,
+            [this, requestStillMatches, connection, objectId, qualifiedName, objectKind, subtype] {
+                if (requestStillMatches())
+                    emit tableExportRequested(connection,
+                                              {{objectId, qualifiedName, objectKind, subtype}});
+            });
     }
     menu->addSeparator();
     addObjectAction(tr("Truncate…"), QStringLiteral("truncate"));
@@ -778,5 +799,23 @@ const QList<quint64>& NavigatorController::visibleConnections() const {
 }
 bool NavigatorController::isVisibleConnection(quint64 connection) const {
     return visibleConnections().contains(connection);
+}
+QList<TableExportObject> NavigatorController::loadedRelations(const QModelIndex& parent) const {
+    QList<TableExportObject> relations;
+    if (!parent.data(NavigatorModel::ChildrenLoadedRole).toBool())
+        return relations;
+    for (int row = 0; row < model_->rowCount(parent); ++row) {
+        const auto child = model_->index(row, 0, parent);
+        const auto kind = child.data(NavigatorModel::KindRole).toString();
+        const auto traits = EngineAdapter::objectKindTraits(kind);
+        if (traits.relation)
+            relations.push_back(
+                {child.data(NavigatorModel::ObjectIdRole).toString(),
+                 child.data(NavigatorModel::QualifiedNameRole).toString(), kind,
+                 relationSubtype(child.data(NavigatorModel::PropertiesRole).toList())});
+        else if (traits.searchDescends && !traits.connection)
+            relations.append(loadedRelations(child));
+    }
+    return relations;
 }
 }

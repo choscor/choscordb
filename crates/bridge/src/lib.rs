@@ -21,6 +21,11 @@ mod metadata_policy;
 mod quick_filter;
 pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy};
 mod result_copy;
+mod table_export;
+pub use table_export::{
+    export_tables, table_export_defaults, table_export_error, table_export_formats,
+    table_export_line_breaks,
+};
 mod sql_edit;
 pub use sql_edit::{row_limit_choices, sql_apply_row_limit, sql_format_edit, sql_toggle_comment};
 mod screen_state;
@@ -1311,6 +1316,8 @@ pub mod ffi {
         query_id: u64,
         exported_rows: u64,
         exported_bytes: u64,
+        exported_tables: u64,
+        export_table_total: u64,
         result_view_rows: u64,
         result_view_scanned_rows: u64,
         result_view_buffered_rows: u64,
@@ -1355,6 +1362,36 @@ pub mod ffi {
         used_bytes: u64,
         source_bytes: u64,
         peak_bytes: u64,
+    }
+    struct TableExportFormatDto {
+        code: String,
+        label: String,
+        csv_options: bool,
+        sql_options: bool,
+    }
+    #[derive(Default)]
+    struct TableExportObjectDto {
+        object_id: String,
+        qualified_name: String,
+        kind: String,
+        relation_subtype: String,
+    }
+    #[derive(Default)]
+    struct TableExportRequestDto {
+        driver: String,
+        objects: Vec<TableExportObjectDto>,
+        format: String,
+        delimiter: String,
+        quote: String,
+        line_break: String,
+        null_text: String,
+        header: bool,
+        structure: bool,
+        drop: bool,
+        data: bool,
+        folder: bool,
+        path: String,
+        pattern: String,
     }
     struct PlannedStatementDto {
         start: u64,
@@ -2236,6 +2273,15 @@ pub mod ffi {
             dialect: &str,
         ) -> Submit;
         fn cancel_export(engine: &mut BridgeEngine, job: u64) -> Submit;
+        fn table_export_formats() -> Vec<TableExportFormatDto>;
+        fn table_export_line_breaks() -> Vec<CodeLabelDto>;
+        fn table_export_defaults() -> TableExportRequestDto;
+        fn table_export_error(request: &TableExportRequestDto) -> String;
+        fn export_tables(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            request: &TableExportRequestDto,
+        ) -> Submit;
         fn cancel(engine: &mut BridgeEngine, query: u64) -> Submit;
         fn disconnect(engine: &mut BridgeEngine, connection: u64) -> Submit;
         fn release_query(engine: &mut BridgeEngine, query: u64) -> Submit;
@@ -2940,7 +2986,7 @@ pub fn start_export_dialect(
     submit(engine, |e| {
         let dialect = result_copy::sql_dialect(dialect).ok_or("Unknown SQL dialect")?;
         let format = match format {
-            "csv" => choscordb_core::ExportFormat::Csv,
+            "csv" => choscordb_core::ExportFormat::Csv(Default::default()),
             "json" => choscordb_core::ExportFormat::Json,
             "jsonl" => choscordb_core::ExportFormat::JsonLines,
             "sql" => choscordb_core::ExportFormat::SqlInsert { table, dialect },

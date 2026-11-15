@@ -78,7 +78,14 @@ fn limits() -> Limits {
 async fn one_byte_chunks_preserve_utf8_and_escaping_in_all_formats() {
     let text = "é😀\"'\\\n\t";
     for format in [
-        ExportFormat::Csv,
+        ExportFormat::Csv(Default::default()),
+        ExportFormat::Csv(CsvOptions {
+            delimiter: ';',
+            quote: '\'',
+            line_break: LineBreak::Lf,
+            null_text: "NULL".into(),
+            header: false,
+        }),
         ExportFormat::Json,
         ExportFormat::JsonLines,
         ExportFormat::SqlInsert {
@@ -115,7 +122,7 @@ async fn one_byte_chunks_preserve_utf8_and_escaping_in_all_formats() {
 #[tokio::test]
 async fn binary_chunks_match_literal_encoding_in_all_formats() {
     for format in [
-        ExportFormat::Csv,
+        ExportFormat::Csv(Default::default()),
         ExportFormat::Json,
         ExportFormat::JsonLines,
         ExportFormat::SqlInsert {
@@ -193,7 +200,7 @@ async fn cancellation_between_chunks_discards_partial_output() {
         export(
             &mut src,
             &mut sink,
-            ExportFormat::Csv,
+            ExportFormat::Csv(Default::default()),
             cancel,
             limits(),
             None

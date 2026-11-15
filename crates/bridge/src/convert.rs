@@ -521,6 +521,39 @@ pub fn event(
             error(&mut e, err);
             "profile_failed"
         }
+        Event::TableExportProgress {
+            export,
+            completed,
+            total,
+            rows,
+        } => {
+            e.id = pack(export);
+            e.exported_tables = completed;
+            e.export_table_total = total;
+            e.exported_rows = rows;
+            "table_export_progress"
+        }
+        Event::TableExportFinished {
+            export,
+            tables,
+            rows,
+        } => {
+            e.id = pack(export);
+            e.exported_tables = tables;
+            e.export_table_total = tables;
+            e.exported_rows = rows;
+            "table_export_finished"
+        }
+        Event::TableExportFailed {
+            export,
+            table,
+            error: err,
+        } => {
+            e.id = pack(export);
+            e.object = table;
+            error(&mut e, err);
+            "table_export_failed"
+        }
         Event::ExportProgress {
             export,
             query,

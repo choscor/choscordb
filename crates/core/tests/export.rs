@@ -41,7 +41,7 @@ fn export_starts_at_zero_after_browsing_and_advances_original_cursor() {
     drop(wait(&mut engine, |e| matches!(e, Event::Page { .. })));
     let path = dir.path().join("rows.csv");
     let id = engine
-        .start_export(q, path.clone(), ExportFormat::Csv)
+        .start_export(q, path.clone(), ExportFormat::Csv(Default::default()))
         .unwrap();
     let event = wait(&mut engine, |e| {
         matches!(e, Event::ExportFinished { .. } | Event::ExportFailed { .. })
@@ -144,7 +144,7 @@ fn deferred_text_and_blob_export_exceeds_memory_budget_without_materialization()
     drop(wait(&mut engine, |e| matches!(e, Event::Schema { .. })));
     let path = dir.path().join("large.csv");
     engine
-        .start_export(q, path.clone(), ExportFormat::Csv)
+        .start_export(q, path.clone(), ExportFormat::Csv(Default::default()))
         .unwrap();
     let event = wait(&mut engine, |e| {
         matches!(e, Event::ExportFinished { .. } | Event::ExportFailed { .. })
@@ -186,10 +186,10 @@ fn cancelled_export_preserves_destination_and_retires_generation() {
     let q=engine.execute(c,"WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<1000000000) SELECT x FROM c".into(),Default::default()).unwrap();
     drop(wait(&mut engine, |e| matches!(e, Event::Schema { .. })));
     let id = engine
-        .start_export(q, path.clone(), ExportFormat::Csv)
+        .start_export(q, path.clone(), ExportFormat::Csv(Default::default()))
         .unwrap();
     assert_eq!(
-        engine.start_export(q, path.clone(), ExportFormat::Csv),
+        engine.start_export(q, path.clone(), ExportFormat::Csv(Default::default())),
         Err(SubmitError::ResourceLimit)
     );
     drop(wait(&mut engine, |e| {
@@ -245,7 +245,7 @@ fn incomplete_archived_result_fails_instead_of_publishing_a_prefix() {
         |e| matches!(e,Event::Schema{query,..} if *query==other),
     ));
     engine
-        .start_export(q, path.clone(), ExportFormat::Csv)
+        .start_export(q, path.clone(), ExportFormat::Csv(Default::default()))
         .unwrap();
     assert!(matches!(
         wait(&mut engine, |e| matches!(
@@ -288,7 +288,7 @@ fn query_release_interrupts_export_waiting_for_pinned_memory() {
     engine.fetch_page(q).unwrap();
     let pinned = wait(&mut engine, |e| matches!(e, Event::Page { .. }));
     let id = engine
-        .start_export(q, path.clone(), ExportFormat::Csv)
+        .start_export(q, path.clone(), ExportFormat::Csv(Default::default()))
         .unwrap();
     engine.release_query(q).unwrap();
     assert!(
@@ -322,7 +322,7 @@ fn wide_inline_row_exports_within_the_shared_memory_envelope() {
     let q = engine.execute(c, sql, Default::default()).unwrap();
     drop(wait(&mut engine, |e| matches!(e, Event::Schema { .. })));
     engine
-        .start_export(q, path.clone(), ExportFormat::Csv)
+        .start_export(q, path.clone(), ExportFormat::Csv(Default::default()))
         .unwrap();
     let event = wait(&mut engine, |e| {
         matches!(e, Event::ExportFailed { .. } | Event::ExportFinished { .. })
@@ -361,7 +361,7 @@ fn cancelling_original_query_interrupts_live_export() {
     let q=engine.execute(c,"WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x<1000000000) SELECT x FROM c".into(),Default::default()).unwrap();
     drop(wait(&mut engine, |e| matches!(e, Event::Schema { .. })));
     engine
-        .start_export(q, path.clone(), ExportFormat::Csv)
+        .start_export(q, path.clone(), ExportFormat::Csv(Default::default()))
         .unwrap();
     drop(wait(&mut engine, |e| {
         matches!(e, Event::ExportProgress { .. })
@@ -427,7 +427,7 @@ fn export_preserves_captured_query_page_size_in_archived_pages() {
         .start_export(
             query,
             directory.path().join("result.csv"),
-            ExportFormat::Csv,
+            ExportFormat::Csv(Default::default()),
         )
         .unwrap();
     assert!(matches!(

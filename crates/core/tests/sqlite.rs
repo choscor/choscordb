@@ -616,7 +616,11 @@ fn object_result_has_independent_pages_export_and_sql_cursor() {
     );
     let destination = dir.path().join("object.csv");
     engine
-        .start_export(object, destination.clone(), ExportFormat::Csv)
+        .start_export(
+            object,
+            destination.clone(),
+            ExportFormat::Csv(Default::default()),
+        )
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {

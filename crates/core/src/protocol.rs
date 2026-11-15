@@ -47,8 +47,8 @@ pub enum SubmitError {
 pub use crate::query_machine::QueryState;
 pub type ExportId = Handle;
 pub use choscordb_export::{
-    CLIPBOARD_SQL_TABLE_REQUIRED, ClipboardFormat, ExportFormat, SqlDialect, render_clipboard,
-    sql_export_table_error,
+    CLIPBOARD_SQL_TABLE_REQUIRED, ClipboardFormat, CsvOptions, ExportFormat, LineBreak, SqlDialect,
+    render_clipboard, sql_export_table_error,
 };
 
 pub enum Event {
@@ -188,6 +188,22 @@ pub enum Event {
     },
     ProfileFailed {
         request_token: u64,
+        error: DriverError,
+    },
+    TableExportProgress {
+        export: ExportId,
+        completed: u64,
+        total: u64,
+        rows: u64,
+    },
+    TableExportFinished {
+        export: ExportId,
+        tables: u64,
+        rows: u64,
+    },
+    TableExportFailed {
+        export: ExportId,
+        table: String,
         error: DriverError,
     },
     ExportProgress {

@@ -100,7 +100,7 @@ async fn inline_fallback_exports_full_server_text_and_type() {
     };
     let (result, csv) = file_export(
         &mut source(value.clone(), b""),
-        ExportFormat::Csv,
+        ExportFormat::Csv(Default::default()),
         Limits::default(),
     )
     .await;
@@ -138,7 +138,7 @@ async fn unavailable_and_sql_fallback_preserve_destination() {
                 database_type: "mood".into(),
                 reason: "output failed".into(),
             },
-            ExportFormat::Csv,
+            ExportFormat::Csv(Default::default()),
             "output failed",
         ),
         (
@@ -205,7 +205,12 @@ async fn deferred_fallback_streams_complete_text_and_keeps_type_in_json() {
         ..Limits::default()
     };
     let mut csv_source = source(deferred.clone(), text.as_bytes());
-    let (result, csv) = file_export(&mut csv_source, ExportFormat::Csv, limits).await;
+    let (result, csv) = file_export(
+        &mut csv_source,
+        ExportFormat::Csv(Default::default()),
+        limits,
+    )
+    .await;
     result.unwrap();
     let mut reader = csv::Reader::from_reader(csv.as_bytes());
     assert_eq!(

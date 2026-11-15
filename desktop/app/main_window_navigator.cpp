@@ -17,6 +17,7 @@
 #include "widgets/screen_state/screen_state.h"
 #include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include "widgets/table_export_dialog/table_export_dialog.h"
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QDockWidget>
@@ -136,6 +137,16 @@ void MainWindow::connectNavigator(const Ui& ui) {
             &MainWindow::requestObjectAction);
     connect(navigatorController, &NavigatorController::objectScriptRequested, this,
             &MainWindow::copyObjectScript);
+    connect(navigatorController, &NavigatorController::tableExportRequested, this,
+            [this](quint64 connection, const QList<TableExportObject>& objects) {
+                TableExportRequest request;
+                request.driver = workspace_->driverForConnection(connection);
+                request.objects = objects;
+                auto* dialog =
+                    new TableExportDialog(workspace_->adapter(), connection, request, this);
+                dialog->setAttribute(Qt::WA_DeleteOnClose);
+                dialog->open();
+            });
     connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
             &MainWindow::handleObjectActionEvent, Qt::DirectConnection);
     connect(navigatorController->model(), &NavigatorModel::childrenRequested, this,

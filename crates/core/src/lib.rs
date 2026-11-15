@@ -15,10 +15,16 @@ pub use hot_cache::CacheUsage;
 mod memory;
 pub use memory::{LEASE_BOOKKEEPING_BYTES, MemoryUsage, PageLease, PageMemoryConfig, lease_fits};
 mod object_action;
+mod table_export;
 pub use object_action::{
     ObjectAction, ObjectActionStatement, ObjectScript, ObjectScriptText, SCRIPT_SELECT_ROWS,
     TruncateTraits, object_action_availability, object_display_identity, object_script,
     object_script_availability, prepare_object_action, truncate_traits,
+};
+pub use table_export::{
+    DEFAULT_TABLE_EXPORT_PATTERN, MAX_TABLE_EXPORT_OBJECTS, TableExportData,
+    TableExportDestination, TableExportFormat, TableExportObject, TableExportRequest,
+    TableExportTarget, plan_table_export,
 };
 mod operation;
 mod preview_capture;
@@ -435,6 +441,39 @@ impl Engine {
                 format,
                 cancellation,
                 released,
+            },
+        });
+        Ok(id)
+    }
+    pub fn export_tables(
+        &mut self,
+        connection: ConnectionId,
+        targets: Vec<TableExportTarget>,
+    ) -> std::result::Result<ExportId, SubmitError> {
+        self.ensure_running()?;
+        if self.export_owners.contains_key(&connection) {
+            return Err(SubmitError::ResourceLimit);
+        }
+        let slot = self
+            .connections
+            .get(connection)
+            .ok_or(SubmitError::StaleHandle)?;
+        let permit = slot
+            .commands
+            .clone()
+            .try_reserve_owned()
+            .map_err(map_send)?;
+        let cancellation = choscordb_export::Cancellation::default();
+        let id = self.exports.insert(ExportSlot {
+            connection,
+            cancellation: cancellation.clone(),
+        });
+        self.export_owners.insert(connection, id);
+        permit.send(actor::Request {
+            command: actor::Command::ExportTables {
+                export: id,
+                targets,
+                cancellation,
             },
         });
         Ok(id)
@@ -893,7 +932,10 @@ impl Engine {
         ) {
             self.advance_recovery();
         }
-        if let Event::ExportFinished { export, .. } | Event::ExportFailed { export, .. } = &event
+        if let Event::ExportFinished { export, .. }
+        | Event::ExportFailed { export, .. }
+        | Event::TableExportFinished { export, .. }
+        | Event::TableExportFailed { export, .. } = &event
             && let Some(slot) = self.exports.remove(*export)
         {
             self.export_owners.remove(&slot.connection);

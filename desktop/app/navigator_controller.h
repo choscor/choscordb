@@ -124,8 +124,10 @@ class NavigatorController final : public QObject {
                                const QString& kind, const QString& qualifiedName,
                                const QString& relationSubtype);
     void pinRequested(const QModelIndex& sourceIndex, bool unpin);
+    void tableExportRequested(quint64 connection, const QList<TableExportObject>& objects);
 
   private:
+    QList<TableExportObject> loadedRelations(const QModelIndex& parent) const;
     NavigatorModel* model_;
     QTreeView* tree_;
     QSortFilterProxyModel* proxy_;

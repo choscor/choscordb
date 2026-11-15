@@ -1,8 +1,85 @@
 use choscordb_export::*;
 #[test]
 fn csv_quotes_commas_quotes_and_newlines() {
-    assert_eq!(csv_field("a,\"b\"\nc"), "\"a,\"\"b\"\"\nc\"");
-    assert_eq!(csv_field(""), "\"\"");
+    assert_eq!(
+        CsvOptions::default().field("a,\"b\"\nc"),
+        "\"a,\"\"b\"\"\nc\""
+    );
+    assert_eq!(CsvOptions::default().field(""), "\"\"");
+}
+#[tokio::test]
+async fn csv_options_set_delimiter_quote_line_break_null_text_and_header() {
+    let semicolons = CsvOptions {
+        delimiter: ';',
+        quote: '\'',
+        line_break: LineBreak::Lf,
+        null_text: "NULL".into(),
+        header: true,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("result.csv");
+    let mut sink = FileSink::create(destination.clone()).await.unwrap();
+    export(
+        &mut source(),
+        &mut sink,
+        ExportFormat::Csv(semicolons.clone()),
+        Cancellation::default(),
+        Limits::default(),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&destination).unwrap(),
+        "'duplicate';'duplicate'\nNULL;''\n'12345678901234567890.12345678901234567890';'a,\"b\"'\n"
+    );
+    let row = vec![Value::Text("it's".into()), Value::Null];
+    let plain = CsvOptions {
+        header: false,
+        ..CsvOptions::default()
+    };
+    assert_eq!(
+        encode_row(&ExportFormat::Csv(plain), &columns(), &row, true).unwrap(),
+        "\"it's\",\r\n"
+    );
+    assert_eq!(
+        encode_row(
+            &ExportFormat::Csv(semicolons.clone()),
+            &columns(),
+            &row,
+            true
+        )
+        .unwrap(),
+        "'it''s';NULL\n"
+    );
+    for (delimiter, quote, message) in [
+        (',', ',', "The delimiter and the quote must be different."),
+        (
+            '\n',
+            '"',
+            "The delimiter and the quote cannot be line breaks.",
+        ),
+        (
+            ',',
+            '\r',
+            "The delimiter and the quote cannot be line breaks.",
+        ),
+    ] {
+        let options = CsvOptions {
+            delimiter,
+            quote,
+            ..CsvOptions::default()
+        };
+        assert_eq!(options.validate().unwrap_err().message, message);
+    }
+    let quoted_null = CsvOptions {
+        null_text: "a;b".into(),
+        ..semicolons
+    };
+    assert_eq!(
+        quoted_null.validate().unwrap_err().message,
+        "The NULL text cannot contain the delimiter, the quote or a line break."
+    );
 }
 use async_trait::async_trait;
 use choscordb_driver_api::*;
@@ -99,7 +176,7 @@ async fn cancellation_preserves_old_file_and_removes_temporary() {
     let result = export(
         &mut source,
         &mut sink,
-        ExportFormat::Csv,
+        ExportFormat::Csv(Default::default()),
         cancellation,
         Limits::default(),
         None,
@@ -124,7 +201,7 @@ async fn source_failure_preserves_old_file_and_removes_temporary() {
         export(
             &mut source,
             &mut sink,
-            ExportFormat::Csv,
+            ExportFormat::Csv(Default::default()),
             Cancellation::default(),
             Limits::default(),
             None
@@ -204,7 +281,7 @@ async fn disk_full_sink_is_aborted_and_never_committed() {
     let error = export(
         &mut source(),
         &mut sink,
-        ExportFormat::Csv,
+        ExportFormat::Csv(Default::default()),
         Cancellation::default(),
         Limits::default(),
         None,
@@ -298,7 +375,7 @@ async fn deferred_row_streams_beyond_the_resident_value_budget() {
     let result = export(
         &mut source,
         &mut sink,
-        ExportFormat::Csv,
+        ExportFormat::Csv(Default::default()),
         Cancellation::default(),
         Limits {
             page_bytes: 512,
@@ -322,7 +399,7 @@ async fn deferred_row_streams_beyond_the_resident_value_budget() {
 proptest::proptest! {
  #[test]
  fn csv_round_trips_arbitrary_unicode(value in ".{0,1000}") {
-  let encoded=format!("{}\r\n",csv_field(&value));
+  let encoded=format!("{}\r\n",CsvOptions::default().field(&value));
   let mut reader=csv::ReaderBuilder::new().has_headers(false).from_reader(encoded.as_bytes());
   let row=reader.records().next().unwrap().unwrap();
   proptest::prop_assert_eq!(row.get(0),Some(value.as_str()));
@@ -405,7 +482,7 @@ async fn wide_inline_row_streams_cells_within_the_encoding_allowance() {
     let report = export(
         &mut source,
         &mut sink,
-        ExportFormat::Csv,
+        ExportFormat::Csv(Default::default()),
         Cancellation::default(),
         Limits {
             page_bytes: 4096,

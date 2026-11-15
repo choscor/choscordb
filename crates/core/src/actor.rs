@@ -1,4 +1,5 @@
 mod export;
+mod table_export;
 use crate::{
     Event, QueryState,
     operation::{Control, perform, wait_capacity},
@@ -33,6 +34,11 @@ pub(crate) enum Command {
         request_token: u64,
     },
     Catalog(CatalogRead),
+    ExportTables {
+        export: crate::ExportId,
+        targets: Vec<crate::TableExportTarget>,
+        cancellation: choscordb_export::Cancellation,
+    },
     Export {
         export: crate::ExportId,
         query: QueryId,
@@ -1895,6 +1901,22 @@ pub(crate) async fn run(
                     .await
                 }
             },
+            Command::ExportTables {
+                export,
+                targets,
+                cancellation,
+            } => {
+                close_active(active, &events).await;
+                table_export::run(
+                    connection.as_mut(),
+                    export,
+                    targets,
+                    cancellation,
+                    &events,
+                    &shutdown,
+                )
+                .await
+            }
             Command::Databases { request_token } => {
                 let event =
                     match metadata_operation(connection.list_databases(), &mut shutdown).await {

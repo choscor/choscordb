@@ -5,18 +5,83 @@ pub enum SqlDialect {
     Postgres,
     Mysql,
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LineBreak {
+    #[default]
+    Crlf,
+    Lf,
+}
+impl LineBreak {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Crlf => "\r\n",
+            Self::Lf => "\n",
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CsvOptions {
+    pub delimiter: char,
+    pub quote: char,
+    pub line_break: LineBreak,
+    pub null_text: String,
+    pub header: bool,
+}
+impl Default for CsvOptions {
+    fn default() -> Self {
+        Self {
+            delimiter: ',',
+            quote: '"',
+            line_break: LineBreak::Crlf,
+            null_text: String::new(),
+            header: true,
+        }
+    }
+}
+impl CsvOptions {
+    pub fn validate(&self) -> Result<()> {
+        let line_break = |c: char| c == '\r' || c == '\n';
+        if self.delimiter == self.quote {
+            return Err(invalid("The delimiter and the quote must be different."));
+        }
+        if line_break(self.delimiter) || line_break(self.quote) {
+            return Err(invalid(
+                "The delimiter and the quote cannot be line breaks.",
+            ));
+        }
+        if self
+            .null_text
+            .contains(|c: char| c == self.delimiter || c == self.quote || line_break(c))
+        {
+            return Err(invalid(
+                "The NULL text cannot contain the delimiter, the quote or a line break.",
+            ));
+        }
+        Ok(())
+    }
+    pub(crate) fn escape(&self, value: &str) -> String {
+        value.replace(self.quote, &format!("{0}{0}", self.quote))
+    }
+    pub fn field(&self, value: &str) -> String {
+        format!("{0}{1}{0}", self.quote, self.escape(value))
+    }
+    pub(crate) fn value(&self, value: &Value) -> Result<String> {
+        if matches!(value, Value::Null) {
+            Ok(self.null_text.clone())
+        } else {
+            plain(value).map(|text| self.field(&text))
+        }
+    }
+}
 #[derive(Clone, Debug)]
 pub enum ExportFormat {
-    Csv,
+    Csv(CsvOptions),
     Json,
     JsonLines,
     SqlInsert {
         table: Vec<String>,
         dialect: SqlDialect,
     },
-}
-pub fn csv_field(value: &str) -> String {
-    format!("\"{}\"", value.replace('"', "\"\""))
 }
 fn invalid(message: &str) -> DriverError {
     DriverError::new(ErrorKind::InvalidInput, message)
@@ -204,14 +269,22 @@ pub fn sql_export_table_error(table: &[String]) -> Option<&'static str> {
 }
 pub(crate) fn header(format: &ExportFormat, columns: &[Column]) -> Result<String> {
     match format {
-        ExportFormat::Csv => Ok(format!(
-            "{}\r\n",
-            columns
-                .iter()
-                .map(|c| csv_field(&c.name))
-                .collect::<Vec<_>>()
-                .join(",")
-        )),
+        ExportFormat::Csv(options) => {
+            options.validate()?;
+            Ok(if options.header {
+                format!(
+                    "{}{}",
+                    columns
+                        .iter()
+                        .map(|c| options.field(&c.name))
+                        .collect::<Vec<_>>()
+                        .join(&options.delimiter.to_string()),
+                    options.line_break.as_str()
+                )
+            } else {
+                String::new()
+            })
+        }
         ExportFormat::Json => Ok(format!(
             "{{\"columns\":{},\"rows\":[",
             serde_json::to_string(columns).map_err(|_| invalid("Invalid columns"))?
@@ -244,16 +317,13 @@ pub fn encode_row(
         return Err(invalid("Export row does not match its schema"));
     }
     match format {
-        ExportFormat::Csv => Ok(format!(
-            "{}\r\n",
+        ExportFormat::Csv(options) => Ok(format!(
+            "{}{}",
             row.iter()
-                .map(|v| if matches!(v, Value::Null) {
-                    Ok(String::new())
-                } else {
-                    plain(v).map(|v| csv_field(&v))
-                })
+                .map(|v| options.value(v))
                 .collect::<Result<Vec<_>>>()?
-                .join(",")
+                .join(&options.delimiter.to_string()),
+            options.line_break.as_str()
         )),
         ExportFormat::Json | ExportFormat::JsonLines => {
             let values = row.iter().map(json).collect::<Result<Vec<_>>>()?.join(",");

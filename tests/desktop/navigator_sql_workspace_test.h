@@ -23,6 +23,7 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void sqlToolbarInsetsControls();
     void runModesRunCurrentStatementOrWholeDocument();
     void runAllShowsOneResultTabPerStatement();
+    void exportTablesFromTheNavigator();
     void statusLineShowsTheTargetOfEachDocument();
     void changeConnectionMenuRebindsOnlyIdleSqlTabs();
     void tabContextMenuFollowsCursor();

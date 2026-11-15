@@ -16,10 +16,12 @@
 #include "models/navigator_model.h"
 #include "navigator_sql_workspace_test.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include "widgets/table_export_dialog/table_export_dialog.h"
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QComboBox>
 #include <QDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -496,4 +498,108 @@ void NavigatorSqlWorkspaceTest::objectTruncateAndCopyScriptThroughNavigator() {
     QTRY_COMPARE(applied, 1);
     run("UPDATE items SET id = id");
     QCOMPARE(*lastAffected, quint64(0));
+}
+
+void NavigatorSqlWorkspaceTest::exportTablesFromTheNavigator() {
+    using namespace choscordb;
+    QTemporaryDir storage;
+    QTemporaryDir exports;
+    MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    auto* workspace = window.findChild<QueryWorkspace*>();
+    QSignalSpy connected(workspace, &QueryWorkspace::connectionReady);
+    workspace->connectSqlite(":memory:");
+    QTRY_COMPARE(connected.count(), 1);
+    const auto connection = connected.first().at(0).toULongLong();
+    auto* adapter = workspace->adapter();
+    bool finished = false;
+    connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
+        if (event.kind == "query_finished")
+            finished = true;
+    });
+    for (const char* sql : {"CREATE TABLE items (id INTEGER, name TEXT)",
+                            "INSERT INTO items VALUES (1, 'a'), (2, NULL)",
+                            "CREATE VIEW item_names AS SELECT name FROM items"}) {
+        finished = false;
+        const auto query = adapter->execute(connection, sql);
+        QVERIFY(query);
+        adapter->fetchPage(*query);
+        QTRY_VERIFY(finished);
+        adapter->releaseQuery(*query);
+    }
+    auto* navigator = window.findChild<NavigatorController*>();
+    auto* model = navigator->model();
+    const auto root = model->index(0, 0);
+    model->fetchMore(root);
+    QTRY_VERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    const auto schema = model->index(0, 0, root);
+    model->fetchMore(schema);
+    QTRY_VERIFY(schema.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    for (int row = 0; row < model->rowCount(schema); ++row) {
+        const auto group = model->index(row, 0, schema);
+        model->fetchMore(group);
+        QTRY_VERIFY(group.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    }
+    const auto table = model->index(0, 0, model->index(0, 0, schema));
+    QCOMPARE(table.data().toString(), QString("items"));
+    model->fetchMore(table);
+    QTRY_VERIFY(table.data(NavigatorModel::ChildrenLoadedRole).toBool());
+
+    QMenu tableMenu;
+    navigator->populateContextMenu(&tableMenu, table);
+    auto* exportOne = tableMenu.findChild<QAction*>("exportObject");
+    QVERIFY(exportOne && !tableMenu.findChild<QAction*>("exportTables"));
+    exportOne->trigger();
+    auto* dialog = window.findChild<TableExportDialog*>("tableExportDialog");
+    QVERIFY(dialog);
+    QTRY_VERIFY(dialog->isVisible());
+    auto* format = dialog->findChild<QComboBox*>("tableExportFormat");
+    auto* delimiter = dialog->findChild<QLineEdit*>("tableExportDelimiter");
+    auto* nullText = dialog->findChild<QLineEdit*>("tableExportNullText");
+    auto* path = dialog->findChild<QLineEdit*>("tableExportPath");
+    auto* start = dialog->findChild<QPushButton*>("tableExportStart");
+    auto* structure = dialog->findChild<QCheckBox*>("tableExportStructure");
+    QVERIFY(format && delimiter && nullText && path && start && structure);
+    QCOMPARE(format->currentData().toString(), QString("csv"));
+    QVERIFY(delimiter->isVisibleTo(dialog) && !structure->isVisibleTo(dialog));
+    start->click();
+    auto* validation = dynamic_cast<design::FieldValidation*>(path->parentWidget());
+    QVERIFY(validation);
+    QCOMPARE(validation->error(), QString("Choose a destination."));
+    QVERIFY(dialog->isVisible());
+    delimiter->setText(";");
+    nullText->setText("NULL");
+    path->setText(exports.path());
+    start->click();
+    QTRY_VERIFY(QFile::exists(exports.filePath("items.csv")));
+    QFile csv(exports.filePath("items.csv"));
+    QVERIFY(csv.open(QIODevice::ReadOnly));
+    QCOMPARE(QString::fromUtf8(csv.readAll()),
+             QString("\"id\";\"name\"\r\n\"1\";\"a\"\r\n\"2\";NULL\r\n"));
+    QTRY_VERIFY(!window.findChild<TableExportDialog*>("tableExportDialog"));
+
+    QMenu schemaMenu;
+    navigator->populateContextMenu(&schemaMenu, schema);
+    auto* exportAll = schemaMenu.findChild<QAction*>("exportTables");
+    QVERIFY(exportAll);
+    exportAll->trigger();
+    dialog = window.findChild<TableExportDialog*>("tableExportDialog");
+    QVERIFY(dialog);
+    const auto scope = dialog->findChild<QLabel*>("tableExportScope")->text();
+    QVERIFY2(scope.contains("items") && scope.contains("item_names"), qPrintable(scope));
+    format = dialog->findChild<QComboBox*>("tableExportFormat");
+    format->setCurrentIndex(format->findData("sql"));
+    QVERIFY(dialog->findChild<QCheckBox*>("tableExportStructure")->isVisibleTo(dialog));
+    auto* target = dialog->findChild<QComboBox*>("tableExportTarget");
+    target->setCurrentIndex(target->findData(false));
+    dialog->findChild<QLineEdit*>("tableExportPath")->setText(exports.filePath("all.sql"));
+    dialog->findChild<QPushButton*>("tableExportStart")->click();
+    QTRY_VERIFY(QFile::exists(exports.filePath("all.sql")));
+    QFile sql(exports.filePath("all.sql"));
+    QVERIFY(sql.open(QIODevice::ReadOnly));
+    const auto script = QString::fromUtf8(sql.readAll());
+    QVERIFY2(
+        script.contains("CREATE TABLE items") && script.contains("CREATE VIEW item_names") &&
+            script.contains("INSERT INTO \"main\".\"items\" (\"id\", \"name\") VALUES (1, 'a');"),
+        qPrintable(script));
 }

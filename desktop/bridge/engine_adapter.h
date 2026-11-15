@@ -165,6 +165,20 @@ struct CodeLabel {
     QString code;
     QString label;
 };
+struct TableExportFormatChoice {
+    QString code, label;
+    bool csvOptions = false, sqlOptions = false;
+};
+struct TableExportObject {
+    QString objectId, qualifiedName, kind, relationSubtype;
+};
+struct TableExportRequest {
+    QString driver;
+    QList<TableExportObject> objects;
+    QString format, delimiter, quote, lineBreak, nullText;
+    bool header = true, structure = true, drop = false, data = true, folder = true;
+    QString path, pattern;
+};
 struct DatabaseList {
     QList<CodeLabel> choices;
     QString current;
@@ -688,6 +702,12 @@ class EngineAdapter final : public QObject {
                                               const QString& format, const QStringList& table,
                                               const QString& dialect);
     void cancelExport(quint64 id);
+    static QList<TableExportFormatChoice> tableExportFormats();
+    static QList<CodeLabel> tableExportLineBreaks();
+    static TableExportRequest tableExportDefaults();
+    static QString tableExportError(const TableExportRequest& request);
+    std::optional<quint64> exportTables(quint64 connection, const TableExportRequest& request,
+                                        QString* error);
     static quint32 valueChunkBytes();
     static QString valueDetailError(quint64 bytes);
     void loadValueChunk(quint64 query, quint64 handle, quint64 offset,

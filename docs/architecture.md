@@ -123,6 +123,18 @@ A list can have up to `MAX_DATABASE_CHOICES` (10,000) entries. A larger list is 
 `profile_with_database` in `bridge` sets the database name, or the SQLite path, of a copy of the profile.
 The desktop frontend opens a new connection with that profile and moves the current SQL tab to it. The old connection stays open.
 
+### Table export
+
+`plan_table_export` in `core` makes one target for each table or view: the `SELECT` that Rust builds, the destination file and the export format.
+A folder destination uses a file name pattern with `{schema}` and `{table}`. Rust adds the extension and rejects two tables that write the same file.
+Several tables go to one file only for the SQL format.
+CSV options are part of `ExportFormat::Csv`: delimiter, quote, line break, NULL text and header row. `CsvOptions::validate` rejects options that make the file ambiguous.
+`Engine::export_tables` sends one `ExportTables` command to the connection actor.
+The actor closes the open SQL cursor, runs each `SELECT` and streams the rows through `choscordb_export::export`.
+For the SQL format, the actor writes the `DROP` statement and the DDL from `Connection::object_ddl` before the rows.
+The actor sends `TableExportProgress` after each table, then `TableExportFinished` or `TableExportFailed` with the name of the failed table.
+A failed or cancelled file is not written. Files of earlier tables stay.
+
 ### Result tabs for each statement
 
 `Run all` runs each statement as a separate query.
