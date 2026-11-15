@@ -1,4 +1,5 @@
 #include "bridge/engine_adapter_p.h"
+#include "bridge/object_action_dto.h"
 
 namespace choscordb {
 using engine_adapter_detail::fromRust;
@@ -325,6 +326,14 @@ bool EngineAdapter::applyDatabaseAction(quint64 connection, const DatabaseAction
                                         quint64 token, QString* error) {
     const auto reply =
         apply_database_action(*d_->engine, connection, databaseActionDto(action), token);
+    if (!reply.accepted && error)
+        *error = fromRust(reply.error);
+    return reply.accepted;
+}
+bool EngineAdapter::applyObjectAction(quint64 connection, const ObjectActionRequest& request,
+                                      quint64 token, QString* error) {
+    const auto reply =
+        apply_object_action(*d_->engine, connection, objectActionDto(request), token);
     if (!reply.accepted && error)
         *error = fromRust(reply.error);
     return reply.accepted;

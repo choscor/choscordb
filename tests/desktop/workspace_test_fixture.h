@@ -35,6 +35,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
 #include <QTemporaryDir>
@@ -49,6 +50,7 @@ struct WorkspaceFixture {
     QLabel summary;
     QPlainTextEdit messages;
     QTableView grid;
+    QTabBar statementResults;
     choscordb::SqlEditor editor;
     choscordb::QueryWorkspace workspace;
     explicit WorkspaceFixture(bool editing = false)
@@ -71,7 +73,19 @@ struct WorkspaceFixture {
                      editing ? &deleteRows : nullptr,
                      editing ? &setNull : nullptr,
                      editing ? &applyEdits : nullptr,
-                     editing ? &discardEdits : nullptr}) {
+                     editing ? &discardEdits : nullptr,
+                     {},
+                     nullptr,
+                     nullptr,
+                     nullptr,
+                     nullptr,
+                     nullptr,
+                     nullptr,
+                     nullptr,
+                     nullptr,
+                     nullptr,
+                     nullptr,
+                     &statementResults}) {
         parent.resize(960, 640);
         parent.show();
         workspace.connectSqlite(":memory:");

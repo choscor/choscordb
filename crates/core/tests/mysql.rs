@@ -380,3 +380,111 @@ fn a_mariadb_connection_to_mysql_connects_with_a_notice() {
     };
     assert_eq!(page.rows, vec![vec![Value::Text("TABLES".into())]]);
 }
+
+fn apply_object_action(
+    engine: &mut Engine,
+    connection: choscordb_driver_api::ConnectionId,
+    action: choscordb_core::ObjectAction,
+    table: &str,
+    new_name: &str,
+) {
+    let statement = choscordb_core::prepare_object_action(
+        action,
+        "mysql",
+        "table",
+        &format!("[\"choscordb_test\",\"{table}\"]"),
+        "",
+        new_name,
+        "",
+    )
+    .unwrap();
+    engine
+        .apply_ddl(connection, statement.statements, 7)
+        .unwrap();
+    match until(engine, |e| {
+        matches!(e, Event::EditApplied { .. } | Event::EditFailed { .. })
+    }) {
+        Event::EditApplied { request_token, .. } => assert_eq!(request_token, 7),
+        Event::EditFailed { error, .. } => panic!("{action:?} failed: {error}"),
+        _ => unreachable!(),
+    }
+}
+
+fn single_number(
+    engine: &mut Engine,
+    connection: choscordb_driver_api::ConnectionId,
+    sql: &str,
+) -> Value {
+    let query = engine.execute(connection, sql.into(), paged()).unwrap();
+    until(engine, |e| matches!(e, Event::Schema { .. }));
+    engine.fetch_page_at(query, 0).unwrap();
+    let Event::StoredPage { page, .. } = until(engine, |e| matches!(e, Event::StoredPage { .. }))
+    else {
+        unreachable!()
+    };
+    until(engine, |e| matches!(e, Event::QueryFinished { .. }));
+    page.rows[0][0].clone()
+}
+
+#[test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+fn mysql_object_actions_clone_truncate_rename_and_drop_a_table() {
+    use choscordb_core::ObjectAction;
+    let (mut engine, connection) = direct_engine();
+    let setup = [
+        "DROP TABLE IF EXISTS action_source, action_copy, action_renamed",
+        "CREATE TABLE action_source (id INT PRIMARY KEY)",
+        "INSERT INTO action_source VALUES (1), (2)",
+    ];
+    engine
+        .apply_ddl(connection, setup.map(String::from).to_vec(), 3)
+        .unwrap();
+    until(&mut engine, |e| matches!(e, Event::EditApplied { .. }));
+    let clone = ObjectAction::from_code("clone", false, false, true).unwrap();
+    apply_object_action(
+        &mut engine,
+        connection,
+        clone,
+        "action_source",
+        "action_copy",
+    );
+    assert_eq!(
+        single_number(&mut engine, connection, "SELECT COUNT(*) FROM action_copy"),
+        Value::Integer(2)
+    );
+    let truncate = ObjectAction::from_code("truncate", false, false, false).unwrap();
+    apply_object_action(&mut engine, connection, truncate, "action_copy", "");
+    assert_eq!(
+        single_number(&mut engine, connection, "SELECT COUNT(*) FROM action_copy"),
+        Value::Integer(0)
+    );
+    apply_object_action(
+        &mut engine,
+        connection,
+        ObjectAction::Rename,
+        "action_copy",
+        "action_renamed",
+    );
+    apply_object_action(
+        &mut engine,
+        connection,
+        ObjectAction::Drop,
+        "action_renamed",
+        "",
+    );
+    apply_object_action(
+        &mut engine,
+        connection,
+        ObjectAction::Drop,
+        "action_source",
+        "",
+    );
+    assert_eq!(
+        single_number(
+            &mut engine,
+            connection,
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'choscordb_test' AND table_name LIKE 'action\\_%'"
+        ),
+        Value::Integer(0)
+    );
+}

@@ -1538,6 +1538,7 @@ pub mod ffi {
         minified: String,
         nodes: Vec<JsonPreviewNodeDto>,
         image_format: String,
+        page_image: Vec<u8>,
     }
     struct SqlPlanDto {
         sql: String,
@@ -2535,6 +2536,12 @@ pub mod ffi {
             connection: u64,
             table: &StructureTableDto,
             changes: Vec<StructureChangeDto>,
+            request_token: u64,
+        ) -> Submit;
+        fn apply_object_action(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            request: &ObjectActionRequestDto,
             request_token: u64,
         ) -> Submit;
         fn database_action_kinds() -> Vec<DatabaseActionKindDto>;

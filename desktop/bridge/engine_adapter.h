@@ -1,5 +1,6 @@
 #pragma once
 #include "bridge/database_action.h"
+#include "bridge/object_action.h"
 #include "bridge/structure_types.h"
 #include "bridge/table_transfer.h"
 #include "bridge/trigger_script.h"
@@ -733,6 +734,8 @@ class EngineAdapter final : public QObject {
     static SqlPlan triggerScript(const TriggerScriptRequest& request);
     bool applyDatabaseAction(quint64 connection, const DatabaseAction& action, quint64 token,
                              QString* error);
+    bool applyObjectAction(quint64 connection, const ObjectActionRequest& request, quint64 token,
+                           QString* error);
     static QString savedSqlSetKeyword(const QString& root, const QString& path,
                                       const QString& keyword);
     static QString savedSqlCreateFolder(const QString& root, const QString& parent,

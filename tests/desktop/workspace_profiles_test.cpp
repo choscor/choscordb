@@ -273,10 +273,11 @@ void WorkspaceTest::mysqlRunAllReachesEachStatementResult() {
     f.editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
     QTRY_VERIFY(f.runAll.isEnabled());
     f.runAll.trigger();
-    QTRY_COMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("11"));
-    QTRY_VERIFY(f.next.isEnabled());
-    f.next.click();
+    QTRY_COMPARE(f.statementResults.count(), 2);
+    QTRY_VERIFY(f.runAll.isEnabled());
     QTRY_COMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("second"));
+    f.statementResults.setCurrentIndex(0);
+    QTRY_COMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("11"));
 }
 
 void WorkspaceTest::mysqlSelectedScriptNavigatesDifferentResultSchemas() {

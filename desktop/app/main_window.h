@@ -105,7 +105,7 @@ class MainWindow final : public QMainWindow {
                              const QString& shortName, const QString& kind,
                              const QString& parentObjectId, const QString& qualifiedName,
                              const QString& relationSubtype);
-    std::optional<ObjectActionStatement> execObjectActionForm(const ObjectActionRequest& request,
+    std::optional<ObjectActionStatement> execObjectActionForm(ObjectActionRequest& request,
                                                               const QString& shortName,
                                                               const QString& displayKind);
     void copyObjectScript(const QString& script, quint64 connection, const QString& objectId,

@@ -82,9 +82,9 @@ bool MainWindow::objectActionReady(quint64 connection, const QString& objectId, 
     return true;
 }
 
-std::optional<ObjectActionStatement>
-MainWindow::execObjectActionForm(const ObjectActionRequest& base, const QString& shortName,
-                                 const QString& displayKind) {
+std::optional<ObjectActionStatement> MainWindow::execObjectActionForm(ObjectActionRequest& base,
+                                                                      const QString& shortName,
+                                                                      const QString& displayKind) {
     const auto& action = base.action;
     const bool named = action != QStringLiteral("truncate");
     const auto truncate = ObjectActionSql::truncateTraits(base.driver);
@@ -167,11 +167,11 @@ MainWindow::execObjectActionForm(const ObjectActionRequest& base, const QString&
             request.newName = name->text();
         for (const auto& [option, field] : options)
             request.*field = option->isChecked();
-        return ObjectActionSql::prepare(request);
+        return request;
     };
     ObjectActionStatement statement;
     const auto update = [&] {
-        statement = current();
+        statement = ObjectActionSql::prepare(current());
         preview->setPlainText(statement.sql);
         const auto message = statement.valid ? QString{} : statement.error;
         if (named) {
@@ -198,11 +198,13 @@ MainWindow::execObjectActionForm(const ObjectActionRequest& base, const QString&
     }
     if (dialog.exec() != QDialog::Accepted)
         return std::nullopt;
-    statement = current();
+    auto request = current();
+    statement = ObjectActionSql::prepare(request);
     if (!statement.valid) {
         reportError(statement.error);
         return std::nullopt;
     }
+    base = request;
     return statement;
 }
 
@@ -214,12 +216,12 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
                            relationSubtype))
         return;
     const auto displayKind = relationKindPhrase(kind, relationSubtype);
-    const ObjectActionRequest request{.action = action,
-                                      .driver = workspace_->driverForConnection(connection),
-                                      .kind = kind,
-                                      .objectId = objectId,
-                                      .qualifiedName = qualifiedName,
-                                      .relationSubtype = relationSubtype};
+    ObjectActionRequest request{.action = action,
+                                .driver = workspace_->driverForConnection(connection),
+                                .kind = kind,
+                                .objectId = objectId,
+                                .qualifiedName = qualifiedName,
+                                .relationSubtype = relationSubtype};
     std::optional<ObjectActionStatement> statement;
     if (action == QStringLiteral("drop")) {
         statement = ObjectActionSql::prepare(request);
@@ -247,9 +249,6 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
     if (!objectActionReady(connection, objectId, kind, parentObjectId, qualifiedName,
                            relationSubtype))
         return;
-    std::vector<ReviewedEditStatement> batch;
-    for (const auto& sql : statement->statements)
-        batch.push_back({.sql = sql});
     const auto profileId = workspace_->profileIdForConnection(connection);
     const auto token = nextRequestToken();
     pendingObjectAction_ =
@@ -266,11 +265,7 @@ void MainWindow::requestObjectAction(const QString& action, quint64 connection,
                             connection,
                             token};
     QString submitError;
-    const auto failure = connect(workspace_->adapter(), &EngineAdapter::commandFailed, this,
-                                 [&submitError](const QString& error) { submitError = error; });
-    const bool submitted = workspace_->adapter()->applyEditBatch(connection, batch, {}, token);
-    disconnect(failure);
-    if (!submitted) {
+    if (!workspace_->adapter()->applyObjectAction(connection, request, token, &submitError)) {
         pendingObjectAction_.reset();
         reportError(tr("The object action could not start: %1").arg(submitError));
         return;

@@ -1,24 +1,20 @@
-use crate::ffi;
+use crate::{BridgeEngine, ffi, submit, unpack};
 use choscordb_core::{
     ObjectAction, ObjectScript, ObjectScriptText,
     prepare_object_action as prepare_core_object_action,
 };
 
-pub fn prepare_object_action(
-    request: ffi::ObjectActionRequestDto,
-) -> ffi::ObjectActionStatementDto {
-    let Some(action) = ObjectAction::from_code(
+fn planned(
+    request: &ffi::ObjectActionRequestDto,
+) -> Result<choscordb_core::ObjectActionStatement, String> {
+    let action = ObjectAction::from_code(
         &request.action,
         request.cascade,
         request.restart_identity,
         request.with_data,
-    ) else {
-        return ffi::ObjectActionStatementDto {
-            error: format!("Unknown object action {}.", request.action),
-            ..Default::default()
-        };
-    };
-    match prepare_core_object_action(
+    )
+    .ok_or_else(|| format!("Unknown object action {}.", request.action))?;
+    prepare_core_object_action(
         action,
         &request.driver,
         &request.kind,
@@ -26,7 +22,14 @@ pub fn prepare_object_action(
         &request.qualified_name,
         &request.new_name,
         &request.relation_subtype,
-    ) {
+    )
+    .map_err(str::to_owned)
+}
+
+pub fn prepare_object_action(
+    request: ffi::ObjectActionRequestDto,
+) -> ffi::ObjectActionStatementDto {
+    match planned(&request) {
         Ok(statement) => ffi::ObjectActionStatementDto {
             valid: true,
             sql: statement.sql,
@@ -36,10 +39,24 @@ pub fn prepare_object_action(
             new_qualified_name: statement.new_qualified_name,
         },
         Err(error) => ffi::ObjectActionStatementDto {
-            error: error.to_owned(),
+            error,
             ..Default::default()
         },
     }
+}
+
+pub fn apply_object_action(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    request: &ffi::ObjectActionRequestDto,
+    request_token: u64,
+) -> ffi::Submit {
+    let statements = planned(request).map(|statement| statement.statements);
+    submit(engine, |e| {
+        e.apply_ddl(unpack(connection), statements?, request_token)
+            .map(|()| connection)
+            .map_err(|error| error.to_string())
+    })
 }
 
 pub fn truncate_traits_policy(driver: &str) -> ffi::TruncateTraitsDto {

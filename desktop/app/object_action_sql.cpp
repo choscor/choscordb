@@ -1,4 +1,5 @@
 #include "app/object_action_sql.h"
+#include "bridge/object_action_dto.h"
 #include "bridge/rust_text.h"
 
 namespace choscordb {
@@ -22,18 +23,7 @@ ObjectActionStatement ObjectActionSql::prepare(const ObjectActionRequest& reques
     if (!validUnicode({&request.action, &request.driver, &request.kind, &request.objectId,
                        &request.qualifiedName, &request.newName, &request.relationSubtype}))
         return {.error = invalidInput};
-    ObjectActionRequestDto dto;
-    dto.action = toRust(request.action);
-    dto.driver = toRust(request.driver);
-    dto.kind = toRust(request.kind);
-    dto.object_id = toRust(request.objectId);
-    dto.qualified_name = toRust(request.qualifiedName);
-    dto.new_name = toRust(request.newName);
-    dto.relation_subtype = toRust(request.relationSubtype);
-    dto.cascade = request.cascade;
-    dto.restart_identity = request.restartIdentity;
-    dto.with_data = request.withData;
-    const auto result = prepare_object_action(std::move(dto));
+    const auto result = prepare_object_action(objectActionDto(request));
     QStringList statements;
     for (const auto& statement : result.statements)
         statements.append(fromRust(statement));
