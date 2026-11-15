@@ -554,6 +554,28 @@ pub fn event(
             error(&mut e, err);
             "table_export_failed"
         }
+        Event::TableImportProgress { import, rows } => {
+            e.id = pack(import);
+            e.exported_rows = rows;
+            "table_import_progress"
+        }
+        Event::TableImportFinished { import, rows } => {
+            e.id = pack(import);
+            e.exported_rows = rows;
+            "table_import_finished"
+        }
+        Event::TableImportFailed {
+            import,
+            row,
+            error: mut err,
+        } => {
+            e.id = pack(import);
+            if let Some(row) = row {
+                err.message = format!("Row {row}: {}", err.message);
+            }
+            error(&mut e, err);
+            "table_import_failed"
+        }
         Event::ExportProgress {
             export,
             query,

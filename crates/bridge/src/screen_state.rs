@@ -348,6 +348,13 @@ pub fn export_presentation(state: ffi::ExportStateDto, detail: &str) -> ffi::Pre
     }
 }
 
+pub fn import_presentation(state: ffi::ExportStateDto, detail: &str) -> ffi::PresentationDto {
+    match export_state(state) {
+        Ok(state) => presentation(export_machine::present_import(&state, detail)),
+        Err(error) => invalid(error),
+    }
+}
+
 pub fn export_transition(
     state: ffi::ExportStateDto,
     event: ffi::ExportEventDto,

@@ -1,5 +1,6 @@
 mod export;
 mod table_export;
+mod table_import;
 use crate::{
     Event, QueryState,
     operation::{Control, perform, wait_capacity},
@@ -37,6 +38,11 @@ pub(crate) enum Command {
     ExportTables {
         export: crate::ExportId,
         targets: Vec<crate::TableExportTarget>,
+        cancellation: choscordb_export::Cancellation,
+    },
+    ImportTable {
+        import: crate::ExportId,
+        request: Box<crate::TableImportRequest>,
         cancellation: choscordb_export::Cancellation,
     },
     Export {
@@ -1911,6 +1917,22 @@ pub(crate) async fn run(
                     connection.as_mut(),
                     export,
                     targets,
+                    cancellation,
+                    &events,
+                    &shutdown,
+                )
+                .await
+            }
+            Command::ImportTable {
+                import,
+                request,
+                cancellation,
+            } => {
+                close_active(active, &events).await;
+                table_import::run(
+                    connection.as_mut(),
+                    import,
+                    *request,
                     cancellation,
                     &events,
                     &shutdown,

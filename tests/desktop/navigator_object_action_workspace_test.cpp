@@ -17,6 +17,7 @@
 #include "navigator_sql_workspace_test.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include "widgets/table_export_dialog/table_export_dialog.h"
+#include "widgets/table_import_dialog/table_import_dialog.h"
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -29,7 +30,9 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QStandardItemModel>
 #include <QTabWidget>
+#include <QTableView>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QtTest>
@@ -602,4 +605,134 @@ void NavigatorSqlWorkspaceTest::exportTablesFromTheNavigator() {
         script.contains("CREATE TABLE items") && script.contains("CREATE VIEW item_names") &&
             script.contains("INSERT INTO \"main\".\"items\" (\"id\", \"name\") VALUES (1, 'a');"),
         qPrintable(script));
+}
+
+void NavigatorSqlWorkspaceTest::importCsvIntoTablesFromTheNavigator() {
+    using namespace choscordb;
+    QTemporaryDir storage;
+    QTemporaryDir files;
+    MainWindow window(nullptr, storage.filePath("settings.sqlite"));
+    window.show();
+    auto* workspace = window.findChild<QueryWorkspace*>();
+    QSignalSpy connected(workspace, &QueryWorkspace::connectionReady);
+    workspace->connectSqlite(":memory:");
+    QTRY_COMPARE(connected.count(), 1);
+    const auto connection = connected.first().at(0).toULongLong();
+    auto* adapter = workspace->adapter();
+    bool finished = false;
+    QList<qint64> counts;
+    connect(adapter, &EngineAdapter::eventReady, &window, [&](const BridgeEvent& event) {
+        if (event.kind == "query_finished")
+            finished = true;
+        if ((event.kind == "stored_page" || event.kind == "page") && !event.cells.empty())
+            counts.push_back(event.cells[0].integer);
+    });
+    const auto run = [&](const char* sql) {
+        finished = false;
+        const auto query = adapter->execute(connection, sql);
+        QVERIFY(query);
+        adapter->fetchPage(*query);
+        QTRY_VERIFY(finished);
+        adapter->releaseQuery(*query);
+    };
+    for (const char* sql : {"CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+                            "CREATE VIEW item_names AS SELECT name FROM items"})
+        run(sql);
+    const auto write = [&](const QString& name, const QByteArray& body) {
+        QFile file(files.filePath(name));
+        return file.open(QIODevice::WriteOnly) && file.write(body) == body.size()
+                   ? files.filePath(name)
+                   : QString();
+    };
+    const auto failing = write("failing.csv", "name,id\nann,1\n,2\n");
+    const auto valid = write("valid.csv", "name,id\nann,1\nbo,2\n");
+    QVERIFY(!failing.isEmpty() && !valid.isEmpty());
+    auto* navigator = window.findChild<NavigatorController*>();
+    auto* model = navigator->model();
+    const auto root = model->index(0, 0);
+    model->fetchMore(root);
+    QTRY_VERIFY(root.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    const auto schema = model->index(0, 0, root);
+    model->fetchMore(schema);
+    QTRY_VERIFY(schema.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    for (int row = 0; row < model->rowCount(schema); ++row) {
+        const auto group = model->index(row, 0, schema);
+        model->fetchMore(group);
+        QTRY_VERIFY(group.data(NavigatorModel::ChildrenLoadedRole).toBool());
+    }
+    const auto table = model->index(0, 0, model->index(0, 0, schema));
+    QCOMPARE(table.data().toString(), QString("items"));
+    const auto view = model->index(0, 0, model->index(1, 0, schema));
+    QCOMPARE(view.data().toString(), QString("item_names"));
+    QMenu viewMenu;
+    navigator->populateContextMenu(&viewMenu, view);
+    auto* importView = viewMenu.findChild<QAction*>("importObject");
+    QVERIFY(importView && !importView->isEnabled());
+    QCOMPARE(importView->toolTip(), QString("Only tables can receive imported rows."));
+
+    QMenu tableMenu;
+    navigator->populateContextMenu(&tableMenu, table);
+    auto* importTable = tableMenu.findChild<QAction*>("importObject");
+    QVERIFY(importTable && importTable->isEnabled());
+    importTable->trigger();
+    auto* dialog = window.findChild<TableImportDialog*>("tableImportDialog");
+    QVERIFY(dialog);
+    QTRY_VERIFY(dialog->isVisible());
+    auto* path = dialog->findChild<QLineEdit*>("tableImportPath");
+    auto* start = dialog->findChild<QPushButton*>("tableImportStart");
+    QVERIFY(path && start && !start->isEnabled());
+    QVERIFY(!dialog->findChild<QLineEdit*>("tableImportTableName")->isVisibleTo(dialog));
+    path->setText(failing);
+    auto* preview = dialog->findChild<QTableView*>("tableImportPreview");
+    QTRY_COMPARE(preview->model()->rowCount(), 2);
+    QComboBox* idSource = nullptr;
+    QTRY_VERIFY((idSource = dialog->findChild<QComboBox*>("tableImportSource_id")) &&
+                idSource->count() == 3);
+    QCOMPARE(preview->model()->index(1, 0).data().toString(), QString("NULL"));
+    QCOMPARE(idSource->currentData().toInt(), 1);
+    QCOMPARE(dialog->findChild<QComboBox*>("tableImportSource_name")->currentData().toInt(), 0);
+    QCOMPARE(dialog->findChild<QPlainTextEdit*>("tableImportSql")->toPlainText(),
+             QString("INSERT INTO \"main\".\"items\" (\"id\", \"name\") VALUES (?, ?);"));
+    QTRY_VERIFY(start->isEnabled());
+    start->click();
+    auto* status = dialog->findChild<QLabel*>("statusMessage");
+    QTRY_VERIFY2(status->text().contains("Row 2:") && status->text().contains("NOT NULL"),
+                 qPrintable(status->text()));
+    QVERIFY(dialog->isVisible());
+    QCOMPARE(start->text(), QString("Retry"));
+    path->setText(valid);
+    QTRY_VERIFY(start->isEnabled() &&
+                dialog->findChild<QTableView*>("tableImportPreview")->model()->index(1, 0).data() ==
+                    QString("bo"));
+    start->click();
+    QTRY_VERIFY(!window.findChild<TableImportDialog*>("tableImportDialog"));
+    counts.clear();
+    run("SELECT count(*) FROM items");
+    QTRY_COMPARE(counts, QList<qint64>{2});
+
+    QMenu schemaMenu;
+    navigator->populateContextMenu(&schemaMenu, schema);
+    auto* importNew = schemaMenu.findChild<QAction*>("importNewTable");
+    QVERIFY(importNew);
+    importNew->trigger();
+    dialog = window.findChild<TableImportDialog*>("tableImportDialog");
+    QVERIFY(dialog);
+    QVERIFY(!dialog->findChild<QComboBox*>("tableImportConflict")->isVisibleTo(dialog));
+    dialog->findChild<QLineEdit*>("tableImportPath")->setText(valid);
+    QCheckBox* includeId = nullptr;
+    QTRY_VERIFY((includeId = dialog->findChild<QCheckBox*>("tableImportInclude_1")));
+    includeId->setChecked(false);
+    dialog->findChild<QLineEdit*>("tableImportColumnName_0")->setText("full_name");
+    start = dialog->findChild<QPushButton*>("tableImportStart");
+    start->click();
+    auto* validation = dynamic_cast<design::FieldValidation*>(
+        dialog->findChild<QLineEdit*>("tableImportPath")->parentWidget());
+    QVERIFY(validation);
+    QCOMPARE(validation->error(), QString("Enter a name for the new table."));
+    dialog->findChild<QLineEdit*>("tableImportTableName")->setText("imported");
+    start->click();
+    QTRY_VERIFY(!window.findChild<TableImportDialog*>("tableImportDialog"));
+    counts.clear();
+    run("SELECT count(full_name) FROM imported");
+    QTRY_COMPARE(counts, QList<qint64>{2});
 }

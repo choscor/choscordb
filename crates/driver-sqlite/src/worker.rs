@@ -228,56 +228,62 @@ fn apply_edit_batch(db: &Db, batch: EditBatch) -> Result<EditBatchSummary> {
     }
     let mut affected_rows = Vec::with_capacity(batch.statements.len());
     db.execute_batch("BEGIN IMMEDIATE").map_err(normalize)?;
-    let outcome: Result<()> = (|| {
-        for edit in batch.statements {
-            let values: Result<Vec<SqlValue>> = edit
-                .params
-                .into_iter()
-                .map(|v| {
-                    Ok(match v {
-                        Value::Null => SqlValue::Null,
-                        Value::Bool(v) => SqlValue::Integer(v as i64),
-                        Value::Integer(v) => SqlValue::Integer(v),
-                        Value::Real(v) => SqlValue::Real(v),
-                        Value::Binary(v) => SqlValue::Blob(v),
-                        Value::Decimal(v)
-                        | Value::Text(v)
-                        | Value::Date(v)
-                        | Value::Time(v)
-                        | Value::Timestamp(v)
-                        | Value::Uuid(v)
-                        | Value::Json(v) => SqlValue::Text(v),
-                        Value::Deferred { .. } => {
-                            return Err(DriverError::new(
-                                ErrorKind::InvalidInput,
-                                "Deferred values cannot be edited",
-                            ));
-                        }
-                        Value::DeferredFallback { .. }
-                        | Value::FallbackText { .. }
-                        | Value::Unavailable { .. } => {
-                            return Err(DriverError::new(
-                                ErrorKind::InvalidInput,
-                                "Fallback or unavailable values cannot be edited",
-                            ));
-                        }
-                    })
+    let run = |edit: EditStatement| -> Result<u64> {
+        let values: Result<Vec<SqlValue>> = edit
+            .params
+            .into_iter()
+            .map(|v| {
+                Ok(match v {
+                    Value::Null => SqlValue::Null,
+                    Value::Bool(v) => SqlValue::Integer(v as i64),
+                    Value::Integer(v) => SqlValue::Integer(v),
+                    Value::Real(v) => SqlValue::Real(v),
+                    Value::Binary(v) => SqlValue::Blob(v),
+                    Value::Decimal(v)
+                    | Value::Text(v)
+                    | Value::Date(v)
+                    | Value::Time(v)
+                    | Value::Timestamp(v)
+                    | Value::Uuid(v)
+                    | Value::Json(v) => SqlValue::Text(v),
+                    Value::Deferred { .. } => {
+                        return Err(DriverError::new(
+                            ErrorKind::InvalidInput,
+                            "Deferred values cannot be edited",
+                        ));
+                    }
+                    Value::DeferredFallback { .. }
+                    | Value::FallbackText { .. }
+                    | Value::Unavailable { .. } => {
+                        return Err(DriverError::new(
+                            ErrorKind::InvalidInput,
+                            "Fallback or unavailable values cannot be edited",
+                        ));
+                    }
                 })
-                .collect();
-            let values = values?;
-            let count = db
-                .execute(&edit.sql, rusqlite::params_from_iter(values))
-                .map_err(normalize)? as u64;
-            if edit.expected_rows.is_some_and(|expected| expected != count) {
-                return Err(DriverError::new(
-                    ErrorKind::Query,
-                    "Edit conflict: the original row has changed",
-                ));
-            }
-            affected_rows.push(count);
+            })
+            .collect();
+        let values = values?;
+        let count = db
+            .execute(&edit.sql, rusqlite::params_from_iter(values))
+            .map_err(normalize)? as u64;
+        if edit.expected_rows.is_some_and(|expected| expected != count) {
+            return Err(DriverError::new(
+                ErrorKind::Query,
+                "Edit conflict: the original row has changed",
+            ));
         }
-        Ok(())
-    })();
+        Ok(count)
+    };
+    let outcome: Result<()> =
+        batch
+            .statements
+            .into_iter()
+            .enumerate()
+            .try_for_each(|(index, edit)| {
+                affected_rows.push(run(edit).map_err(|error| error.at_statement(index))?);
+                Ok(())
+            });
     if let Err(error) = outcome {
         let _ = db.execute_batch("ROLLBACK");
         return Err(error);

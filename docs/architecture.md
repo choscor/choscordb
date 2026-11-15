@@ -135,6 +135,30 @@ For the SQL format, the actor writes the `DROP` statement and the DDL from `Conn
 The actor sends `TableExportProgress` after each table, then `TableExportFinished` or `TableExportFailed` with the name of the failed table.
 A failed or cancelled file is not written. Files of earlier tables stay.
 
+### Table import
+
+The navigator "Import…" item on a table and "Import into new table…" on a connection, database or schema open the import dialog.
+`read_import_file` in `core` reads a CSV, JSON array or JSON Lines file in UTF-8 or Latin-1. The preview has the first 100 rows.
+CSV options are the delimiter, the quote, the NULL text and the header row. A JSON row is an object. The keys become the columns in the order of the file.
+Limits: 64 MiB, 100,000 rows and 1,000 columns for each file.
+`table_import_default_mapping` in the bridge maps the table columns to the file columns with the same name.
+`plan_table_import` makes one `INSERT` for each row. `row_import_sql` in `driver-api` gives the conflict policy for each driver:
+
+| Policy | SQLite and PostgreSQL | MySQL and MariaDB |
+| --- | --- | --- |
+| Stop | `INSERT` | `INSERT` |
+| Skip | `ON CONFLICT DO NOTHING` | `ON DUPLICATE KEY UPDATE` of the first column to itself |
+| Update | `ON CONFLICT (key) DO UPDATE` | `ON DUPLICATE KEY UPDATE` |
+| Replace | `REPLACE INTO` (SQLite only) | `REPLACE INTO` |
+
+`Update` needs all primary key columns in the mapping. PostgreSQL does not show `Replace`.
+Before the import, the dialog shows the SQL for each row from `table_import_review`. It uses the same plan as the import.
+`Engine::import_table` sends one `ImportTable` command to the connection actor.
+The actor reads the file on a blocking thread, inspects the table with `Connection::inspect_edit_target` and applies all rows with one `apply_edit_batch` call in one transaction.
+Each driver puts the index of the failed statement in `DriverError::failed_statement`. The bridge adds `Row N:` to the error message.
+A new table gets `TEXT` columns. The actor creates the table first and drops it again when the rows fail.
+Cancel stops the import before the write. During the write, it asks the driver to cancel the statement.
+
 ### Result tabs for each statement
 
 `Run all` runs each statement as a separate query.

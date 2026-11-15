@@ -58,6 +58,13 @@ impl Connection for Conn {
         }
         Ok(Box::new(Cursor))
     }
+    async fn apply_edit_batch(&mut self, batch: EditBatch) -> Result<EditBatchSummary> {
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("batch of {}", batch.statements.len()));
+        Err(DriverError::new(ErrorKind::Query, "value too long").at_statement(1))
+    }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>> {
         if parent.as_ref().is_some_and(|id| id.0 == "bad") {
             return Err(DriverError::new(ErrorKind::Query, "Metadata unavailable"));
@@ -410,5 +417,51 @@ fn a_stale_handle_error_uses_user_words() {
     assert_eq!(
         choscordb_core::SubmitError::StaleHandle.to_string(),
         "The result is no longer available. Run the query again."
+    );
+}
+
+#[test]
+fn a_failed_import_into_a_new_table_drops_the_new_table_and_names_the_row() {
+    let (mut engine, log) = engine(EngineConfig::default());
+    let c = engine.connect("fake", options()).unwrap();
+    wait_for(&mut engine, |e| matches!(e, Event::Connected { .. }));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rows.csv");
+    std::fs::write(&path, "name\na\nb\n").unwrap();
+    engine
+        .import_table(
+            c,
+            TableImportRequest {
+                driver: GridEditDriver::Sqlite,
+                file: ImportFile {
+                    path,
+                    format: ImportFileFormat::Csv(CsvReadOptions::default()),
+                    encoding: ImportEncoding::Utf8,
+                },
+                target: TableImportTarget::New {
+                    qualified_name: "\"imported\"".into(),
+                },
+                mapping: vec![ImportMapping {
+                    target: "name".into(),
+                    source: 0,
+                }],
+                conflict: ImportConflict::Stop,
+            },
+        )
+        .unwrap();
+    let event = wait_for(&mut engine, |e| {
+        matches!(e, Event::TableImportFailed { .. })
+    });
+    assert!(
+        matches!(&event, Event::TableImportFailed { row: Some(2), error, .. } if error.message == "value too long"),
+        "{event:?}"
+    );
+    assert_eq!(
+        *log.lock().unwrap(),
+        vec![
+            "CREATE TABLE \"imported\" (\"name\" TEXT)",
+            "batch of 2",
+            "DROP TABLE \"imported\"",
+        ]
     );
 }

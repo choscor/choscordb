@@ -22,19 +22,25 @@ mod quick_filter;
 pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy};
 mod result_copy;
 mod table_export;
+mod table_import;
 pub use table_export::{
     export_tables, table_export_defaults, table_export_error, table_export_formats,
     table_export_line_breaks,
+};
+pub use table_import::{
+    import_table, table_import_conflicts, table_import_default_mapping, table_import_defaults,
+    table_import_encodings, table_import_error, table_import_formats, table_import_preview,
+    table_import_review, table_import_unavailable_reason,
 };
 mod sql_edit;
 pub use sql_edit::{row_limit_choices, sql_apply_row_limit, sql_format_edit, sql_toggle_comment};
 mod screen_state;
 pub use screen_state::{
     export_presentation, export_transition, grid_edit_note, grid_edit_presentation,
-    grid_edit_transition, panel_observation, panel_presentation, panel_transition,
-    profile_operation_presentation, profile_test_presentation, profile_test_transition,
-    query_presentation, query_result_state, query_transition, ssh_trust_note, updater_presentation,
-    updater_transition,
+    grid_edit_transition, import_presentation, panel_observation, panel_presentation,
+    panel_transition, profile_operation_presentation, profile_test_presentation,
+    profile_test_transition, query_presentation, query_result_state, query_transition,
+    ssh_trust_note, updater_presentation, updater_transition,
 };
 mod result_json;
 pub use choscordb_core::CLIPBOARD_SQL_TABLE_REQUIRED;
@@ -1393,6 +1399,43 @@ pub mod ffi {
         path: String,
         pattern: String,
     }
+    #[derive(Default)]
+    struct TableImportMappingDto {
+        target: String,
+        source: i32,
+    }
+    #[derive(Default)]
+    struct TableImportRequestDto {
+        driver: String,
+        path: String,
+        format: String,
+        delimiter: String,
+        quote: String,
+        header: bool,
+        null_text: String,
+        encoding: String,
+        existing: bool,
+        object_id: String,
+        parent_kind: String,
+        parent_qualified: String,
+        table_name: String,
+        mapping: Vec<TableImportMappingDto>,
+        conflict: String,
+    }
+    struct TableImportReviewDto {
+        valid: bool,
+        error: String,
+        sql: String,
+    }
+    #[derive(Default)]
+    struct TableImportPreviewDto {
+        valid: bool,
+        error: String,
+        columns: Vec<String>,
+        row_count: u32,
+        cells: Vec<String>,
+        nulls: Vec<bool>,
+    }
     struct PlannedStatementDto {
         start: u64,
         end: u64,
@@ -1851,6 +1894,7 @@ pub mod ffi {
             error: &str,
         ) -> PanelObservationDto;
         fn export_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
+        fn import_presentation(state: ExportStateDto, detail: &str) -> PresentationDto;
         fn export_transition(state: ExportStateDto, event: ExportEventDto) -> ExportTransitionDto;
         fn updater_presentation(state: UpdaterStateDto, detail: &str) -> PresentationDto;
         fn updater_transition(
@@ -2281,6 +2325,29 @@ pub mod ffi {
             engine: &mut BridgeEngine,
             connection: u64,
             request: &TableExportRequestDto,
+        ) -> Submit;
+        fn table_import_unavailable_reason(kind: &str, relation_subtype: &str) -> String;
+        fn table_import_formats() -> Vec<TableExportFormatDto>;
+        fn table_import_encodings() -> Vec<CodeLabelDto>;
+        fn table_import_conflicts(driver: &str) -> Vec<CodeLabelDto>;
+        fn table_import_defaults() -> TableImportRequestDto;
+        fn table_import_default_mapping(
+            table_columns: Vec<String>,
+            file_columns: Vec<String>,
+        ) -> Vec<i32>;
+        fn table_import_error(request: &TableImportRequestDto) -> String;
+        fn table_import_preview(request: &TableImportRequestDto) -> TableImportPreviewDto;
+        fn table_import_review(
+            request: &TableImportRequestDto,
+            qualified_name: &str,
+            table_columns: Vec<String>,
+            key_columns: Vec<String>,
+            file_columns: Vec<String>,
+        ) -> TableImportReviewDto;
+        fn import_table(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            request: &TableImportRequestDto,
         ) -> Submit;
         fn cancel(engine: &mut BridgeEngine, query: u64) -> Submit;
         fn disconnect(engine: &mut BridgeEngine, connection: u64) -> Submit;

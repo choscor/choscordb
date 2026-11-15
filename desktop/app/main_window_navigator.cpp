@@ -18,6 +18,7 @@
 #include "widgets/sidebar_section/sidebar_section.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include "widgets/table_export_dialog/table_export_dialog.h"
+#include "widgets/table_import_dialog/table_import_dialog.h"
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QDockWidget>
@@ -147,6 +148,26 @@ void MainWindow::connectNavigator(const Ui& ui) {
                 dialog->setAttribute(Qt::WA_DeleteOnClose);
                 dialog->open();
             });
+    connect(
+        navigatorController, &NavigatorController::tableImportRequested, this,
+        [this](quint64 connection, TableImportRequest request, const QString& targetName,
+               const QString& refreshObjectId) {
+            request.driver = workspace_->driverForConnection(connection);
+            auto* dialog =
+                new TableImportDialog(workspace_->adapter(), connection, request, targetName, this);
+            dialog->setAttribute(Qt::WA_DeleteOnClose);
+            if (!refreshObjectId.isEmpty())
+                connect(dialog, &TableImportDialog::imported, this,
+                        [this, refreshObjectId](quint64 imported) {
+                            if (!navigatorController_->model()->refreshObject(imported,
+                                                                              refreshObjectId))
+                                reportError(tr("Data imported, but the navigator did not refresh. "
+                                               "%1")
+                                                .arg(EngineAdapter::recoveryHint(
+                                                    RecoveryHint::RefreshNavigator)));
+                        });
+            dialog->open();
+        });
     connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
             &MainWindow::handleObjectActionEvent, Qt::DirectConnection);
     connect(navigatorController->model(), &NavigatorModel::childrenRequested, this,

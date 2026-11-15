@@ -1,5 +1,6 @@
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "widgets/profile_dialog/profile_dialog.h"
+#include "widgets/screen_state/screen_state.h"
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLineEdit>
@@ -7,11 +8,9 @@ namespace choscordb {
 void ProfileDialog::createTagControls() {
     const auto& options = EngineAdapter::profileTagOptions();
     auto combo = [this](const char* object, const QString& name, const QList<CodeLabel>& values) {
-        auto* box = new QComboBox(form_);
+        auto* box = codeLabelChoices(values, form_);
         box->setObjectName(object);
         box->setAccessibleName(name);
-        for (const auto& value : values)
-            box->addItem(value.label, value.code);
         connect(box, &QComboBox::currentIndexChanged, this, [this] {
             if (!filling_) {
                 dirty_ = true;

@@ -370,13 +370,13 @@ pub(crate) async fn apply_batch(conn: &mut Conn, batch: EditBatch) -> Result<Edi
     let mut statements = Vec::with_capacity(batch.statements.len());
     for edit in batch.statements {
         if !edit.sql.split_whitespace().next().is_some_and(|word| {
-            ["INSERT", "UPDATE", "DELETE"]
+            ["INSERT", "REPLACE", "UPDATE", "DELETE"]
                 .iter()
                 .any(|allowed| word.eq_ignore_ascii_case(allowed))
         }) {
             return Err(error(
                 ErrorKind::InvalidInput,
-                "Edit batches accept only INSERT, UPDATE, and DELETE",
+                "Edit batches accept only INSERT, REPLACE, UPDATE, and DELETE",
             ));
         }
         let params = edit
@@ -392,16 +392,17 @@ pub(crate) async fn apply_batch(conn: &mut Conn, batch: EditBatch) -> Result<Edi
         .map_err(normalize)?;
     let result = async {
         let mut affected_rows = Vec::with_capacity(statements.len());
-        for (sql, params, expected) in statements {
+        for (index, (sql, params, expected)) in statements.into_iter().enumerate() {
             tx.exec_drop(sql, mysql_async::Params::Positional(params))
                 .await
-                .map_err(normalize)?;
+                .map_err(|failure| normalize(failure).at_statement(index))?;
             let count = tx.affected_rows();
             if expected.is_some_and(|expected| expected != count) {
                 return Err(error(
                     ErrorKind::Query,
                     "Edit conflict: the original row has changed",
-                ));
+                )
+                .at_statement(index));
             }
             affected_rows.push(count);
         }

@@ -19,30 +19,13 @@
 namespace choscordb {
 namespace {
 using bridge_detail::fromRust;
-constexpr int CsvOptionsRole = Qt::UserRole + 1;
-constexpr int SqlOptionsRole = Qt::UserRole + 2;
-QComboBox* formats(QWidget* parent) {
-    auto* box = new QComboBox(parent);
-    for (const auto& format : EngineAdapter::tableExportFormats()) {
-        box->addItem(format.label, format.code);
-        box->setItemData(box->count() - 1, format.csvOptions, CsvOptionsRole);
-        box->setItemData(box->count() - 1, format.sqlOptions, SqlOptionsRole);
-    }
-    return box;
-}
-QComboBox* choices(const QList<CodeLabel>& values, QWidget* parent) {
-    auto* box = new QComboBox(parent);
-    for (const auto& value : values)
-        box->addItem(value.label, value.code);
-    return box;
-}
 }
 TableExportDialog::TableExportDialog(EngineAdapter* adapter, quint64 connection,
                                      TableExportRequest request, QWidget* parent)
     : DialogShell(parent), adapter_(adapter), connection_(connection), base_(std::move(request)),
-      format_(formats(this)), csvFields_(new QWidget(this)), delimiter_(new QLineEdit(this)),
-      quote_(new QLineEdit(this)),
-      lineBreak_(choices(EngineAdapter::tableExportLineBreaks(), this)),
+      format_(transferFormatChoices(EngineAdapter::tableExportFormats(), this)),
+      csvFields_(new QWidget(this)), delimiter_(new QLineEdit(this)), quote_(new QLineEdit(this)),
+      lineBreak_(codeLabelChoices(EngineAdapter::tableExportLineBreaks(), this)),
       nullText_(new QLineEdit(this)), header_(new QCheckBox(tr("Header row"), this)),
       sqlFields_(new QWidget(this)), structure_(new QCheckBox(tr("Structure"), this)),
       drop_(new QCheckBox(tr("DROP statement"), this)), data_(new QCheckBox(tr("Data"), this)),

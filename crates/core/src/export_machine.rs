@@ -69,23 +69,55 @@ pub fn step(
     }
 }
 
-pub fn present(state: &ExportState, detail: &str) -> Presentation {
+struct TransferTexts {
+    preparing: &'static str,
+    running: &'static str,
+    cancelling: &'static str,
+    complete: &'static str,
+    cancelled: &'static str,
+    failed: &'static str,
+}
+
+const EXPORT_TEXTS: TransferTexts = TransferTexts {
+    preparing: "Preparing the export…",
+    running: "Exporting…",
+    cancelling: "Cancelling the export…",
+    complete: "Export complete.",
+    cancelled: "Export cancelled. The partial file was removed.",
+    failed: "Export failed",
+};
+
+const IMPORT_TEXTS: TransferTexts = TransferTexts {
+    preparing: "Preparing the import…",
+    running: "Importing…",
+    cancelling: "Cancelling the import…",
+    complete: "Import complete.",
+    cancelled: "Import cancelled. The table did not change.",
+    failed: "Import failed",
+};
+
+fn present_transfer(state: &ExportState, detail: &str, texts: &TransferTexts) -> Presentation {
     use ExportState as S;
     match state {
         S::Idle => Presentation::idle(detail.trim()),
-        S::Submitting => Presentation::busy(detail_or(detail, "Preparing the export…")),
-        S::Running => Presentation::busy(detail_or(detail, "Exporting…")),
-        S::Cancelling => Presentation::busy(detail_or(detail, "Cancelling the export…")),
+        S::Submitting => Presentation::busy(detail_or(detail, texts.preparing)),
+        S::Running => Presentation::busy(detail_or(detail, texts.running)),
+        S::Cancelling => Presentation::busy(detail_or(detail, texts.cancelling)),
         S::Succeeded => {
-            Presentation::idle(detail_or(detail, "Export complete.")).with_tone(Tone::Success)
+            Presentation::idle(detail_or(detail, texts.complete)).with_tone(Tone::Success)
         }
-        S::Cancelled => Presentation::idle(detail_or(
-            detail,
-            "Export cancelled. The partial file was removed.",
-        )),
+        S::Cancelled => Presentation::idle(detail_or(detail, texts.cancelled)),
         S::Failed => Presentation {
             body: Body::None,
-            ..Presentation::failed("Export failed", detail, RecoveryHint::Retry)
+            ..Presentation::failed(texts.failed, detail, RecoveryHint::Retry)
         },
     }
+}
+
+pub fn present(state: &ExportState, detail: &str) -> Presentation {
+    present_transfer(state, detail, &EXPORT_TEXTS)
+}
+
+pub fn present_import(state: &ExportState, detail: &str) -> Presentation {
+    present_transfer(state, detail, &IMPORT_TEXTS)
 }

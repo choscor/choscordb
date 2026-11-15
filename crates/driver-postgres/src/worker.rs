@@ -876,16 +876,20 @@ async fn apply_edit_batch(
 ) -> Result<EditBatchSummary> {
     let tx = client.transaction().await.map_err(normalize)?;
     let mut affected_rows = Vec::with_capacity(batch.statements.len());
-    for edit in batch.statements {
+    for (index, edit) in batch.statements.into_iter().enumerate() {
         let params: Vec<EditParam> = edit.params.into_iter().map(EditParam).collect();
         let bound: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
             params.iter().map(|p| p as _).collect();
-        let count = tx.execute(&edit.sql, &bound).await.map_err(normalize)?;
+        let count = tx
+            .execute(&edit.sql, &bound)
+            .await
+            .map_err(|error| normalize(error).at_statement(index))?;
         if edit.expected_rows.is_some_and(|expected| expected != count) {
             return Err(DriverError::new(
                 ErrorKind::Query,
                 "Edit conflict: the original row has changed",
-            ));
+            )
+            .at_statement(index));
         }
         affected_rows.push(count);
     }

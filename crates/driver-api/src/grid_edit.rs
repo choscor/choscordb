@@ -157,11 +157,7 @@ pub fn grid_editability(request: &GridEditRequest) -> GridEditability {
         GridEditDriver::Postgres => request.parameter_style == "$",
         GridEditDriver::Sqlite | GridEditDriver::Mysql => request.parameter_style == "?",
     };
-    let delimiter = if request.driver == GridEditDriver::Mysql {
-        b'`'
-    } else {
-        b'"'
-    };
+    let delimiter = identifier_delimiter(request.driver) as u8;
     if !valid_qualified(&request.qualified_name, delimiter)
         || request
             .columns
@@ -172,9 +168,7 @@ pub fn grid_editability(request: &GridEditRequest) -> GridEditability {
     {
         return result;
     }
-    if !request.reason.is_empty()
-        && !(request.object_read_only
-            && request.reason.to_ascii_lowercase().contains("inserts only"))
+    if !request.reason.is_empty() && !(request.object_read_only && inserts_allowed(&request.reason))
     {
         result.reason = Some(request.reason.clone());
         return result;
@@ -231,7 +225,19 @@ pub fn grid_editability(request: &GridEditRequest) -> GridEditability {
     result
 }
 
-fn valid_qualified(name: &str, delimiter: u8) -> bool {
+pub fn inserts_allowed(reason: &str) -> bool {
+    reason.is_empty() || reason.to_ascii_lowercase().contains("inserts only")
+}
+
+pub(crate) fn identifier_delimiter(driver: GridEditDriver) -> char {
+    if driver == GridEditDriver::Mysql {
+        '`'
+    } else {
+        '"'
+    }
+}
+
+pub(crate) fn valid_qualified(name: &str, delimiter: u8) -> bool {
     if name.is_empty() || name.len() > 1024 * 1024 || name.contains('\0') {
         return false;
     }
@@ -269,7 +275,7 @@ fn valid_qualified(name: &str, delimiter: u8) -> bool {
     }
 }
 
-fn quoted(name: &str, delimiter: char) -> Result<String, GridEditError> {
+pub(crate) fn quoted(name: &str, delimiter: char) -> Result<String, GridEditError> {
     if name.is_empty() || name.len() > 1024 * 1024 || name.contains('\0') {
         return Err(GridEditError::InvalidIdentifier);
     }
@@ -299,44 +305,46 @@ fn push_param(
         _ => {}
     }
     let bound = match value {
-        Value::Text(text) => {
-            let kind = column.database_type.to_ascii_lowercase();
-            if kind.starts_with("numeric") || kind.starts_with("decimal") {
-                Value::Decimal(text.clone())
-            } else if kind == "date" {
-                Value::Date(text.clone())
-            } else if kind == "time" || kind.starts_with("time ") {
-                Value::Time(text.clone())
-            } else if kind.starts_with("timestamp") {
-                Value::Timestamp(text.clone())
-            } else if kind == "uuid" {
-                Value::Uuid(text.clone())
-            } else if kind == "json" || kind == "jsonb" {
-                Value::Json(text.clone())
-            } else {
-                value.clone()
-            }
-        }
+        Value::Text(text) => typed_text(text.clone(), &column.database_type),
         _ => value.clone(),
     };
     statement.params.push(bound);
     parameter_types.push(column.database_type.clone());
-    Ok(if driver == GridEditDriver::Postgres {
-        format!("${}", statement.params.len())
+    Ok(placeholder(driver, statement.params.len()))
+}
+
+pub(crate) fn typed_text(text: String, database_type: &str) -> Value {
+    let kind = database_type.to_ascii_lowercase();
+    if kind.starts_with("numeric") || kind.starts_with("decimal") {
+        Value::Decimal(text)
+    } else if kind == "date" {
+        Value::Date(text)
+    } else if kind == "time" || kind.starts_with("time ") {
+        Value::Time(text)
+    } else if kind.starts_with("timestamp") {
+        Value::Timestamp(text)
+    } else if kind == "uuid" {
+        Value::Uuid(text)
+    } else if kind == "json" || kind == "jsonb" {
+        Value::Json(text)
+    } else {
+        Value::Text(text)
+    }
+}
+
+pub(crate) fn placeholder(driver: GridEditDriver, position: usize) -> String {
+    if driver == GridEditDriver::Postgres {
+        format!("${position}")
     } else {
         "?".into()
-    })
+    }
 }
 
 pub fn plan_grid_edits(request: &GridEditRequest) -> Result<GridEditPlan, GridEditError> {
     if !shaped(request) {
         return Err(GridEditError::InvalidShape);
     }
-    let delimiter = if request.driver == GridEditDriver::Mysql {
-        '`'
-    } else {
-        '"'
-    };
+    let delimiter = identifier_delimiter(request.driver);
     if !valid_qualified(&request.qualified_name, delimiter as u8)
         || request
             .columns

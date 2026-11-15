@@ -1,0 +1,123 @@
+use super::*;
+use crate::{
+    ExportId, ImportRead, TableImportRequest, TableImportTarget, import_failure_row,
+    plan_table_import, read_import_file,
+};
+use choscordb_export::Cancellation;
+
+fn stopped(cancellation: &Cancellation, shutdown: &watch::Receiver<bool>) -> Result<()> {
+    if *shutdown.borrow() {
+        return Err(DriverError::new(
+            ErrorKind::Disconnected,
+            "Import interrupted by disconnect",
+        ));
+    }
+    if cancellation.is_cancelled() {
+        return Err(DriverError::new(ErrorKind::Cancelled, "Import cancelled"));
+    }
+    Ok(())
+}
+
+async fn execute_ddl(connection: &mut dyn Connection, sql: &str) -> Result<()> {
+    let mut cursor = connection.execute(sql, QueryOptions::default()).await?;
+    cursor.close().await
+}
+
+async fn write_rows(
+    connection: &mut dyn Connection,
+    batch: EditBatch,
+    cancellation: &Cancellation,
+) -> Result<u64> {
+    let handle = connection.cancellation_handle();
+    let apply = connection.apply_edit_batch(batch);
+    tokio::pin!(apply);
+    let summary = tokio::select! {
+        biased;
+        summary = &mut apply => summary,
+        _ = cancellation.cancelled() => {
+            handle.cancel().await?;
+            apply.await
+        }
+    }?;
+    Ok(summary.affected_rows.iter().sum())
+}
+
+async fn import(
+    connection: &mut dyn Connection,
+    import: ExportId,
+    request: TableImportRequest,
+    cancellation: &Cancellation,
+    events: &EventSink,
+    shutdown: &watch::Receiver<bool>,
+) -> Result<u64> {
+    stopped(cancellation, shutdown)?;
+    let file = request.file.clone();
+    let data = tokio::task::spawn_blocking(move || read_import_file(&file, ImportRead::All))
+        .await
+        .map_err(|_| DriverError::new(ErrorKind::Internal, "The import file reader stopped"))??;
+    send(
+        events,
+        Event::TableImportProgress {
+            import,
+            rows: data.rows.len() as u64,
+        },
+    )
+    .await;
+    let target = match &request.target {
+        TableImportTarget::Existing { object } => {
+            let mut shutdown = shutdown.clone();
+            Some(metadata_operation(connection.inspect_edit_target(object), &mut shutdown).await?)
+        }
+        TableImportTarget::New { .. } => None,
+    };
+    let plan = plan_table_import(&request, target.as_ref(), data)?;
+    stopped(cancellation, shutdown)?;
+    if let Some(create) = &plan.create {
+        execute_ddl(connection, create).await?;
+    }
+    let written = write_rows(connection, plan.batch, cancellation).await;
+    match (written, &plan.drop) {
+        (Err(error), Some(drop)) => match execute_ddl(connection, drop).await {
+            Ok(()) => Err(error),
+            Err(cleanup) => Err(DriverError {
+                message: format!(
+                    "{} The new table was not removed: {}",
+                    error.message, cleanup.message
+                ),
+                ..error
+            }),
+        },
+        (written, _) => written,
+    }
+}
+
+pub(super) async fn run(
+    connection: &mut dyn Connection,
+    import_id: ExportId,
+    request: TableImportRequest,
+    cancellation: Cancellation,
+    events: &EventSink,
+    shutdown: &watch::Receiver<bool>,
+) {
+    let event = match import(
+        connection,
+        import_id,
+        request,
+        &cancellation,
+        events,
+        shutdown,
+    )
+    .await
+    {
+        Ok(rows) => Event::TableImportFinished {
+            import: import_id,
+            rows,
+        },
+        Err(error) => Event::TableImportFailed {
+            import: import_id,
+            row: import_failure_row(&error),
+            error,
+        },
+    };
+    send(events, event).await
+}

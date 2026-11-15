@@ -206,6 +206,19 @@ pub enum Event {
         table: String,
         error: DriverError,
     },
+    TableImportProgress {
+        import: ExportId,
+        rows: u64,
+    },
+    TableImportFinished {
+        import: ExportId,
+        rows: u64,
+    },
+    TableImportFailed {
+        import: ExportId,
+        row: Option<u64>,
+        error: DriverError,
+    },
     ExportProgress {
         export: ExportId,
         query: QueryId,

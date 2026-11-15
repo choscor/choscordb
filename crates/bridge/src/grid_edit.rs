@@ -4,7 +4,7 @@ use choscordb_driver_api::{
     GridEditRow, SetValueKind, SetValueOutcome, grid_editability, grid_set_value, plan_grid_edits,
 };
 
-fn grid_driver(name: &str) -> Result<GridEditDriver, GridEditError> {
+pub(crate) fn grid_driver(name: &str) -> Result<GridEditDriver, GridEditError> {
     match name {
         "sqlite" => Ok(GridEditDriver::Sqlite),
         "postgres" | "postgresql" => Ok(GridEditDriver::Postgres),

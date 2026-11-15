@@ -179,6 +179,29 @@ struct TableExportRequest {
     bool header = true, structure = true, drop = false, data = true, folder = true;
     QString path, pattern;
 };
+struct TableImportMapping {
+    QString target;
+    int source = -1;
+};
+struct TableImportRequest {
+    QString driver, path, format, delimiter, quote, nullText, encoding;
+    bool header = true, existing = true;
+    QString objectId, parentKind, parentQualified, tableName;
+    QList<TableImportMapping> mapping;
+    QString conflict;
+};
+struct TableImportPreview {
+    bool valid = false;
+    QString error;
+    QStringList columns;
+    int rowCount = 0;
+    QStringList cells;
+    QList<bool> nulls;
+};
+struct TableImportReview {
+    bool valid = false;
+    QString error, sql;
+};
 struct DatabaseList {
     QList<CodeLabel> choices;
     QString current;
@@ -708,6 +731,22 @@ class EngineAdapter final : public QObject {
     static QString tableExportError(const TableExportRequest& request);
     std::optional<quint64> exportTables(quint64 connection, const TableExportRequest& request,
                                         QString* error);
+    static QString tableImportUnavailableReason(const QString& kind, const QString& subtype);
+    static QList<TableExportFormatChoice> tableImportFormats();
+    static QList<CodeLabel> tableImportEncodings();
+    static QList<CodeLabel> tableImportConflicts(const QString& driver);
+    static TableImportRequest tableImportDefaults();
+    static QList<int> tableImportDefaultMapping(const QStringList& tableColumns,
+                                                const QStringList& fileColumns);
+    static QString tableImportError(const TableImportRequest& request);
+    static TableImportPreview tableImportPreview(const TableImportRequest& request);
+    static TableImportReview tableImportReview(const TableImportRequest& request,
+                                               const QString& qualifiedName,
+                                               const QStringList& tableColumns,
+                                               const QStringList& keyColumns,
+                                               const QStringList& fileColumns);
+    std::optional<quint64> importTable(quint64 connection, const TableImportRequest& request,
+                                       QString* error);
     static quint32 valueChunkBytes();
     static QString valueDetailError(quint64 bytes);
     void loadValueChunk(quint64 query, quint64 handle, quint64 offset,
@@ -765,6 +804,7 @@ class EngineAdapter final : public QObject {
     static PanelObservation panelObservation(PanelKind kind, const PanelFacts& facts,
                                              const QString& error = {});
     static Presentation exportPresentation(ExportState state, const QString& detail = {});
+    static Presentation importPresentation(ExportState state, const QString& detail = {});
     static Transition<ExportState> exportTransition(ExportState state, ExportEvent event);
     static Presentation updaterPresentation(UpdaterState state, const QString& detail = {});
     static Transition<UpdaterState> updaterTransition(UpdaterState state, UpdaterEvent event);

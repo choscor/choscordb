@@ -578,6 +578,21 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
         });
     }
     if (SqlTemplateService::createParent(objectKind)) {
+        auto* importNew = menu->addAction(tr("Import into new table…"));
+        importNew->setObjectName("importNewTable");
+        connect(importNew, &QAction::triggered, this, [this, index] {
+            if (!index.isValid() || index.model() != model_)
+                return;
+            TableImportRequest request;
+            request.existing = false;
+            request.parentKind = index.data(NavigatorModel::KindRole).toString();
+            request.parentQualified = index.data(NavigatorModel::QualifiedNameRole).toString();
+            emit tableImportRequested(index.data(NavigatorModel::ConnectionRole).toULongLong(),
+                                      request, index.data(Qt::DisplayRole).toString(),
+                                      index.data(NavigatorModel::ObjectIdRole).toString());
+        });
+    }
+    if (SqlTemplateService::createParent(objectKind)) {
         const auto parentConnection = index.data(NavigatorModel::ConnectionRole).toULongLong();
         const auto parentDriver =
             driverResolver_ ? driverResolver_(parentConnection).toLower() : QString{};
@@ -681,6 +696,20 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
                     emit tableExportRequested(connection,
                                               {{objectId, qualifiedName, objectKind, subtype}});
             });
+    }
+    if (traits.relation) {
+        auto* importAction = menu->addAction(tr("Import…"));
+        importAction->setObjectName("importObject");
+        disableWithReason(importAction,
+                          EngineAdapter::tableImportUnavailableReason(objectKind, subtype));
+        connect(importAction, &QAction::triggered, this,
+                [this, requestStillMatches, connection, objectId, qualifiedName] {
+                    if (!requestStillMatches())
+                        return;
+                    TableImportRequest request;
+                    request.objectId = objectId;
+                    emit tableImportRequested(connection, request, qualifiedName, {});
+                });
     }
     menu->addSeparator();
     addObjectAction(tr("Truncate…"), QStringLiteral("truncate"));

@@ -16,6 +16,7 @@ mod memory;
 pub use memory::{LEASE_BOOKKEEPING_BYTES, MemoryUsage, PageLease, PageMemoryConfig, lease_fits};
 mod object_action;
 mod table_export;
+mod table_import;
 pub use object_action::{
     ObjectAction, ObjectActionStatement, ObjectScript, ObjectScriptText, SCRIPT_SELECT_ROWS,
     TruncateTraits, object_action_availability, object_display_identity, object_script,
@@ -25,6 +26,13 @@ pub use table_export::{
     DEFAULT_TABLE_EXPORT_PATTERN, MAX_TABLE_EXPORT_OBJECTS, TableExportData,
     TableExportDestination, TableExportFormat, TableExportObject, TableExportRequest,
     TableExportTarget, plan_table_export,
+};
+pub use table_import::{
+    CsvReadOptions, IMPORT_NEW_COLUMN_TYPE, IMPORT_PREVIEW_ROWS, ImportData, ImportEncoding,
+    ImportFile, ImportFileFormat, ImportMapping, ImportRead, MAX_IMPORT_COLUMNS,
+    MAX_IMPORT_FILE_BYTES, MAX_IMPORT_ROWS, PlannedImport, TableImportRequest, TableImportTarget,
+    import_failure_row, plan_table_import, read_import_file, table_import_mapping_error,
+    table_import_unavailable,
 };
 mod operation;
 mod preview_capture;
@@ -445,10 +453,10 @@ impl Engine {
         });
         Ok(id)
     }
-    pub fn export_tables(
+    fn start_transfer(
         &mut self,
         connection: ConnectionId,
-        targets: Vec<TableExportTarget>,
+        command: impl FnOnce(ExportId, choscordb_export::Cancellation) -> actor::Command,
     ) -> std::result::Result<ExportId, SubmitError> {
         self.ensure_running()?;
         if self.export_owners.contains_key(&connection) {
@@ -470,13 +478,35 @@ impl Engine {
         });
         self.export_owners.insert(connection, id);
         permit.send(actor::Request {
-            command: actor::Command::ExportTables {
-                export: id,
-                targets,
-                cancellation,
-            },
+            command: command(id, cancellation),
         });
         Ok(id)
+    }
+    pub fn export_tables(
+        &mut self,
+        connection: ConnectionId,
+        targets: Vec<TableExportTarget>,
+    ) -> std::result::Result<ExportId, SubmitError> {
+        self.start_transfer(connection, |export, cancellation| {
+            actor::Command::ExportTables {
+                export,
+                targets,
+                cancellation,
+            }
+        })
+    }
+    pub fn import_table(
+        &mut self,
+        connection: ConnectionId,
+        request: TableImportRequest,
+    ) -> std::result::Result<ExportId, SubmitError> {
+        self.start_transfer(connection, |import, cancellation| {
+            actor::Command::ImportTable {
+                import,
+                request: Box::new(request),
+                cancellation,
+            }
+        })
     }
     pub fn cancel_export(&self, export: ExportId) -> std::result::Result<(), SubmitError> {
         self.ensure_running()?;
@@ -935,7 +965,9 @@ impl Engine {
         if let Event::ExportFinished { export, .. }
         | Event::ExportFailed { export, .. }
         | Event::TableExportFinished { export, .. }
-        | Event::TableExportFailed { export, .. } = &event
+        | Event::TableExportFailed { export, .. }
+        | Event::TableImportFinished { import: export, .. }
+        | Event::TableImportFailed { import: export, .. } = &event
             && let Some(slot) = self.exports.remove(*export)
         {
             self.export_owners.remove(&slot.connection);

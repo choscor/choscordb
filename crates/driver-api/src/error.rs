@@ -21,6 +21,8 @@ pub struct DriverError {
     pub kind: ErrorKind,
     pub message: String,
     pub vendor_code: Option<String>,
+    #[serde(default)]
+    pub failed_statement: Option<u64>,
 }
 impl DriverError {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
@@ -28,10 +30,15 @@ impl DriverError {
             kind,
             message: message.into(),
             vendor_code: None,
+            failed_statement: None,
         }
     }
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.vendor_code = Some(code.into());
+        self
+    }
+    pub fn at_statement(mut self, index: usize) -> Self {
+        self.failed_statement = u64::try_from(index).ok();
         self
     }
 }
