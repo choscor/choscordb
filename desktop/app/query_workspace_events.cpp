@@ -18,7 +18,6 @@
 #include <string_view>
 #include <utility>
 namespace choscordb {
-using query_workspace_detail::nextEditRequestToken;
 using query_workspace_detail::text;
 namespace {
 QString rowCountText(quint64 count) {
@@ -282,6 +281,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 openObjectData(*queryConnection_, objectId_, resultOrigin_,
                                querySettings_->preferences(), true, {}, objectTime_);
             else if (queryConnection_ && !executedSql_.isEmpty()) {
+                const auto previous = query_;
                 if (query_)
                     adapter_->releaseQuery(*query_);
                 clearResult();
@@ -289,6 +289,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                 query_ = adapter_->execute(*queryConnection_, executedSql_,
                                            connectionProfiles_.value(*queryConnection_),
                                            querySettings_->preferences());
+                if (previous)
+                    replaceStatementQuery(*previous, query_);
                 if (query_)
                     viewRefreshQuery_ = query_;
                 else {
@@ -409,6 +411,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         connectionSqlModes_.remove(e.id);
         connectionTags_.remove(e.id);
         connectionRowLimits_.remove(e.id);
+        dropStatementResults(e.id);
         liveConnections_.removeIf([&e](const LiveConnection& live) { return live.id == e.id; });
         documentChanged();
         if (queryConnection_ == e.id) {
@@ -505,6 +508,10 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (!busy) {
             cancellationPending_ = false;
             executionFinished_ = true;
+            if (state == QueryState::Cancelled) {
+                statementQueue_.clear();
+                runningStatementLabel_.clear();
+            }
         }
         setExecutionState(state);
         updateActions();
@@ -521,16 +528,13 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
                                                          driverForConnection(*queryConnection_))
                                                          .inspectAfterResult;
         if (!widgets_.objectReadOnly && inspectNow && !executedSql_.isEmpty()) {
-            editTargetToken_ = nextEditRequestToken();
             editQualifiedName_.clear();
             editReason_ = tr("Checking query edit eligibility…");
-            QStringList names;
-            for (const auto& column : columns_)
-                names << column.name;
-            adapter_->inspectQueryEdit(*queryConnection_, executedSql_, names, editTargetToken_);
         }
-        if (inspectNow)
+        if (inspectNow) {
+            inspectResultEdit();
             requestCellMetadata();
+        }
         quint64 bytes = columns_.capacity() * sizeof(ResultColumn);
         for (const auto& column : columns_)
             bytes += 96 + sizeof(QChar) * (column.name.capacity() + column.databaseType.capacity() +
@@ -604,15 +608,10 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             queryConnection_ && !hasMoreResults_ &&
             EngineAdapter::driverWorkflow(driverForConnection(*queryConnection_))
                 .inspectAfterResult;
-        if (!widgets_.objectReadOnly && inspectNow && !executedSql_.isEmpty()) {
-            editTargetToken_ = nextEditRequestToken();
-            QStringList names;
-            for (const auto& column : columns_)
-                names << column.name;
-            adapter_->inspectQueryEdit(*queryConnection_, executedSql_, names, editTargetToken_);
-        }
-        if (inspectNow)
+        if (inspectNow) {
+            inspectResultEdit();
             requestCellMetadata();
+        }
         if (hasMoreResults_)
             message(tr("More results are available. Use Next result to continue."));
         cancellationPending_ = false;
@@ -628,10 +627,11 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         busy_ = false;
         for (const auto& warning : e.warnings)
             message(text(warning));
-        message(e.has_affected_rows ? tr("Completed in %1 ms; %2.")
-                                          .arg(e.duration_ms)
-                                          .arg(affectedRowsText(e.affected_rows))
-                                    : tr("Completed in %1 ms.").arg(e.duration_ms));
+        const auto outcome = e.has_affected_rows ? tr("Completed in %1 ms; %2.")
+                                                       .arg(e.duration_ms)
+                                                       .arg(affectedRowsText(e.affected_rows))
+                                                 : tr("Completed in %1 ms.").arg(e.duration_ms);
+        message(outcome);
         completedDurationMs_ = e.duration_ms;
         const bool hasResultPage = currentPage_ && !columns_.empty();
         completedAffectedRows_ =
@@ -647,6 +647,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
              hasResultPage ? tr("%1 in memory")
                                  .arg(QLocale().formattedDataSize(qint64(model_->residentBytes())))
                            : QString{}});
+        finishStatement(outcome, {});
         updateActions();
     } else if (eventKind == "query_failed") {
         if (queryConnection_)
@@ -664,13 +665,13 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         fetching_ = false;
         hasMore_ = false;
         hasMoreResults_ = false;
-        message(text(e.error) +
-                (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code))));
+        const auto failure =
+            text(e.error) +
+            (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code)));
+        message(failure);
         if (EngineAdapter::queryTransition(documentState(resultEditor_), QueryEvent::Fail).allowed)
-            setExecutionState(QueryState::Failed,
-                              text(e.error) + (e.vendor_code.empty()
-                                                   ? QString{}
-                                                   : tr(" [Code: %1]").arg(text(e.vendor_code))));
+            setExecutionState(QueryState::Failed, failure);
+        finishStatement({}, failure);
         updateActions();
     }
 }

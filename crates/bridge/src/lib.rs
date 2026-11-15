@@ -1356,6 +1356,17 @@ pub mod ffi {
         source_bytes: u64,
         peak_bytes: u64,
     }
+    struct PlannedStatementDto {
+        start: u64,
+        end: u64,
+        label: String,
+    }
+    #[derive(Default)]
+    struct StatementPlanDto {
+        valid: bool,
+        error: String,
+        statements: Vec<PlannedStatementDto>,
+    }
     #[derive(Default)]
     struct SqlRange {
         valid: bool,
@@ -2175,6 +2186,13 @@ pub mod ffi {
             max_bytes: u32,
         ) -> Submit;
         fn load_value(engine: &mut BridgeEngine, query: u64, handle: u64) -> Submit;
+        fn sql_statement_plan(
+            sql: &str,
+            start: u64,
+            end: u64,
+            driver: &str,
+            sql_mode: &str,
+        ) -> StatementPlanDto;
         fn create_templates() -> Vec<CodeLabelDto>;
         fn create_template_parent_policy(parent_kind: &str) -> bool;
         fn create_template_unavailable_reason(object: &str, driver: &str) -> String;
@@ -2692,6 +2710,44 @@ pub fn sql_execution_range(
         }
     })
     .unwrap_or_default()
+}
+
+pub fn sql_statement_plan(
+    sql: &str,
+    start: u64,
+    end: u64,
+    driver: &str,
+    sql_mode: &str,
+) -> ffi::StatementPlanDto {
+    use choscordb_sql_language as language;
+    let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
+        return ffi::StatementPlanDto {
+            error: "The statement range is invalid.".into(),
+            ..Default::default()
+        };
+    };
+    let plan = match sql_edit::mysql_mode(driver, sql_mode) {
+        Some(mode) => language::statement_plan_mysql(sql, start..end, mode),
+        None => language::statement_plan(sql, start..end),
+    };
+    match plan {
+        Ok(statements) => ffi::StatementPlanDto {
+            valid: true,
+            error: String::new(),
+            statements: statements
+                .into_iter()
+                .map(|statement| ffi::PlannedStatementDto {
+                    start: statement.range.start as u64,
+                    end: statement.range.end as u64,
+                    label: statement.label,
+                })
+                .collect(),
+        },
+        Err(error) => ffi::StatementPlanDto {
+            error: error.to_string(),
+            ..Default::default()
+        },
+    }
 }
 
 pub fn load_value(engine: &mut BridgeEngine, query: u64, handle: u64) -> ffi::Submit {

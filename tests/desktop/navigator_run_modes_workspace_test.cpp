@@ -48,7 +48,10 @@ void NavigatorSqlWorkspaceTest::runModesRunCurrentStatementOrWholeDocument() {
     auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
     editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 0);
     runAll->trigger();
-    QTRY_VERIFY(messages->toPlainText().contains("Multiple statements provided"));
+    auto* statementTabs = window.findChild<QTabBar*>("sqlStatementResultTabs");
+    QVERIFY(statementTabs);
+    QTRY_COMPARE(statementTabs->count(), 2);
+    QTRY_COMPARE(cell(), QString("2"));
     QTRY_VERIFY(runButton->isEnabled());
     editor->setSelection(0, 0, 0, 23);
     runAll->trigger();
@@ -60,6 +63,78 @@ void NavigatorSqlWorkspaceTest::runModesRunCurrentStatementOrWholeDocument() {
     messages->clear();
     runAll->trigger();
     QTRY_VERIFY(messages->toPlainText().contains("No executable statement in the document."));
+}
+
+void NavigatorSqlWorkspaceTest::runAllShowsOneResultTabPerStatement() {
+    choscordb::MainWindow window;
+    window.show();
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(
+        window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+    auto* grid = window.findChild<QTableView*>("queryResults");
+    auto* runAll = window.findChild<QAction*>("runAll");
+    auto* stop = window.findChild<QAction*>("stopOnFirstError");
+    auto* tabs = window.findChild<QTabBar*>("sqlStatementResultTabs");
+    auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+    QVERIFY(editor && grid && runAll && stop && tabs && messages);
+    QVERIFY(stop->isCheckable() && stop->isChecked());
+    workspace->connectSqlite(":memory:");
+    QTRY_VERIFY(runAll->isEnabled());
+    const auto cell = [grid] { return grid->model()->index(0, 0).data().toString(); };
+    const auto labels = [tabs] {
+        QStringList names;
+        for (int index = 0; index < tabs->count(); ++index)
+            names << tabs->tabText(index);
+        return names;
+    };
+    editor->setText("-- name: Customers\nSELECT 10 AS a;\nSELECT 20 AS b;\n"
+                    "SELECT * FROM missing_table;\nSELECT 40 AS d;");
+    runAll->trigger();
+    QTRY_COMPARE(labels(), (QStringList{"Customers", "Query 2", "Query 3"}));
+    QTRY_VERIFY(runAll->isEnabled());
+    QVERIFY(messages->toPlainText().contains("Run all stopped at the failed statement."));
+    QVERIFY(tabs->isVisible());
+    QCOMPARE(tabs->currentIndex(), 2);
+    tabs->setCurrentIndex(0);
+    QTRY_COMPARE(cell(), QString("10"));
+    QCOMPARE(grid->model()->headerData(0, Qt::Horizontal).toString(), QString("a"));
+    tabs->setCurrentIndex(1);
+    QTRY_COMPARE(cell(), QString("20"));
+    stop->setChecked(false);
+    runAll->trigger();
+    QTRY_COMPARE(labels(), (QStringList{"Customers", "Query 2", "Query 3", "Query 4"}));
+    QTRY_VERIFY(runAll->isEnabled());
+    QTRY_COMPARE(cell(), QString("40"));
+    tabs->setCurrentIndex(0);
+    QTRY_COMPARE(cell(), QString("10"));
+    struct PinProbe : QObject {
+        bool eventFilter(QObject* object, QEvent* event) override {
+            if (event->type() == QEvent::Show && object->objectName() == "statementResultMenu")
+                if (auto* pin = object->findChild<QAction*>("pinStatementResult"))
+                    QTimer::singleShot(0, pin, [pin] {
+                        pin->trigger();
+                        qobject_cast<QMenu*>(pin->parent())->close();
+                    });
+            return false;
+        }
+    } probe;
+    qApp->installEventFilter(&probe);
+    const auto point = tabs->tabRect(0).center();
+    emit tabs->customContextMenuRequested(point);
+    qApp->removeEventFilter(&probe);
+    QTRY_COMPARE(tabs->tabText(0), QString("Customers · Pinned"));
+    editor->setText("SELECT 7 AS g;\nSELECT 8 AS h;");
+    runAll->trigger();
+    QTRY_COMPARE(labels(), (QStringList{"Customers · Pinned", "Query 1", "Query 2"}));
+    QTRY_VERIFY(runAll->isEnabled());
+    QTRY_COMPARE(cell(), QString("8"));
+    tabs->setCurrentIndex(0);
+    QTRY_COMPARE(cell(), QString("10"));
+    editor->setText("SELECT 9 AS i;");
+    window.findChild<QAction*>("runStatement")->trigger();
+    QTRY_COMPARE(labels(), (QStringList{"Customers · Pinned", "Query 1"}));
+    QTRY_COMPARE(cell(), QString("9"));
 }
 
 void NavigatorSqlWorkspaceTest::statusLineShowsTheTargetOfEachDocument() {

@@ -478,7 +478,9 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                             resultEditReason,
                             ui.rowLimit,
                             ui.safetyLevel,
-                            ui.connectionTag},
+                            ui.connectionTag,
+                            ui.statementResults,
+                            ui.stopOnFirstError},
                            this);
     preferences_->addGrid(workspace_);
     connect(workspace_, &QueryWorkspace::foreignKeyRequested, this, &MainWindow::openReferencedRow);

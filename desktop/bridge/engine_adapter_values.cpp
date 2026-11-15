@@ -780,4 +780,15 @@ bool EngineAdapter::appearanceThemeValid(const QString& theme) {
     const auto bytes = theme.toUtf8();
     return appearance_theme_valid(utf8View(bytes));
 }
+StatementPlan EngineAdapter::statementPlan(const QString& sql, quint64 start, quint64 end,
+                                           const QString& driver, const QString& sqlMode) {
+    const auto bytes = sql.toUtf8(), driverBytes = driver.toUtf8(), modeBytes = sqlMode.toUtf8();
+    const auto dto =
+        sql_statement_plan(utf8View(bytes), start, end, utf8View(driverBytes), utf8View(modeBytes));
+    StatementPlan plan{dto.valid, fromRust(dto.error), {}};
+    plan.statements.reserve(static_cast<qsizetype>(dto.statements.size()));
+    for (const auto& statement : dto.statements)
+        plan.statements.push_back({statement.start, statement.end, fromRust(statement.label)});
+    return plan;
+}
 }

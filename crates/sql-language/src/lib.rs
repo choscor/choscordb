@@ -1,7 +1,12 @@
 mod completion;
 mod create_templates;
+mod statement_plan;
 pub use create_templates::{
     CreateTemplate, create_template, create_template_parent, create_template_unavailable,
+};
+pub use statement_plan::{
+    MAX_RESULT_TAB_LABEL_CHARS, MAX_RESULT_TABS, PlannedStatement, StatementPlanError,
+    statement_plan, statement_plan_mysql,
 };
 mod completion_context;
 pub use completion_context::{completion_context, completion_source_supported};

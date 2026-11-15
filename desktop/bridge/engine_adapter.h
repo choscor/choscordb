@@ -549,6 +549,16 @@ struct SqlSelection {
     bool confirmation;
     bool readsOnly = false;
 };
+struct PlannedStatement {
+    quint64 start = 0;
+    quint64 end = 0;
+    QString label;
+};
+struct StatementPlan {
+    bool valid = false;
+    QString error;
+    QList<PlannedStatement> statements;
+};
 enum class SqlGateDecision : uint8_t { Run, Confirm, Reject };
 struct SqlGate {
     SqlGateDecision decision = SqlGateDecision::Reject;
@@ -800,6 +810,8 @@ class EngineAdapter final : public QObject {
     static SqlSelection executionRange(const QString& sql, quint64 cursor, quint64 start,
                                        quint64 end, RunScope scope, const QString& driver = {},
                                        const QString& sqlMode = {});
+    static StatementPlan statementPlan(const QString& sql, quint64 start, quint64 end,
+                                       const QString& driver, const QString& sqlMode);
     static SqlGate executionGate(const QString& safety, const SqlSelection& range);
   signals:
     void queryPreferencesReady(quint64 token, const choscordb::QueryPreferences& preferences);

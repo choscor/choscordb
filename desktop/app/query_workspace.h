@@ -20,6 +20,7 @@ class QLabel;
 class QPlainTextEdit;
 class QMenu;
 class QTableView;
+class QTabBar;
 class QWidget;
 namespace choscordb::design {
 class RightSheet;
@@ -74,6 +75,8 @@ class QueryWorkspace final : public QObject {
         QComboBox* rowLimit = nullptr;
         QComboBox* safetyLevel = nullptr;
         QLabel* connectionTag = nullptr;
+        QTabBar* statementResults = nullptr;
+        QAction* stopOnFirstError = nullptr;
     };
     struct LiveConnection {
         quint64 id = 0;
@@ -168,6 +171,30 @@ class QueryWorkspace final : public QObject {
         QString visibleSize;
     };
     void execute(RunScope scope);
+    struct QueuedStatement {
+        QString sql, label;
+    };
+    struct StatementResult {
+        quint64 query = 0;
+        quint64 connection = 0;
+        QString label, sql, outcome, error;
+        std::vector<ResultColumn> columns;
+        bool pinned = false;
+    };
+    void setupStatementResults();
+    void submitStatement();
+    void finishStatement(const QString& outcome, const QString& error);
+    void showStatementResult(int index);
+    void releaseStatementResults(bool keepPinned);
+    void dropStatementResults(quint64 connection);
+    void replaceStatementQuery(quint64 previous, std::optional<quint64> next);
+    void syncStatementTabs();
+    bool statementResultQuery(quint64 query) const;
+    void inspectResultEdit();
+    std::vector<StatementResult> statementResults_;
+    QList<QueuedStatement> statementQueue_;
+    QString runningStatementLabel_;
+    QPointer<SqlEditor> statementEditor_;
     RunScope executionModeScope_ = RunScope::Current;
     quint64 executionModeToken_ = 0;
     bool executionModeReady_ = false;

@@ -674,7 +674,8 @@ void ModernUiTest::runControlsStayInToolbarAtBothWidths() {
     QVERIFY(!runButton->icon().isNull());
     QCOMPARE(modeButton->accessibleName(), QString("Run options"));
     QVERIFY(modeButton->menu());
-    QCOMPARE(modeButton->menu()->actions(), (QList<QAction*>{runCurrent, runAll}));
+    QCOMPARE(modeButton->menu()->actions(),
+             (QList<QAction*>{runCurrent, runAll, window.findChild<QAction*>("stopOnFirstError")}));
     QVERIFY(!runButton->isEnabled() && !modeButton->isEnabled());
     auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
     workspace->connectSqlite(":memory:");

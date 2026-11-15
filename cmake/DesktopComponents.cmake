@@ -158,6 +158,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_workspace_view.cpp
   desktop/app/query_workspace_columns.cpp
   desktop/app/query_workspace_set_value.cpp
+  desktop/app/query_workspace_statements.cpp
   desktop/app/result_filter_bar.cpp
   desktop/app/result_pane_tabs.cpp
   desktop/app/object_data_workspace.cpp

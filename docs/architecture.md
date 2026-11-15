@@ -123,6 +123,18 @@ A list can have up to `MAX_DATABASE_CHOICES` (10,000) entries. A larger list is 
 `profile_with_database` in `bridge` sets the database name, or the SQLite path, of a copy of the profile.
 The desktop frontend opens a new connection with that profile and moves the current SQL tab to it. The old connection stays open.
 
+### Result tabs for each statement
+
+`Run all` runs each statement as a separate query.
+Rust (`statement_plan` in `crates/sql-language`) splits the selection or the document into statements and gives each statement its label.
+The label is `Query N`, or the text of a `-- name:` comment line above the statement.
+A plan has a maximum of 64 statements. If the plan is empty or too large, Rust returns the error that the frontend shows.
+The query workspace keeps one result tab for each finished statement.
+When a statement fails and "Stop on first error" is on, the run stops at that statement.
+A pinned tab stays when the next run starts. The next run releases the other tabs.
+Limitation: a connection keeps only one open cursor.
+When the next statement starts, the earlier statement keeps only the pages that it loaded before.
+
 ### Metadata cache
 
 The `storage` crate keeps the navigator children of saved connection profiles in the `metadata_cache` table.

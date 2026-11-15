@@ -67,6 +67,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     setupRowLimit();
     setupSafetyLevel();
     setupResultViewControls();
+    setupStatementResults();
     setupColumnChooser();
     querySettings_ = new QuerySettingsController(adapter_, this);
     setupCellEditor();
@@ -221,6 +222,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             }
             return;
         }
+        statementQueue_.clear();
         if (query_ && queryAvailable()) {
             if (!adapter_->cancelQuery(*query_))
                 return;
@@ -630,6 +632,7 @@ void QueryWorkspace::invalidateResult(bool connectionLost) {
     invalidatePending_ = false;
     cancellationPending_ = false;
     clearResult();
+    releaseStatementResults(false);
     if (adapter_ && query_)
         adapter_->releaseQuery(*query_);
     query_.reset();
@@ -745,6 +748,10 @@ void QueryWorkspace::updateActions() {
     widgets_.grid->setVisible(displayedResult);
     widgets_.run->setEnabled(connected && !inFlight && querySettings_->isReady());
     widgets_.runAll->setEnabled(widgets_.run->isEnabled());
+    if (widgets_.statementResults) {
+        widgets_.statementResults->setVisible(displayedResult && statementResults_.size() > 1);
+        widgets_.statementResults->setEnabled(!inFlight);
+    }
     const bool cancelling = executionState_ == QueryState::Cancelling;
     widgets_.cancel->setEnabled(!cancellationPending_ && query_.has_value() &&
                                 (busy_ || viewBusy_ || executionModeToken_ != 0) &&
@@ -866,6 +873,25 @@ void QueryWorkspace::execute(RunScope scope) {
         return;
     if (!connectionAvailable(*connection) || workInFlight() || widgets_.currentEditor() != editor)
         return;
+    const auto bytes = sql.toUtf8();
+    const auto slice = [&bytes](quint64 start, quint64 end) {
+        return QString::fromUtf8(
+            bytes.mid(static_cast<qsizetype>(start), static_cast<qsizetype>(end - start)));
+    };
+    const auto plan =
+        EngineAdapter::statementPlan(sql, range.start, range.end, driverForConnection(*connection),
+                                     connectionSqlModes_.value(*connection));
+    QList<QueuedStatement> statements;
+    if (scope == RunScope::Current)
+        statements.push_back({slice(range.start, range.end), plan.statements.isEmpty()
+                                                                 ? tr("Result")
+                                                                 : plan.statements.first().label});
+    else if (!plan.valid) {
+        message(plan.error);
+        return;
+    } else
+        for (const auto& statement : plan.statements)
+            statements.push_back({slice(statement.start, statement.end), statement.label});
     if (resultEditor_ && resultEditor_ != editor &&
         EngineAdapter::queryPresentation(documentState(resultEditor_)).tone == Tone::Success) {
         const auto reset =
@@ -874,22 +900,9 @@ void QueryWorkspace::execute(RunScope scope) {
             "resultStatus",
             reset.allowed ? QVariant(QVariantMap{{"state", int(reset.state)}}) : QVariant{});
     }
-    if (query_ && queryAvailable())
+    releaseStatementResults(true);
+    if (query_ && queryAvailable() && !statementResultQuery(*query_))
         adapter_->releaseQuery(*query_);
-    clearViewState();
-    const auto bytes = sql.toUtf8();
-    const auto limited = EngineAdapter::applyRowLimit(
-        QString::fromUtf8(bytes.mid(static_cast<qsizetype>(range.start),
-                                    static_cast<qsizetype>(range.end - range.start))),
-        connectionRowLimits_.value(*connection), driverForConnection(*connection),
-        connectionSqlModes_.value(*connection));
-    executedSql_ = limited.sql;
-    appliedRowLimit_ = limited.applied;
-    commandError_.clear();
-    query_ = adapter_->execute(*connection, executedSql_, connectionProfiles_.value(*connection),
-                               querySettings_->preferences());
-    if (query_)
-        editor->setProfileId(connectionProfiles_.value(*connection));
     queryConnection_ = connection;
     auto title = editor->filePath().isEmpty() ? editor->property("documentTitle").toString()
                                               : QFileInfo(editor->filePath()).fileName();
@@ -899,19 +912,8 @@ void QueryWorkspace::execute(RunScope scope) {
     resultOrigin_ = tr("%1 · %2").arg(title, editor->targetLabel());
     widgets_.messages->clear();
     message(tr("SQL result: %1").arg(resultOrigin_));
-    clearResult();
-    currentPage_.reset();
-    hasMore_ = false;
-    hasMoreResults_ = false;
-    fetching_ = false;
-    busy_ = query_.has_value();
-    executionFinished_ = !query_.has_value();
-    cancellationPending_ = false;
-    applyExecutionEvent(busy_ ? QueryEvent::Submit : QueryEvent::Fail,
-                        busy_ ? QString{}
-                              : tr("Could not submit the query: %1").arg(commandError_));
-    if (!busy_ && !commandError_.isEmpty())
-        message(commandError_);
-    updateActions();
+    statementQueue_ = statements;
+    statementEditor_ = editor;
+    submitStatement();
 }
 }

@@ -5,6 +5,7 @@
 class QAction;
 class QDockWidget;
 class QLabel;
+class QTabBar;
 class QListWidget;
 class QMenu;
 class QPlainTextEdit;
@@ -87,6 +88,8 @@ struct MainWindow::Ui {
     design::Button* discardResultEdits{};
     design::Button* applyResultEdits{};
     QLabel* resultEditReason{};
+    QTabBar* statementResults{};
+    QAction* stopOnFirstError{};
     QComboBox* rowLimit{};
     QComboBox* safetyLevel{};
     QLabel* connectionTag{};

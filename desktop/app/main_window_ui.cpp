@@ -53,6 +53,7 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableView>
 #include <QToolBar>
@@ -468,6 +469,10 @@ MainWindow::Ui MainWindow::buildUi() {
     runMenu->setObjectName("runModeMenu");
     runMenu->addAction(run);
     runMenu->addAction(runAll);
+    auto* stopOnFirstError = runMenu->addAction(tr("Stop on first error"));
+    stopOnFirstError->setObjectName("stopOnFirstError");
+    stopOnFirstError->setCheckable(true);
+    stopOnFirstError->setChecked(true);
     runMode->setMenu(runMenu);
     runGroup->addButton(runButton);
     runGroup->addButton(runMode);
@@ -787,6 +792,11 @@ MainWindow::Ui MainWindow::buildUi() {
         design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One),
         design::spacing(design::Spacing::Two), design::spacing(design::Spacing::One));
     paneHeaderLayout->addWidget(createResultPaneTabs(results, "sqlResultPaneTabs"));
+    auto* statementResults = new QTabBar(paneHeader);
+    statementResults->setObjectName("sqlStatementResultTabs");
+    statementResults->setAccessibleName(tr("Statement results"));
+    statementResults->setExpanding(false);
+    paneHeaderLayout->addWidget(statementResults);
     paneHeaderLayout->addStretch(1);
     auto* resultEditReason = createEditReasonLabel("queryResultEditReason", paneHeader);
     paneHeaderLayout->addWidget(resultEditReason);
@@ -972,6 +982,8 @@ MainWindow::Ui MainWindow::buildUi() {
         .discardResultEdits = discardResultEdits,
         .applyResultEdits = applyResultEdits,
         .resultEditReason = resultEditReason,
+        .statementResults = statementResults,
+        .stopOnFirstError = stopOnFirstError,
         .rowLimit = connectionToolbar.rowLimit,
         .safetyLevel = connectionToolbar.safetyLevel,
         .connectionTag = footerRow.connectionTag,
