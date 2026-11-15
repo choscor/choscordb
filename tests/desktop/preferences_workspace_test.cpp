@@ -757,7 +757,7 @@ class PreferencesWorkspaceTest : public QObject {
     void customizedAndDisabledUndoAffectActualKeyboardInput_data() {
         QTest::addColumn<QString>("binding");
         QTest::newRow("native-collision") << QString("Ctrl+U");
-        QTest::newRow("multi-chord") << QString("Ctrl+K, Ctrl+U");
+        QTest::newRow("multi-chord") << QString("Ctrl+J, Ctrl+U");
     }
     void customizedAndDisabledUndoAffectActualKeyboardInput() {
         QFETCH(QString, binding);

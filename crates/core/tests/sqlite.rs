@@ -839,3 +839,47 @@ fn history_reads_are_unsupported_on_sqlite() {
     assert_eq!(query, object);
     assert_eq!(error.kind, ErrorKind::Unsupported);
 }
+
+#[test]
+fn sqlite_connection_lists_sibling_database_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("main.sqlite");
+    rusqlite::Connection::open(&path).unwrap();
+    std::fs::write(dir.path().join("archive.db"), b"").unwrap();
+    std::fs::write(dir.path().join("readme.txt"), b"").unwrap();
+    let mut engine = Engine::new(EngineConfig::default(), vec![Arc::new(SqliteDriver)]).unwrap();
+    let c = engine
+        .connect(
+            "sqlite",
+            ConnectionOptions::Sqlite {
+                path: path.clone(),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    engine.list_databases(c, 41).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match engine.try_event() {
+            Some(Event::Databases {
+                connection,
+                request_token: 41,
+                databases,
+            }) => {
+                assert_eq!(connection, c);
+                let labels: Vec<_> = databases
+                    .choices
+                    .iter()
+                    .map(|choice| choice.label.as_str())
+                    .collect();
+                assert_eq!(labels, ["archive.db", "main.sqlite"]);
+                assert_eq!(databases.current, path.to_str().unwrap());
+                break;
+            }
+            Some(Event::DatabasesFailed { error, .. }) => panic!("listing failed: {error}"),
+            _ => {}
+        }
+        assert!(Instant::now() < deadline, "database list timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}

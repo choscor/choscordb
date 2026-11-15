@@ -513,8 +513,10 @@ void QueryWorkspace::showProfiles(const QString& profileId) {
                     setDocumentStatus(widgets_.currentEditor(), QueryState::Connecting, {},
                                       profile.name);
                     rememberProfile(id, profile);
-                    if (!savedProfile)
+                    if (!savedProfile) {
                         connectionProfiles_.remove(id);
+                        connectionSources_.remove(id);
+                    }
                 });
     }
     if (!profileId.isEmpty())
@@ -647,8 +649,9 @@ void QueryWorkspace::invalidateResult(bool connectionLost) {
         applyExecutionEvent(QueryEvent::Reset, tr("Open Data to read an object."));
     updateActions();
 }
-void QueryWorkspace::connectSqlite(const QString& path) {
-    if (auto id = adapter_->connectSqlite(path)) {
+std::optional<quint64> QueryWorkspace::connectSqlite(const QString& path) {
+    const auto id = adapter_->connectSqlite(path);
+    if (id) {
         pendingConnections_.insert(*id, path);
         connectionAttemptEditors_.insert(*id, widgets_.currentEditor());
         connectionAttemptStatus_.insert(
@@ -657,7 +660,13 @@ void QueryWorkspace::connectSqlite(const QString& path) {
                      : QVariantMap{});
         setDocumentStatus(widgets_.currentEditor(), QueryState::Connecting, {}, path);
         connectionDrivers_.insert(*id, QStringLiteral("sqlite"));
+        SavedProfile source;
+        source.name = path;
+        source.driver = QStringLiteral("sqlite");
+        source.path = path;
+        connectionSources_.insert(*id, source);
     }
+    return id;
 }
 std::optional<quint64> QueryWorkspace::connectSavedProfile(const SavedProfile& profile) {
     if (stopping_ || workInFlight()) {

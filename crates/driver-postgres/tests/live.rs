@@ -1708,3 +1708,22 @@ async fn auto_commit_sql_begin_keeps_writes_until_sql_rollback_or_commit() {
     );
     c.close().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires disposable live PostgreSQL fixture"]
+async fn database_list_includes_the_current_database() {
+    let mut connection = PostgresDriver.connect(settings()).await.unwrap();
+    let list = connection.list_databases().await.unwrap();
+    assert!(!list.current.is_empty());
+    assert!(
+        list.choices
+            .iter()
+            .any(|choice| choice.target == list.current)
+    );
+    assert!(
+        !list
+            .choices
+            .iter()
+            .any(|choice| choice.target == "template0")
+    );
+}

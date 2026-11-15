@@ -131,6 +131,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/error_feedback.cpp
   desktop/app/main_window_feedback.cpp
   desktop/app/main_window_diagnostics.cpp
+  desktop/app/main_window_databases.cpp
   desktop/app/main_window_quick_search.cpp
   desktop/app/main_window_ui.cpp
   desktop/app/main_window_sql_actions.cpp

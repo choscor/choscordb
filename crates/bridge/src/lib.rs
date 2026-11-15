@@ -1299,6 +1299,8 @@ pub mod ffi {
         query_preferences: QueryPreferencesDto,
         result_columns_context: String,
         hidden_columns: Vec<String>,
+        databases: Vec<CodeLabelDto>,
+        current_database: String,
         has_appearance: bool,
         appearance_layout: AppearanceLayoutDto,
         history_recorded: bool,
@@ -1368,6 +1370,12 @@ pub mod ffi {
         title: String,
         message: String,
         accept: String,
+    }
+    #[derive(Default)]
+    struct ProfileDatabaseDto {
+        valid: bool,
+        profile: ProfileDto,
+        error: String,
     }
     #[derive(Default)]
     struct ObjectActionRequestDto {
@@ -2167,6 +2175,9 @@ pub mod ffi {
             max_bytes: u32,
         ) -> Submit;
         fn load_value(engine: &mut BridgeEngine, query: u64, handle: u64) -> Submit;
+        fn list_databases(engine: &mut BridgeEngine, connection: u64, request_token: u64)
+        -> Submit;
+        fn profile_with_database(profile: ProfileDto, target: &str) -> ProfileDatabaseDto;
         fn object_ddl_request(
             engine: &mut BridgeEngine,
             connection: u64,
@@ -3436,6 +3447,42 @@ pub fn text_replace_all(
             error_field: search_error_field(error),
             ..Default::default()
         },
+    }
+}
+
+pub fn list_databases(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    request_token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.list_databases(unpack(connection), request_token)
+            .map(|()| connection)
+            .map_err(|e| e.to_string())
+    })
+}
+
+pub fn profile_with_database(
+    mut profile: ffi::ProfileDto,
+    target: &str,
+) -> ffi::ProfileDatabaseDto {
+    use choscordb_driver_api::DatabaseTargetField;
+    let rejected = |error: &str| ffi::ProfileDatabaseDto {
+        error: error.into(),
+        ..Default::default()
+    };
+    if target.is_empty() || target.contains('\0') {
+        return rejected("Choose a database.");
+    }
+    match choscordb_driver_api::database_target_field(&profile.driver) {
+        Some(DatabaseTargetField::Path) => profile.path = target.into(),
+        Some(DatabaseTargetField::Database) => profile.database = target.into(),
+        None => return rejected("This connection cannot switch databases."),
+    }
+    ffi::ProfileDatabaseDto {
+        valid: true,
+        profile,
+        error: String::new(),
     }
 }
 

@@ -34,5 +34,8 @@ void MainWindow::addSqlTextActions(QMenu* editMenu) {
     sqlTextAction("toggle_block_comment", tr("Toggle block comment"),
                   QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Slash),
                   [this] { workspace_->toggleSqlComment(true); });
+    editMenu->addSeparator();
+    sqlTextAction("switch_database", tr("Switch database…"), QKeySequence(Qt::CTRL | Qt::Key_K),
+                  [this] { switchDatabase(); });
 }
 }

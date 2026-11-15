@@ -99,6 +99,7 @@ enum Command {
     Metadata(Option<ObjectId>, Reply<Vec<SchemaObject>>),
     Graph(ObjectId, Reply<ObjectGraph>),
     Ddl(ObjectId, Reply<String>),
+    Databases(Reply<choscordb_driver_api::DatabaseList>),
     Edit(EditBatch, Reply<EditBatchSummary>),
     EditTarget(ObjectId, Reply<EditTarget>),
     EditQuery(String, Vec<String>, Reply<EditQueryTarget>),
@@ -752,6 +753,9 @@ impl Connection for PostgresConnection {
         self.client
             .request(|r| Command::Ddl(object.clone(), r))
             .await
+    }
+    async fn list_databases(&mut self) -> Result<choscordb_driver_api::DatabaseList> {
+        self.client.request(Command::Databases).await
     }
     async fn commit(&mut self) -> Result<()> {
         self.client.request(|r| Command::Transaction(true, r)).await

@@ -108,6 +108,7 @@ impl CancelHandle for QueryCancellation {
 struct SqliteConnection {
     client: Client,
     cancel: Arc<Cancellation>,
+    path: std::path::PathBuf,
 }
 struct Cursor {
     reader: Arc<dyn DeferredReader>,
@@ -141,6 +142,7 @@ impl DatabaseDriver for SqliteDriver {
         tokio::time::timeout(std::time::Duration::from_secs(15), async move {
             let (tx, rx) = mpsc::channel(32);
             let (ready_tx, ready_rx) = oneshot::channel();
+            let listed_path = path.clone();
             std::thread::Builder::new()
                 .name("choscordb-sqlite".into())
                 .spawn(move || worker::run(path, read_only, rx, ready_tx))
@@ -149,6 +151,7 @@ impl DatabaseDriver for SqliteDriver {
             let connection = SqliteConnection {
                 client: Client(tx),
                 cancel,
+                path: listed_path,
             };
             Ok(Box::new(connection) as Box<dyn Connection>)
         })
@@ -160,6 +163,12 @@ impl DatabaseDriver for SqliteDriver {
 impl Connection for SqliteConnection {
     fn read_only_session_sql(&self) -> Option<&'static str> {
         Some("PRAGMA query_only = ON")
+    }
+    async fn list_databases(&mut self) -> Result<choscordb_driver_api::DatabaseList> {
+        let path = self.path.clone();
+        tokio::task::spawn_blocking(move || choscordb_driver_api::sqlite_sibling_databases(&path))
+            .await
+            .map_err(|_| DriverError::new(ErrorKind::Internal, "SQLite file listing stopped"))?
     }
     async fn inspect_result_cells(
         &mut self,

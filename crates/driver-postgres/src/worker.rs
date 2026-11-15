@@ -977,6 +977,15 @@ pub(super) async fn run(
                         clear_notices(&notices);
                         let _ = reply.send(result);
                     }
+                    Command::Databases(reply) => {
+                        clear_notices(&notices);
+                        let result = cancel
+                            .closing
+                            .auxiliary(&pump, metadata::list_databases(&client))
+                            .await;
+                        clear_notices(&notices);
+                        let _ = reply.send(result);
+                    }
                     Command::Edit(batch, reply) => {
                         let result = cancel
                             .closing
@@ -1406,6 +1415,15 @@ pub(super) async fn run(
                     let result = cancel
                         .closing
                         .auxiliary(&pump, metadata::object_ddl(&transaction, &object))
+                        .await;
+                    clear_notices(&notices);
+                    let _ = reply.send(result);
+                }
+                Command::Databases(reply) => {
+                    clear_notices(&notices);
+                    let result = cancel
+                        .closing
+                        .auxiliary(&pump, metadata::list_databases(&transaction))
                         .await;
                     clear_notices(&notices);
                     let _ = reply.send(result);

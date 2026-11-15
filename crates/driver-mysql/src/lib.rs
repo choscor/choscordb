@@ -621,6 +621,23 @@ impl Connection for MysqlConnection {
     async fn apply_edit_batch(&mut self, batch: EditBatch) -> Result<EditBatchSummary> {
         editing::apply_batch(self.connection().await?, batch).await
     }
+    async fn list_databases(&mut self) -> Result<choscordb_driver_api::DatabaseList> {
+        let limit = u64::try_from(choscordb_driver_api::MAX_DATABASE_CHOICES + 1)
+            .map_err(|_| error(ErrorKind::Internal, "Database list limit overflow"))?;
+        let conn = self.connection().await?;
+        let names: Vec<String> = conn
+            .exec(
+                "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA ORDER BY SCHEMA_NAME LIMIT ?",
+                (limit,),
+            )
+            .await
+            .map_err(normalize)?;
+        let current: Option<Option<String>> = conn
+            .query_first("SELECT DATABASE()")
+            .await
+            .map_err(normalize)?;
+        choscordb_driver_api::named_database_list(names, current.flatten().unwrap_or_default())
+    }
     async fn sql_mode(&mut self) -> Result<Option<String>> {
         self.connection().await?;
         if self.sql_mode.is_none() {

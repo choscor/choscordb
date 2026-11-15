@@ -383,6 +383,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         if (eventKind == "connection_failed") {
             connectionProfiles_.remove(e.id);
             connectionDrivers_.remove(e.id);
+            connectionSources_.remove(e.id);
+            connectionSources_.remove(e.id);
             connectionSqlModes_.remove(e.id);
             connectionTags_.remove(e.id);
             connectionRowLimits_.remove(e.id);
@@ -403,6 +405,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         pendingTransactions_.remove(e.id);
         connectionProfiles_.remove(e.id);
         connectionDrivers_.remove(e.id);
+        connectionSources_.remove(e.id);
         connectionSqlModes_.remove(e.id);
         connectionTags_.remove(e.id);
         connectionRowLimits_.remove(e.id);

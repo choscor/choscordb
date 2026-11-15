@@ -9,6 +9,7 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Write SQL with completion, search and replace, and run options.
 - Format or minify SQL, and toggle line or block comments.
 - Set a row limit for `SELECT` statements on each connection.
+- Switch the database of a SQL tab (Ctrl+K). For SQLite, switch to another database file in the same folder.
 - Tag each connection with an environment and a color. The sidebar and the result footer show the tag.
 - Set a safety level for each connection: run without confirmation, confirm destructive statements, confirm each statement, or read-only.
 - Read large results page by page. Filter, sort and edit table rows.

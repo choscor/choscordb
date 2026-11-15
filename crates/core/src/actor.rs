@@ -56,6 +56,9 @@ pub(crate) enum Command {
         object: ObjectId,
         request_token: u64,
     },
+    Databases {
+        request_token: u64,
+    },
     ObjectGraph {
         object: ObjectId,
         request_token: u64,
@@ -1892,6 +1895,22 @@ pub(crate) async fn run(
                     .await
                 }
             },
+            Command::Databases { request_token } => {
+                let event =
+                    match metadata_operation(connection.list_databases(), &mut shutdown).await {
+                        Ok(databases) => Event::Databases {
+                            connection: id,
+                            request_token,
+                            databases,
+                        },
+                        Err(error) => Event::DatabasesFailed {
+                            connection: id,
+                            request_token,
+                            error,
+                        },
+                    };
+                send(&events, event).await
+            }
             Command::ObjectGraph {
                 object,
                 request_token,

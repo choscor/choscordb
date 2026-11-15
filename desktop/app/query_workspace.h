@@ -107,8 +107,10 @@ class QueryWorkspace final : public QObject {
     void beginShutdown();
     void cancelShutdown();
     void shutdown();
-    void connectSqlite(const QString& path);
+    std::optional<quint64> connectSqlite(const QString& path);
     std::optional<quint64> connectSavedProfile(const SavedProfile& profile);
+    std::optional<SavedProfile> connectionSource(quint64 connection) const;
+    std::optional<quint64> selectedConnection() const;
     void showProfiles(const QString& profileId = {});
     void manageSavedProfile(const QString& profileId, const QString& action);
     void disconnectConnection(quint64 connection);
@@ -266,7 +268,6 @@ class QueryWorkspace final : public QObject {
     void presentExecutionState(QueryState state, const QString& detail,
                                const ExecutionMetrics& metrics, const QString& source);
     QueryState documentState(const SqlEditor* editor) const;
-    std::optional<quint64> selectedConnection() const;
     QString documentTarget(const SqlEditor* editor) const;
     Widgets widgets_;
     QPointer<EngineAdapter> adapter_;
@@ -351,6 +352,7 @@ class QueryWorkspace final : public QObject {
     QHash<quint64, QString> pendingConnections_;
     QList<LiveConnection> liveConnections_;
     QHash<quint64, QString> connectionProfiles_;
+    QHash<quint64, SavedProfile> connectionSources_;
     QHash<quint64, QString> connectionDrivers_;
     QHash<quint64, QString> connectionSqlModes_;
     QHash<quint64, quint32> connectionRowLimits_;

@@ -107,6 +107,15 @@ Clone makes a new table in the same schema. PostgreSQL uses `LIKE ... INCLUDING 
 SQLite cannot clone a table with its keys and indexes, so the engine returns a typed error.
 `object_script` gives the text for Copy script as: `DROP`, `TRUNCATE`, or `SELECT` with `SCRIPT_SELECT_ROWS` (100) rows. For `CREATE` it tells the frontend to load the object DDL.
 
+### Switch database
+
+`Connection::list_databases` gives the databases that a connection can switch to, and the current one.
+PostgreSQL lists the databases that accept connections, and not the templates. MySQL and MariaDB list the schemas.
+SQLite lists the `.db`, `.sqlite` and `.sqlite3` files in the folder of the database file.
+A list can have up to `MAX_DATABASE_CHOICES` (10,000) entries. A larger list is a `ResourceLimit` error.
+`profile_with_database` in `bridge` sets the database name, or the SQLite path, of a copy of the profile.
+The desktop frontend opens a new connection with that profile and moves the current SQL tab to it. The old connection stays open.
+
 ### Metadata cache
 
 The `storage` crate keeps the navigator children of saved connection profiles in the `metadata_cache` table.

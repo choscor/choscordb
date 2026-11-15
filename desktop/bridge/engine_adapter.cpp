@@ -236,6 +236,14 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             preferences.showSystemSchemas = event.query_preferences.show_system_schemas;
             d_->connectionTimeoutSeconds = preferences.connectionTimeoutSeconds;
             emit queryPreferencesReady(event.request_token, preferences);
+        } else if (kind == "databases") {
+            DatabaseList list;
+            for (const auto& choice : event.databases)
+                list.choices.append({fromRust(choice.code), fromRust(choice.label)});
+            list.current = fromRust(event.current_database);
+            emit databasesReady(event.id, event.request_token, list);
+        } else if (kind == "databases_failed") {
+            emit databasesFailed(event.id, event.request_token, fromRust(event.error));
         } else if (kind == "result_columns") {
             emit hiddenColumnsReady(event.request_token, fromRust(event.result_columns_context),
                                     fromRustStrings(event.hidden_columns));
@@ -567,6 +575,17 @@ std::optional<quint64> EngineAdapter::connectProfileDraft(const SavedProfile& pr
     }
     d_->connections.insert(result.id);
     return result.id;
+}
+ProfileDatabase EngineAdapter::profileWithDatabase(const SavedProfile& profile,
+                                                   const QString& target) {
+    const auto result = profile_with_database(profileDto(profile), toRust(target));
+    return {result.valid, savedProfile(result.profile), fromRust(result.error)};
+}
+bool EngineAdapter::listDatabases(quint64 connection, quint64 token) {
+    auto reply = list_databases(*d_->engine, connection, token);
+    if (!reply.accepted)
+        emit commandFailed(fromRust(reply.error));
+    return reply.accepted;
 }
 SavedProfile EngineAdapter::profileDraftDefaults(const SavedProfile& profile) {
     return savedProfile(profile_draft_defaults(profileDto(profile)));

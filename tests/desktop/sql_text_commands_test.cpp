@@ -1,13 +1,17 @@
 #include "app/appearance_controller.h"
 #include "app/main_window.h"
 #include "app/query_workspace.h"
+#include "design_system/quick_search/quick_search_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QSignalSpy>
 #include <QTabWidget>
 #include <QTableView>
+#include <QTemporaryDir>
 #include <QtTest>
 
 class SqlTextCommandsTest : public QObject {
@@ -25,6 +29,45 @@ class SqlTextCommandsTest : public QObject {
     }
 
   private slots:
+    void switchDatabaseReconnectsTheTabToASiblingFile() {
+        QTemporaryDir folder;
+        for (const auto* name : {"main.sqlite", "archive.db", "notes.txt"}) {
+            QFile file(folder.filePath(name));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+        }
+        choscordb::MainWindow window(nullptr, folder.filePath("settings.store"));
+        auto* editor = openEditor(window);
+        QVERIFY(editor);
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        auto* command = window.findChild<QAction*>("command_switch_database");
+        QVERIFY(command);
+        QCOMPARE(command->shortcut(), QKeySequence(Qt::CTRL | Qt::Key_K));
+        QSignalSpy connected(workspace, &choscordb::QueryWorkspace::connectionReady);
+        workspace->connectSqlite(folder.filePath("main.sqlite"));
+        QTRY_COMPARE(connected.count(), 1);
+        const auto first = connected.first().at(0).toULongLong();
+        QTRY_COMPARE(workspace->selectedConnection(), std::optional<quint64>(first));
+        command->trigger();
+        auto* picker = window.findChild<choscordb::design::QuickSearchDialog*>("databasePicker");
+        QVERIFY(picker);
+        QTRY_VERIFY(picker->isVisible());
+        QTRY_COMPARE(picker->results().size(), 2);
+        QCOMPARE(picker->results().at(0).title, QString("archive.db"));
+        QCOMPARE(picker->results().at(1).title, QString("main.sqlite"));
+        QCOMPARE(picker->results().at(1).context, QString("Current"));
+        auto* input = picker->findChild<QLineEdit*>();
+        QVERIFY(input);
+        input->setText("arch");
+        QTRY_COMPARE(picker->results().size(), 1);
+        const auto target = picker->results().first().id;
+        emit picker->activated(target);
+        QTRY_COMPARE(connected.count(), 2);
+        const auto second = connected.at(1).at(0).toULongLong();
+        QVERIFY(second != first);
+        QTRY_COMPARE(workspace->selectedConnection(), std::optional<quint64>(second));
+        QCOMPARE(workspace->connectionSource(second)->path, target);
+        QVERIFY(target.endsWith("archive.db"));
+    }
     void formatAndMinifyReplaceTheStatementAtTheCursor() {
         choscordb::MainWindow window;
         auto* editor = openEditor(window);

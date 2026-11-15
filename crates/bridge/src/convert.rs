@@ -620,6 +620,34 @@ pub fn event(
             error(&mut e, err);
             "ddl_failed"
         }
+        Event::Databases {
+            connection,
+            request_token,
+            databases,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            e.databases = databases
+                .choices
+                .into_iter()
+                .map(|choice| ffi::CodeLabelDto {
+                    code: choice.target,
+                    label: choice.label,
+                })
+                .collect();
+            e.current_database = databases.current;
+            "databases"
+        }
+        Event::DatabasesFailed {
+            connection,
+            request_token,
+            error: err,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            error(&mut e, err);
+            "databases_failed"
+        }
         Event::SessionSqlMode {
             connection,
             mode,

@@ -619,6 +619,13 @@ impl Engine {
             },
         )
     }
+    pub fn list_databases(
+        &self,
+        connection: ConnectionId,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        self.submit(connection, actor::Command::Databases { request_token })
+    }
     pub fn apply_edit_batch(
         &self,
         connection: ConnectionId,

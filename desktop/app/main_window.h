@@ -179,6 +179,9 @@ class MainWindow final : public QMainWindow {
     std::function<void()> updateInstall_;
     void finishClose(QCloseEvent* event);
     void showQuickSearch();
+    void switchDatabase();
+    void showDatabasePicker(const DatabaseList& list);
+    void openDatabase(const QString& target);
     void updateQuickSearch(const QString& query);
     void renderQuickSearch();
     void updateQuickObjectRows();
@@ -214,6 +217,11 @@ class MainWindow final : public QMainWindow {
     EditorCompletionController* completion_ = nullptr;
     SearchPanel* search_ = nullptr;
     design::QuickSearchDialog* quickSearch_ = nullptr;
+    design::QuickSearchDialog* databasePicker_ = nullptr;
+    DatabaseList databaseChoices_;
+    quint64 databaseListToken_ = 0, databaseListConnection_ = 0;
+    QPointer<SqlEditor> databaseSwitchEditor_;
+    std::optional<quint64> databaseSwitchConnection_;
     struct QuickEditorMatch {
         QPointer<SqlEditor> editor;
         quint64 revision = 0;

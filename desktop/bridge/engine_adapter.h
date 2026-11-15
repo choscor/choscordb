@@ -165,6 +165,15 @@ struct CodeLabel {
     QString code;
     QString label;
 };
+struct DatabaseList {
+    QList<CodeLabel> choices;
+    QString current;
+};
+struct ProfileDatabase {
+    bool valid = false;
+    SavedProfile profile;
+    QString error;
+};
 struct ProfileTagOptions {
     QList<CodeLabel> environments, colors, safetyLevels;
     QString labelledEnvironment;
@@ -637,6 +646,8 @@ class EngineAdapter final : public QObject {
     void approveSshHostKey(const SshHostKeyCandidate& candidate, const QString& knownHostsPath,
                            quint64 token);
     static SavedProfile profileDraftDefaults(const SavedProfile& profile);
+    static ProfileDatabase profileWithDatabase(const SavedProfile& profile, const QString& target);
+    bool listDatabases(quint64 connection, quint64 token);
     static SavedProfile normalizeProfileDraft(const SavedProfile& original,
                                               const SavedProfile& edited,
                                               const ProfileSecretDrafts& secrets);
@@ -793,6 +804,8 @@ class EngineAdapter final : public QObject {
   signals:
     void queryPreferencesReady(quint64 token, const choscordb::QueryPreferences& preferences);
     void hiddenColumnsReady(quint64 token, const QString& context, const QStringList& hidden);
+    void databasesReady(quint64 connection, quint64 token, const choscordb::DatabaseList& list);
+    void databasesFailed(quint64 connection, quint64 token, const QString& error);
     void shutdownReady();
     void shutdownFailed(const QString& error, bool retryable);
     void historyWriteFailed(quint64 query, const QString& error);

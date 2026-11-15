@@ -358,6 +358,12 @@ pub trait Connection: Send {
     async fn sql_mode(&mut self) -> Result<Option<String>> {
         Ok(None)
     }
+    async fn list_databases(&mut self) -> Result<crate::DatabaseList> {
+        Err(DriverError::new(
+            ErrorKind::Unsupported,
+            "This connection cannot list databases.",
+        ))
+    }
     async fn load_metadata_page(
         &mut self,
         parent: Option<ObjectId>,

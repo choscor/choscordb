@@ -186,6 +186,10 @@ fn window_commands_with_default_keys_are_configurable() {
 }
 #[test]
 fn grid_commands_use_their_snake_case_ids_and_round_trip() {
+    assert_eq!(
+        serde_json::to_string(&ShortcutCommand::SwitchDatabase).unwrap(),
+        "\"switch_database\""
+    );
     let grid = [
         (ShortcutCommand::GridAddRow, "grid_add_row"),
         (ShortcutCommand::GridDuplicateRow, "grid_duplicate_row"),
@@ -197,7 +201,7 @@ fn grid_commands_use_their_snake_case_ids_and_round_trip() {
         (ShortcutCommand::GridDiscardEdits, "grid_discard_edits"),
         (ShortcutCommand::GridChooseColumns, "grid_choose_columns"),
     ];
-    assert_eq!(ShortcutCommand::ALL.len(), 33);
+    assert_eq!(ShortcutCommand::ALL.len(), 34);
     for (command, id) in grid {
         assert!(ShortcutCommand::ALL.contains(&command));
         assert_eq!(

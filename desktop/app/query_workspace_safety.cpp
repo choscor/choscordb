@@ -8,9 +8,17 @@
 namespace choscordb {
 void QueryWorkspace::rememberProfile(quint64 connection, const SavedProfile& profile) {
     connectionProfiles_.insert(connection, profile.id);
+    connectionSources_.insert(connection, profile);
     connectionDrivers_.insert(connection, profile.driver);
     connectionTags_.insert(connection,
                            {profile.safety, profile.safety, profile.tagLabel, profile.tone});
+}
+
+std::optional<SavedProfile> QueryWorkspace::connectionSource(quint64 connection) const {
+    const auto source = connectionSources_.constFind(connection);
+    if (source == connectionSources_.cend())
+        return std::nullopt;
+    return *source;
 }
 
 void QueryWorkspace::setupSafetyLevel() {

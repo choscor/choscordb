@@ -236,6 +236,16 @@ pub enum Event {
         request_token: u64,
         error: DriverError,
     },
+    Databases {
+        connection: ConnectionId,
+        request_token: u64,
+        databases: choscordb_driver_api::DatabaseList,
+    },
+    DatabasesFailed {
+        connection: ConnectionId,
+        request_token: u64,
+        error: DriverError,
+    },
     ObjectGraph {
         connection: ConnectionId,
         object: ObjectId,

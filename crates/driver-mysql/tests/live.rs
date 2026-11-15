@@ -1251,3 +1251,15 @@ async fn json_columns_decode_as_json_and_checked_text_follows_the_server() {
     assert!(object.contains("\"b\""));
     cursor.close().await.unwrap();
 }
+#[tokio::test]
+#[ignore = "requires disposable MySQL server on localhost:33306"]
+async fn database_list_names_each_schema_and_the_current_one() {
+    let mut conn = connect().await;
+    let list = conn.list_databases().await.unwrap();
+    assert_eq!(list.current, "choscordb_test");
+    assert!(
+        list.choices
+            .iter()
+            .any(|choice| choice.target == "information_schema")
+    );
+}

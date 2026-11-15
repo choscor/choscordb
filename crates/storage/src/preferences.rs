@@ -46,9 +46,10 @@ pub enum ShortcutCommand {
     ToggleLineComment,
     ToggleBlockComment,
     GridChooseColumns,
+    SwitchDatabase,
 }
 impl ShortcutCommand {
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 34] = [
         Self::NewQuery,
         Self::ChoscorDBFile,
         Self::SaveSqlFile,
@@ -82,6 +83,7 @@ impl ShortcutCommand {
         Self::ToggleLineComment,
         Self::ToggleBlockComment,
         Self::GridChooseColumns,
+        Self::SwitchDatabase,
     ];
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

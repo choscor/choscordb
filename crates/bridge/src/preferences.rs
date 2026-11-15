@@ -35,6 +35,7 @@ fn command_id(command: ShortcutCommand) -> &'static str {
         ShortcutCommand::ToggleLineComment => "toggle_line_comment",
         ShortcutCommand::ToggleBlockComment => "toggle_block_comment",
         ShortcutCommand::GridChooseColumns => "grid_choose_columns",
+        ShortcutCommand::SwitchDatabase => "switch_database",
     }
 }
 pub(crate) fn dto(value: EditorPreferences) -> ffi::EditorPreferencesDto {

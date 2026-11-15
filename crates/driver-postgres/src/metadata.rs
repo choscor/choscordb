@@ -398,6 +398,30 @@ fn object(
     }
 }
 
+pub(crate) async fn list_databases<C: GenericClient + Sync>(
+    client: &C,
+) -> Result<choscordb_driver_api::DatabaseList> {
+    let limit = i64::try_from(choscordb_driver_api::MAX_DATABASE_CHOICES + 1)
+        .map_err(|_| DriverError::new(ErrorKind::Internal, "Database list limit overflow"))?;
+    let rows = client
+        .query(
+            "SELECT datname::text AS name FROM pg_catalog.pg_database WHERE datallowconn AND NOT datistemplate ORDER BY datname LIMIT $1",
+            &[&limit],
+        )
+        .await
+        .map_err(crate::normalize)?;
+    let names = rows
+        .iter()
+        .map(|row| text(row, "name"))
+        .collect::<Result<Vec<_>>>()?;
+    let current: String = client
+        .query_one("SELECT current_database()::text", &[])
+        .await
+        .map_err(crate::normalize)?
+        .get(0);
+    choscordb_driver_api::named_database_list(names, current)
+}
+
 pub(crate) async fn load_metadata<C: GenericClient + Sync>(
     client: &C,
     parent: Option<ObjectId>,

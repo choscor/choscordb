@@ -1,4 +1,10 @@
 mod bootstrap_transaction;
+mod databases;
+pub use databases::{
+    DatabaseChoice, DatabaseList, DatabaseTargetField, MAX_DATABASE_CHOICES,
+    SQLITE_DATABASE_EXTENSIONS, database_target_field, named_database_list,
+    sqlite_sibling_databases,
+};
 mod driver;
 mod edit_query;
 mod edit_value;
