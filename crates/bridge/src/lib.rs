@@ -20,8 +20,10 @@ mod grid_edit;
 mod metadata_policy;
 mod quick_filter;
 pub use quick_filter::{quick_filter_compose_policy, quick_filter_options_policy};
+mod database_action;
 mod result_copy;
 mod sql_file;
+pub use database_action::{apply_database_action, database_action_kinds, database_action_plan};
 mod structure_edit;
 mod table_export;
 mod table_import;
@@ -1466,6 +1468,29 @@ pub mod ffi {
         keys: Vec<String>,
         values: Vec<String>,
     }
+    #[derive(Default)]
+    struct DatabaseActionDto {
+        driver: String,
+        kind: String,
+        current: String,
+        name: String,
+        new_name: String,
+        encoding: String,
+        collation: String,
+        confirmation: String,
+    }
+    struct DatabaseActionKindDto {
+        code: String,
+        label: String,
+        existing: bool,
+        new_name: bool,
+        settings: bool,
+        confirmation: bool,
+    }
+    struct DatabaseActionPlanDto {
+        sql: String,
+        error: String,
+    }
     struct StructurePlanDto {
         valid: bool,
         error: String,
@@ -2438,6 +2463,14 @@ pub mod ffi {
             connection: u64,
             table: &StructureTableDto,
             changes: Vec<StructureChangeDto>,
+            request_token: u64,
+        ) -> Submit;
+        fn database_action_kinds() -> Vec<DatabaseActionKindDto>;
+        fn database_action_plan(action: &DatabaseActionDto) -> DatabaseActionPlanDto;
+        fn apply_database_action(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            action: &DatabaseActionDto,
             request_token: u64,
         ) -> Submit;
         fn sql_file_modes() -> Vec<CodeLabelDto>;

@@ -39,6 +39,10 @@ pub use table_import::{
     import_failure_row, plan_table_import, read_import_file, structure_edit_unavailable,
     table_import_mapping_error, table_import_unavailable,
 };
+mod database_action;
+pub use database_action::{
+    DatabaseActionFields, DatabaseActionKind, DatabaseActionRequest, plan_database_action,
+};
 mod explain;
 pub use explain::{MAX_PLAN_NODES, PlanNode, explain_sql, parse_explain};
 mod sql_file;

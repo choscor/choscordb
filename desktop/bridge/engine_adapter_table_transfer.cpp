@@ -271,4 +271,37 @@ bool EngineAdapter::applyStructure(quint64 connection, const StructureTable& tab
         *error = fromRust(reply.error);
     return reply.accepted;
 }
+namespace {
+DatabaseActionDto databaseActionDto(const DatabaseAction& action) {
+    DatabaseActionDto dto;
+    dto.driver = toRust(action.driver);
+    dto.kind = toRust(action.kind);
+    dto.current = toRust(action.current);
+    dto.name = toRust(action.name);
+    dto.new_name = toRust(action.newName);
+    dto.encoding = toRust(action.encoding);
+    dto.collation = toRust(action.collation);
+    dto.confirmation = toRust(action.confirmation);
+    return dto;
+}
+}
+QList<DatabaseActionKindInfo> EngineAdapter::databaseActionKinds() {
+    QList<DatabaseActionKindInfo> kinds;
+    for (const auto& kind : database_action_kinds())
+        kinds.append({fromRust(kind.code), fromRust(kind.label), kind.existing, kind.new_name,
+                      kind.settings, kind.confirmation});
+    return kinds;
+}
+DatabaseActionPlan EngineAdapter::databaseActionPlan(const DatabaseAction& action) {
+    const auto plan = database_action_plan(databaseActionDto(action));
+    return {fromRust(plan.sql), fromRust(plan.error)};
+}
+bool EngineAdapter::applyDatabaseAction(quint64 connection, const DatabaseAction& action,
+                                        quint64 token, QString* error) {
+    const auto reply =
+        apply_database_action(*d_->engine, connection, databaseActionDto(action), token);
+    if (!reply.accepted && error)
+        *error = fromRust(reply.error);
+    return reply.accepted;
+}
 }

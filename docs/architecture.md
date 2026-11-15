@@ -151,6 +151,15 @@ A list can have up to `MAX_DATABASE_CHOICES` (10,000) entries. A larger list is 
 `profile_with_database` in `bridge` sets the database name, or the SQLite path, of a copy of the profile.
 The desktop frontend opens a new connection with that profile and moves the current SQL tab to it. The old connection stays open.
 
+### Manage databases
+
+`plan_database_action` in `core` makes the SQL to create, rename or drop a database.
+It quotes the names for PostgreSQL, MySQL and MariaDB, and it validates the encoding and the collation.
+It refuses to rename or drop the current database. A drop needs the typed database name.
+MySQL and MariaDB cannot rename a database, and SQLite keeps each database in a file. The plan returns a reason for these cases.
+`DatabaseActionKind::fields` tells the dialog which fields each action shows.
+The dialog shows the SQL before Apply and sends it through `Engine::apply_ddl`.
+
 ### Excel export
 
 `ExportFormat::Xlsx` writes one worksheet with a header row. The `xlsx` module in `export` streams the sheet XML into a ZIP file.

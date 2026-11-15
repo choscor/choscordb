@@ -3,12 +3,21 @@
 #include "bridge/request_token.h"
 #include "bridge/text_filter.h"
 #include "design_system/quick_search/quick_search_dialog.h"
+#include "widgets/database_action_dialog/database_action_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QTabWidget>
 
 namespace choscordb {
 
 void MainWindow::switchDatabase() {
+    requestDatabases(false);
+}
+
+void MainWindow::manageDatabases() {
+    requestDatabases(true);
+}
+
+void MainWindow::requestDatabases(bool forActions) {
     if (!databasePicker_) {
         databasePicker_ = new design::QuickSearchDialog(this);
         databasePicker_->setObjectName("databasePicker");
@@ -22,6 +31,10 @@ void MainWindow::switchDatabase() {
                         return;
                     databaseListToken_ = 0;
                     databaseChoices_ = list;
+                    if (databaseListForActions_) {
+                        openDatabaseActions(list);
+                        return;
+                    }
                     showDatabasePicker(list);
                     databasePicker_->openSearch();
                 });
@@ -43,13 +56,22 @@ void MainWindow::switchDatabase() {
     const auto connection = workspace_->selectedConnection();
     if (!connection || !workspace_->connectionSource(*connection)) {
         reportNotice(tr("Connect this tab to a saved connection or a SQLite file before you "
-                        "switch databases."));
+                        "switch or manage databases."));
         return;
     }
+    databaseListForActions_ = forActions;
     databaseListConnection_ = *connection;
     databaseListToken_ = nextRequestToken();
     if (!workspace_->adapter()->listDatabases(*connection, databaseListToken_))
         databaseListToken_ = 0;
+}
+
+void MainWindow::openDatabaseActions(const DatabaseList& list) {
+    auto* dialog = new DatabaseActionDialog(
+        workspace_->adapter(), databaseListConnection_,
+        workspace_->driverForConnection(databaseListConnection_), list, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->open();
 }
 
 void MainWindow::showDatabasePicker(const DatabaseList& list) {

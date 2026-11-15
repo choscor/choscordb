@@ -37,6 +37,8 @@ void MainWindow::addSqlTextActions(QMenu* editMenu) {
     editMenu->addSeparator();
     sqlTextAction("switch_database", tr("Switch database…"), QKeySequence(Qt::CTRL | Qt::Key_K),
                   [this] { switchDatabase(); });
+    sqlTextAction("manage_databases", tr("Manage databases…"),
+                  QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D), [this] { manageDatabases(); });
 }
 void MainWindow::addRunSqlFileAction(QMenu* fileMenu) {
     auto* action = fileMenu->addAction(tr("Run SQL file…"));

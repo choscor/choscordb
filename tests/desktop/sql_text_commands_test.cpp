@@ -2,12 +2,14 @@
 #include "app/main_window.h"
 #include "app/query_workspace.h"
 #include "design_system/quick_search/quick_search_dialog.h"
+#include "widgets/database_action_dialog/database_action_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QSignalSpy>
 #include <QTabWidget>
 #include <QTableView>
@@ -67,6 +69,61 @@ class SqlTextCommandsTest : public QObject {
         QTRY_COMPARE(workspace->selectedConnection(), std::optional<quint64>(second));
         QCOMPARE(workspace->connectionSource(second)->path, target);
         QVERIFY(target.endsWith("archive.db"));
+    }
+    void manageDatabasesShowsTheReasonForSqliteFiles() {
+        QTemporaryDir folder;
+        QFile file(folder.filePath("main.sqlite"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        choscordb::MainWindow window(nullptr, folder.filePath("settings.store"));
+        QVERIFY(openEditor(window));
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        QSignalSpy connected(workspace, &choscordb::QueryWorkspace::connectionReady);
+        workspace->connectSqlite(folder.filePath("main.sqlite"));
+        QTRY_COMPARE(connected.count(), 1);
+        QTRY_VERIFY(workspace->selectedConnection().has_value());
+        auto* command = window.findChild<QAction*>("command_manage_databases");
+        QVERIFY(command);
+        QCOMPARE(command->shortcut(), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D));
+        command->trigger();
+        choscordb::DatabaseActionDialog* dialog = nullptr;
+        QTRY_VERIFY((dialog = window.findChild<choscordb::DatabaseActionDialog*>()) &&
+                    dialog->isVisible());
+        dialog->findChild<QLineEdit*>("databaseActionName")->setText("other");
+        auto* error = dialog->findChild<QLabel*>("databaseActionError");
+        QCOMPARE(error->text(), QString("SQLite keeps each database in its own file. Create, "
+                                        "rename or delete the file instead."));
+        QVERIFY(error->isVisibleTo(dialog));
+        QVERIFY(!dialog->findChild<QPushButton*>("databaseActionApply")->isEnabled());
+        dialog->findChild<QPushButton*>("databaseActionCancel")->click();
+    }
+    void databaseActionsPreviewTheSqlAndNeedTheTypedNameToDrop() {
+        choscordb::EngineAdapter adapter;
+        choscordb::DatabaseList databases;
+        databases.choices = {{"app", "app"}, {"old", "old"}};
+        databases.current = "app";
+        choscordb::DatabaseActionDialog dialog(&adapter, 1, "postgres", databases);
+        dialog.show();
+        auto* kind = dialog.findChild<QComboBox*>("databaseActionKind");
+        auto* sql = dialog.findChild<QPlainTextEdit*>("databaseActionSql");
+        auto* apply = dialog.findChild<QPushButton*>("databaseActionApply");
+        auto* name = dialog.findChild<QLineEdit*>("databaseActionName");
+        QVERIFY(name->isVisibleTo(&dialog));
+        name->setText("sales");
+        dialog.findChild<QLineEdit*>("databaseActionEncoding")->setText("UTF8");
+        QCOMPARE(sql->toPlainText(),
+                 QString("CREATE DATABASE \"sales\" TEMPLATE template0 ENCODING 'UTF8';"));
+        QVERIFY(apply->isEnabled());
+        kind->setCurrentIndex(kind->findData("drop"));
+        auto* target = dialog.findChild<QComboBox*>("databaseActionTarget");
+        QVERIFY(target->isVisibleTo(&dialog) && !name->isVisibleTo(&dialog));
+        QCOMPARE(target->count(), 1);
+        QCOMPARE(target->currentText(), QString("old"));
+        QVERIFY(!apply->isEnabled());
+        QCOMPARE(dialog.findChild<QLabel*>("databaseActionError")->text(),
+                 QString("Type the database name old to drop it."));
+        dialog.findChild<QLineEdit*>("databaseActionConfirm")->setText("old");
+        QCOMPARE(sql->toPlainText(), QString("DROP DATABASE \"old\";"));
+        QVERIFY(apply->isEnabled());
     }
     void formatAndMinifyReplaceTheStatementAtTheCursor() {
         choscordb::MainWindow window;

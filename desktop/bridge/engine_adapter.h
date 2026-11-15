@@ -1,4 +1,5 @@
 #pragma once
+#include "bridge/database_action.h"
 #include "bridge/structure_types.h"
 #include "models/result_table_model.h"
 #include <QDateTime>
@@ -759,6 +760,10 @@ class EngineAdapter final : public QObject {
                                        QString* error);
     static QList<CodeLabel> sqlFileModes();
     static QList<CodeLabel> savedSqlSorts();
+    static QList<DatabaseActionKindInfo> databaseActionKinds();
+    static DatabaseActionPlan databaseActionPlan(const DatabaseAction& action);
+    bool applyDatabaseAction(quint64 connection, const DatabaseAction& action, quint64 token,
+                             QString* error);
     static QString savedSqlSetKeyword(const QString& root, const QString& path,
                                       const QString& keyword);
     static QString savedSqlCreateFolder(const QString& root, const QString& parent,

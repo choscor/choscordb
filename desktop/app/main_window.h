@@ -185,6 +185,9 @@ class MainWindow final : public QMainWindow {
     void finishClose(QCloseEvent* event);
     void showQuickSearch();
     void switchDatabase();
+    void manageDatabases();
+    void requestDatabases(bool forActions);
+    void openDatabaseActions(const DatabaseList& list);
     void showDatabasePicker(const DatabaseList& list);
     void openDatabase(const QString& target);
     void updateQuickSearch(const QString& query);
@@ -227,6 +230,7 @@ class MainWindow final : public QMainWindow {
     design::QuickSearchDialog* databasePicker_ = nullptr;
     DatabaseList databaseChoices_;
     quint64 databaseListToken_ = 0, databaseListConnection_ = 0;
+    bool databaseListForActions_ = false;
     QPointer<SqlEditor> databaseSwitchEditor_;
     std::optional<quint64> databaseSwitchConnection_;
     struct QuickEditorMatch {
