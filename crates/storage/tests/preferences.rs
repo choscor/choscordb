@@ -195,8 +195,9 @@ fn grid_commands_use_their_snake_case_ids_and_round_trip() {
         (ShortcutCommand::GridEditCell, "grid_edit_cell"),
         (ShortcutCommand::GridApplyEdits, "grid_apply_edits"),
         (ShortcutCommand::GridDiscardEdits, "grid_discard_edits"),
+        (ShortcutCommand::GridChooseColumns, "grid_choose_columns"),
     ];
-    assert_eq!(ShortcutCommand::ALL.len(), 32);
+    assert_eq!(ShortcutCommand::ALL.len(), 33);
     for (command, id) in grid {
         assert!(ShortcutCommand::ALL.contains(&command));
         assert_eq!(

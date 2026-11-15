@@ -2,7 +2,11 @@
 #include <utility>
 
 namespace choscordb {
+using engine_adapter_detail::fromRust;
+using engine_adapter_detail::fromRustStrings;
 using engine_adapter_detail::toRust;
+using engine_adapter_detail::toRustStrings;
+using engine_adapter_detail::utf8View;
 namespace {
 AppearanceLayoutDto appearanceDto(const AppearanceLayout& value) {
     AppearanceLayoutDto dto;
@@ -115,6 +119,32 @@ bool EngineAdapter::setQueryPreferences(const QueryPreferences& preferences, qui
         dto.connection_timeout_seconds = preferences.connectionTimeoutSeconds;
         dto.show_system_schemas = preferences.showSystemSchemas;
         return query_preferences_set(*d_->engine, dto, token);
+    });
+}
+QString EngineAdapter::resultColumnsContext(const QString& profileId, const QString& objectId) {
+    const auto profile = profileId.toUtf8();
+    const auto object = objectId.toUtf8();
+    return fromRust(result_columns_context(utf8View(profile), utf8View(object)));
+}
+HiddenColumnsToggle EngineAdapter::toggleHiddenColumn(const QStringList& hidden,
+                                                      const QString& name, bool hide,
+                                                      const QStringList& columns) {
+    const auto bytes = name.toUtf8();
+    const auto dto =
+        result_column_toggle(toRustStrings(hidden), utf8View(bytes), hide, toRustStrings(columns));
+    return {fromRustStrings(dto.hidden), fromRust(dto.error)};
+}
+bool EngineAdapter::getHiddenColumns(const QString& context, quint64 token) {
+    return submitRecovery(token, [this, context, token] {
+        const auto bytes = context.toUtf8();
+        return result_columns_get(*d_->engine, utf8View(bytes), token);
+    });
+}
+bool EngineAdapter::setHiddenColumns(const QString& context, const QStringList& hidden,
+                                     quint64 token) {
+    return submitRecovery(token, [this, context, hidden, token] {
+        const auto bytes = context.toUtf8();
+        return result_columns_set(*d_->engine, utf8View(bytes), toRustStrings(hidden), token);
     });
 }
 bool EngineAdapter::getEditorPreferences(quint64 token) {

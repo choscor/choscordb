@@ -2,6 +2,7 @@
 #include "bridge/engine_adapter.h"
 #include "design_system/fonts/fonts.h"
 #include "design_system/table/table_style.h"
+#include "models/result_table_model_p.h"
 #include <QArrayData>
 #include <QFont>
 #include <QLocale>
@@ -13,27 +14,8 @@
 #include <numeric>
 namespace choscordb {
 namespace {
-constexpr std::size_t QtHeaderBytes = sizeof(QArrayData) + alignof(std::max_align_t);
-struct AllocationCounter {
-    std::size_t limit;
-    std::size_t bytes = 0;
-    bool add(std::size_t count, std::size_t width = 1) {
-        if (width == 0)
-            return true;
-        if (count > (limit - bytes) / width)
-            return false;
-        bytes += count * width;
-        return true;
-    }
-    bool string(const QString& text) {
-        return text.isNull() || (add(QtHeaderBytes) &&
-                                 add(std::max(text.capacity(), text.size()) + 1, sizeof(QChar)));
-    }
-    bool binary(const QByteArray& value) {
-        return value.isNull() ||
-               (add(QtHeaderBytes) && add(std::max(value.capacity(), value.size()) + 1));
-    }
-};
+using result_model_detail::AllocationCounter;
+using result_model_detail::QtHeaderBytes;
 GridCell gridCellKind(const Cell& cell) {
     if (std::holds_alternative<QByteArray>(cell))
         return GridCell::Binary;
@@ -304,6 +286,13 @@ QVariant ResultTableModel::cellData(int row, int column, int role) const {
     return display_[static_cast<std::size_t>(row) * columns_.size() +
                     static_cast<std::size_t>(column)];
 }
+void ResultTableModel::setSortRanks(const QHash<int, int>& ranks) {
+    if (ranks == sortRanks_)
+        return;
+    sortRanks_ = ranks;
+    if (columnCount() > 0)
+        emit headerDataChanged(Qt::Horizontal, 0, columnCount() - 1);
+}
 QVariant ResultTableModel::headerData(int section, Qt::Orientation orientation, int role) const {
     if (section < 0)
         return {};
@@ -323,6 +312,8 @@ QVariant ResultTableModel::headerData(int section, Qt::Orientation orientation, 
         return section < static_cast<int>(keyColumns_.size()) && keyColumns_[section];
     if (role == HeaderTypeRole)
         return headerTypes_[section];
+    if (role == HeaderSortRole)
+        return sortRanks_.value(section);
     if (role == Qt::DisplayRole) {
         const auto& type = headerTypes_[section];
         return type.isEmpty() ? column.name : column.name + " · " + type;
@@ -522,7 +513,7 @@ void ResultTableModel::stageValue(int row, int column, Cell value, QString displ
     rows_[row][column] = std::move(value);
     auto& entry = edits_[cellKey(row, column)];
     stagedBytes_ = stagedBytes_ - entry.bytes + bytes;
-    entry = {bytes, std::move(display), filterable};
+    entry = {bytes, std::move(display), filterable, {}};
 }
 bool ResultTableModel::setData(const QModelIndex& index, const QVariant& value, int role) {
     if (role == design::TypedNullEditRole) {
@@ -630,12 +621,17 @@ ResultTableModel::stageCellEdit(const QModelIndex& index, CellEditEvaluation eva
     return evaluation;
 }
 bool ResultTableModel::stageNull(int row, int column) {
-    const Cell null;
-    auto display = displayText(null);
-    const auto bytes = editCharge(null, display);
-    if (bytes > byteBudget_ - residentBytes_ - (stagedBytes_ - editBytes(row, column)))
+    return stageCellAt(row, column, Cell{}, {});
+}
+bool ResultTableModel::stageCellAt(int row, int column, Cell value, const QString& expression) {
+    auto display = expression.isEmpty() ? displayText(value) : expression;
+    AllocationCounter charge{byteBudget_ - residentBytes_ -
+                             (stagedBytes_ - editBytes(row, column))};
+    const auto* bytes = std::get_if<QByteArray>(&value);
+    if (!charge.add(editCharge(value, display)) || (bytes && !charge.binary(*bytes)))
         return false;
-    stageValue(row, column, null, std::move(display), bytes);
+    stageValue(row, column, std::move(value), std::move(display), charge.bytes);
+    edits_[cellKey(row, column)].expression = expression;
     return true;
 }
 bool ResultTableModel::setNull(const QModelIndex& index) {
@@ -769,11 +765,14 @@ bool ResultTableModel::duplicateRow(int row, const std::vector<bool>& copyable, 
         if (cellPolicy(rows_[row][column]).duplicateRequiresLoad)
             return fail(tr("Load a complete value before duplicating this row."));
         duplicate[column] = rows_[row][column];
-        auto display = displayText(duplicate[column]);
+        const auto* source = edit(row, column);
+        auto expression = source ? source->expression : QString();
+        auto display = expression.isEmpty() ? displayText(duplicate[column]) : expression;
         const auto charge = editCharge(duplicate[column], display);
         bytes += charge;
         copied.emplace_back(column, CellEdit{charge, std::move(display),
-                                             cellFilterable(row, static_cast<int>(column))});
+                                             cellFilterable(row, static_cast<int>(column)),
+                                             std::move(expression)});
     }
     if (bytes > byteBudget_ - residentBytes_ - stagedBytes_)
         return fail(tr("Duplicating this row would exceed the result grid memory limit."));

@@ -153,7 +153,7 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
                 adapter_->releasePageLease(*visibleLease_);
                 visibleLease_.reset();
             }
-            submitResultView({{0, "sql", "text", initialFilter_}}, -1, {});
+            submitResultView({{0, "sql", "text", initialFilter_}}, {});
             if (!viewBusy_) {
                 referenceFilterPending_ = false;
                 referenceFilterFailed_ = true;
@@ -168,13 +168,12 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
         } else if (deferredViewRequest_ && !model_->hasPendingEdits()) {
             deferredViewRequest_ = false;
             preserveViewOnRefresh_ = false;
-            submitResultView(deferredViewFilters_, deferredViewSortColumn_,
-                             deferredViewSortDirection_);
+            submitResultView(deferredViewFilters_, deferredViewSorts_);
         } else if (preserveViewOnRefresh_) {
             preserveViewOnRefresh_ = false;
             viewRefreshQuery_.reset();
-            if (!viewFilters_.isEmpty() || viewSortColumn_ >= 0)
-                submitResultView(viewFilters_, viewSortColumn_, viewSortDirection_);
+            if (!viewFilters_.isEmpty() || !viewSorts_.isEmpty())
+                submitResultView(viewFilters_, viewSorts_);
         }
     }
     busy_ = false;
@@ -447,8 +446,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         referenceFilterPending_ = false;
         referenceFilterFailed_ = false;
         viewFilters_ = proposedViewFilters_;
-        viewSortColumn_ = proposedViewSortColumn_;
-        viewSortDirection_ = proposedViewSortDirection_;
+        viewSorts_ = proposedViewSorts_;
         if (filterBar_)
             filterBar_->markApplied(viewFilters_);
         updateSortIndicator();

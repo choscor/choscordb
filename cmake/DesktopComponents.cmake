@@ -86,6 +86,7 @@ choscordb_add_library(choscordb-desktop-services
   desktop/models/history_model.cpp
   desktop/models/result_table_model.cpp
   desktop/models/result_table_model_copy_bridge.cpp
+  desktop/models/result_table_model_set_value.cpp
   desktop/models/result_table_model_json_bridge.cpp
   desktop/models/navigator_model.cpp
   desktop/models/value_preview_model.cpp
@@ -154,6 +155,8 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_workspace_events.cpp
   desktop/app/query_workspace_lifecycle.cpp
   desktop/app/query_workspace_view.cpp
+  desktop/app/query_workspace_columns.cpp
+  desktop/app/query_workspace_set_value.cpp
   desktop/app/result_filter_bar.cpp
   desktop/app/result_pane_tabs.cpp
   desktop/app/object_data_workspace.cpp

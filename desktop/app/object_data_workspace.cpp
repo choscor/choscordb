@@ -293,6 +293,8 @@ ObjectDataTime ObjectDataWorkspace::time() const {
 }
 bool ObjectDataWorkspace::read(const QString& filter) {
     result_->setDriverForConnection(connection_, sql_->driverForConnection(connection_));
+    result_->setColumnContext(
+        EngineAdapter::resultColumnsContext(sql_->profileIdForConnection(connection_), object_));
     return result_->openObjectData(connection_, object_, label_, sql_->queryPreferences(), false,
                                    filter, time());
 }

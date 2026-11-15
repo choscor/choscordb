@@ -40,6 +40,8 @@ GridEditRequestDto gridRequestDto(const GridEditRequest& request, bool eligibili
             entry.original.push_back(bridge_detail::cellDto(cell, eligibilityOnly));
         for (bool touched : row.touched)
             entry.touched.push_back(touched ? 1 : 0);
+        for (const auto& expression : row.expressions)
+            entry.expressions.push_back(toRust(expression));
         entry.inserted = row.inserted;
         entry.deleted = row.deleted;
         dto.rows.push_back(std::move(entry));
@@ -658,6 +660,50 @@ const QList<CodeLabel>& EngineAdapter::copyFormats() {
         return output;
     }();
     return formats;
+}
+const QList<CodeLabel>& EngineAdapter::setValueKinds() {
+    static const QList<CodeLabel> kinds = [] {
+        QList<CodeLabel> output;
+        for (const auto& option : set_value_kinds())
+            output.append({fromRust(option.code), fromRust(option.label)});
+        return output;
+    }();
+    return kinds;
+}
+bool EngineAdapter::gridBinaryColumn(const QString& databaseType) {
+    const auto bytes = databaseType.toUtf8();
+    return grid_binary_column_policy(utf8View(bytes));
+}
+QString EngineAdapter::gridTemporalKind(const QString& databaseType) {
+    const auto bytes = databaseType.toUtf8();
+    return fromRust(grid_temporal_kind_policy(utf8View(bytes)));
+}
+GridTemporalText EngineAdapter::gridTemporalText(const QString& kind, const QDateTime& picked) {
+    const auto bytes = kind.toUtf8();
+    const auto date = picked.date();
+    const auto time = picked.time();
+    const GridDateTimeDto parts{date.year(),
+                                static_cast<uint32_t>(date.month()),
+                                static_cast<uint32_t>(date.day()),
+                                static_cast<uint32_t>(time.hour()),
+                                static_cast<uint32_t>(time.minute()),
+                                static_cast<uint32_t>(time.second())};
+    const auto dto = grid_temporal_text_policy(utf8View(bytes), parts);
+    return {fromRust(dto.text), fromRust(dto.error)};
+}
+GridSetValue EngineAdapter::gridSetValue(const QString& kind, const QString& driver,
+                                         const QString& databaseType, bool inserted,
+                                         std::optional<bool> nullable) {
+    GridSetValueRequestDto request;
+    request.kind = toRust(kind);
+    request.driver = toRust(driver);
+    request.database_type = toRust(databaseType);
+    request.inserted = inserted;
+    request.nullable_known = nullable.has_value();
+    request.nullable = nullable.value_or(false);
+    const auto dto = grid_set_value_policy(std::move(request));
+    return {fromRust(dto.outcome), fromRust(dto.text), fromRust(dto.expression),
+            fromRust(dto.error)};
 }
 const ProfileTagOptions& EngineAdapter::profileTagOptions() {
     static const ProfileTagOptions options = [] {

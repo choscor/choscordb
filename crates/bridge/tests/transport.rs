@@ -69,8 +69,10 @@ fn result_view_commands_transport_typed_filters_sort_pages_and_clear() {
             value_kind: "integer".into(),
             value: "100".into(),
         }],
-        0,
-        "ascending",
+        vec![ffi::ResultSortDto {
+            column: 0,
+            direction: "ascending".into(),
+        }],
     );
     assert!(applied.accepted, "{}", applied.error);
     assert_eq!(
@@ -97,8 +99,7 @@ fn result_view_commands_transport_typed_filters_sort_pages_and_clear() {
             value_kind: "text".into(),
             value: ".*".into(),
         }],
-        0,
-        "",
+        vec![],
     );
     assert!(!invalid.accepted);
 }
@@ -1098,8 +1099,7 @@ fn result_filters_accept_sql_patterns_and_literal_lists() {
                 value_kind: kind.into(),
                 value: value.into(),
             }],
-            0,
-            "",
+            vec![],
         );
         assert!(applied.accepted, "{operation}: {}", applied.error);
         assert_eq!(

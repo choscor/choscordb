@@ -1,6 +1,8 @@
 #pragma once
+
 #include <QAbstractTableModel>
 #include <QByteArray>
+#include <QHash>
 #include <QItemSelection>
 #include <QString>
 #include <QStringList>
@@ -65,7 +67,9 @@ class ResultTableModel final : public QAbstractTableModel {
     static constexpr int HeaderKeyRole = Qt::UserRole + 2;
     static constexpr int HeaderNameRole = Qt::UserRole + 3;
     static constexpr int ResultValueKindRole = Qt::UserRole + 4;
+    static constexpr int HeaderSortRole = Qt::UserRole + 5;
     static constexpr qsizetype DisplayPreviewChars = 512;
+    void setSortRanks(const QHash<int, int>& ranks);
     using Row = std::vector<Cell>;
     using ResolvedCells = std::map<std::pair<int, int>, Cell>;
     enum class JsonViewScope { Cell, Row, Page };
@@ -183,6 +187,11 @@ class ResultTableModel final : public QAbstractTableModel {
     const std::vector<Row>& rows() const { return rows_; }
     bool touched(std::size_t row, std::size_t column) const;
     std::vector<bool> touchedRow(std::size_t row) const;
+    std::vector<QString> expressionRow(std::size_t row) const;
+    bool cellWritable(int row, int column) const;
+    std::optional<bool> columnNullable(int column) const;
+    bool stageCell(const QModelIndex& index, Cell value, const QString& expression = {});
+    bool omitInsertedCell(const QModelIndex& index);
     const std::vector<bool>& inserted() const { return inserted_; }
     const std::vector<bool>& deleted() const { return deleted_; }
     std::optional<CopySnapshot> copySnapshot(const QItemSelection& selection, int scope,
@@ -214,6 +223,7 @@ class ResultTableModel final : public QAbstractTableModel {
         std::size_t bytes = 0;
         QString display;
         bool filterable = false;
+        QString expression;
     };
     static quint64 cellKey(std::size_t row, std::size_t column) {
         return (quint64(row) << 32) | quint64(column);
@@ -228,6 +238,7 @@ class ResultTableModel final : public QAbstractTableModel {
     bool cellFilterable(int row, int column) const;
     void stageValue(int row, int column, Cell value, QString display, std::size_t bytes);
     bool stageNull(int row, int column);
+    bool stageCellAt(int row, int column, Cell value, const QString& expression);
     void eraseInsertedRow(int row);
     void preserveOriginal(int row);
     bool linkable(int row, int column) const;
@@ -248,6 +259,7 @@ class ResultTableModel final : public QAbstractTableModel {
     std::vector<bool> inserted_, deleted_, editable_;
     std::vector<bool> insertEditable_;
     std::vector<bool> keyColumns_;
+    QHash<int, int> sortRanks_;
     bool canInsert_ = false, canDelete_ = false;
     quint64 firstRow_ = 0;
     std::size_t byteBudget_;

@@ -131,3 +131,39 @@ fn corrupt_preferences_remain_until_explicit_successful_save() {
         }
     ));
 }
+
+#[test]
+fn hidden_result_columns_survive_restart_per_object() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = EngineConfig {
+        storage_path: Some(dir.path().join("columns.sqlite")),
+        ..Default::default()
+    };
+    let orders = choscordb_core::result_columns_context("profile", "orders");
+    let hidden = vec!["note".to_string()];
+    let mut engine = Engine::new(config.clone(), vec![]).unwrap();
+    engine
+        .result_columns_set(orders.clone(), hidden.clone(), 1)
+        .unwrap();
+    assert!(matches!(
+        event(&mut engine),
+        Event::ResultColumns { request_token: 1, ref context, hidden: ref saved }
+            if *context == orders && *saved == hidden
+    ));
+    assert_eq!(
+        engine.result_columns_set(String::new(), hidden.clone(), 2),
+        Err(choscordb_core::SubmitError::InvalidInput)
+    );
+    drop(engine);
+    let mut engine = Engine::new(config, vec![]).unwrap();
+    engine.result_columns_get(orders.clone(), 3).unwrap();
+    assert!(matches!(
+        event(&mut engine),
+        Event::ResultColumns { request_token: 3, hidden: ref saved, .. } if *saved == hidden
+    ));
+    engine.result_columns_get("other".into(), 4).unwrap();
+    assert!(matches!(
+        event(&mut engine),
+        Event::ResultColumns { request_token: 4, hidden: ref saved, .. } if saved.is_empty()
+    ));
+}

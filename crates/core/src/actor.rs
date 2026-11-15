@@ -80,7 +80,7 @@ pub(crate) enum Command {
     ApplyResultView {
         query: QueryId,
         filters: Vec<crate::FilterCondition>,
-        sort: Option<crate::ResultSort>,
+        sort: Vec<crate::ResultSort>,
         page_size: PageSize,
         cancellation: watch::Receiver<bool>,
     },
@@ -1516,7 +1516,7 @@ pub(crate) async fn run(
                     let columns = store.schema_reserved(()).await?.0;
                     let predicates =
                         crate::result_predicate::Predicates::new(&columns, &filters, raw_limit)?;
-                    if let Some(sort) = sort {
+                    for sort in &sort {
                         let column = columns.get(sort.column).ok_or_else(|| {
                             DriverError::new(ErrorKind::InvalidInput, "Sort column is out of range")
                         })?;
@@ -1553,7 +1553,7 @@ pub(crate) async fn run(
                         })?;
                     let mut view_store_config = store_config.clone();
                     view_store_config.max_disk_bytes = view_disk_bytes;
-                    let mut direct_view = if sort.is_none() {
+                    let mut direct_view = if sort.is_empty() {
                         Some(
                             crate::store::Store::create_reserved(
                                 columns.clone(),
@@ -1567,24 +1567,24 @@ pub(crate) async fn run(
                     } else {
                         None
                     };
-                    let mut sorter = if let Some(sort) = sort {
+                    let mut sorter = if sort.is_empty() {
+                        None
+                    } else {
                         Some(
                             crate::store::SortedRows::new(
-                                sort.direction,
+                                sort.iter().map(|sort| sort.direction).collect(),
                                 view_disk_bytes,
                                 raw_limit,
                                 store_directory.clone(),
                             )
                             .await?,
                         )
-                    } else {
-                        None
                     };
                     let mut pending =
                         crate::result_view::PageRows::with_capacity(page_size.get() as usize);
                     let mut direct_page_index = 0_u64;
                     let mut row_count = 0_u64;
-                    let mut sort_sample = None;
+                    let mut sort_samples: Vec<Option<Value>> = vec![None; sort.len()];
                     for index in 0..count {
                         if *cancellation.borrow() {
                             return Err(DriverError::new(
@@ -1596,27 +1596,26 @@ pub(crate) async fn run(
                         let scanned_rows = stored.first_row + stored.page.rows.len() as u64;
                         let mut sorted_batch = Vec::new();
                         for row in stored.page.rows {
-                            let sort_key = if let Some(sort) = sort {
-                                crate::result_view::validate_sort_value(&row, sort)?;
+                            let mut sort_key = Vec::with_capacity(sort.len());
+                            for (sort, sample) in sort.iter().zip(sort_samples.iter_mut()) {
+                                crate::result_view::validate_sort_value(&row, *sort)?;
                                 let value = crate::result_view::sort_key(
                                     &row[sort.column],
                                     &columns[sort.column].database_type,
                                 )?;
                                 if !matches!(&value, Value::Null) {
-                                    if let Some(sample) = &sort_sample {
+                                    if let Some(sample) = sample {
                                         crate::result_view::sort_compare(
                                             sample,
                                             &value,
                                             sort.direction,
                                         )?;
                                     } else {
-                                        sort_sample = Some(value.clone());
+                                        *sample = Some(value.clone());
                                     }
                                 }
-                                Some(value)
-                            } else {
-                                None
-                            };
+                                sort_key.push(value);
+                            }
                             if predicates.row_matches(&row, &filters)? {
                                 row_count = row_count.checked_add(1).ok_or_else(|| {
                                     DriverError::new(
@@ -1624,8 +1623,8 @@ pub(crate) async fn run(
                                         "Result view row count overflow",
                                     )
                                 })?;
-                                if sort.is_some() {
-                                    sorted_batch.push((sort_key.expect("sort key exists"), row));
+                                if !sort.is_empty() {
+                                    sorted_batch.push((sort_key, row));
                                 } else {
                                     if pending.len() == page_size.get() as usize {
                                         direct_view

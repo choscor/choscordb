@@ -1,16 +1,102 @@
 use crate::{convert, ffi};
 use choscordb_driver_api::{
-    GridEditColumn, GridEditDriver, GridEditError, GridEditRequest, GridEditRow, grid_editability,
-    plan_grid_edits,
+    GridCellExpression, GridEditColumn, GridEditDriver, GridEditError, GridEditRequest,
+    GridEditRow, SetValueKind, SetValueOutcome, grid_editability, grid_set_value, plan_grid_edits,
 };
 
+fn grid_driver(name: &str) -> Result<GridEditDriver, GridEditError> {
+    match name {
+        "sqlite" => Ok(GridEditDriver::Sqlite),
+        "postgres" | "postgresql" => Ok(GridEditDriver::Postgres),
+        "mysql" | "mariadb" => Ok(GridEditDriver::Mysql),
+        _ => Err(GridEditError::UnsupportedTarget),
+    }
+}
+
+pub fn grid_binary_column_policy(database_type: &str) -> bool {
+    choscordb_driver_api::grid_binary_column(database_type)
+}
+
+pub fn grid_temporal_kind_policy(database_type: &str) -> String {
+    choscordb_driver_api::GridTemporalKind::of(database_type)
+        .map_or("", |kind| kind.code())
+        .into()
+}
+
+pub fn grid_temporal_text_policy(
+    kind: &str,
+    picked: ffi::GridDateTimeDto,
+) -> ffi::GridTemporalTextDto {
+    let text = choscordb_driver_api::GridTemporalKind::from_code(kind).and_then(|kind| {
+        kind.text(
+            (picked.year, picked.month, picked.day),
+            (picked.hour, picked.minute, picked.second),
+        )
+    });
+    match text {
+        Some(text) => ffi::GridTemporalTextDto {
+            text,
+            error: String::new(),
+        },
+        None => ffi::GridTemporalTextDto {
+            text: String::new(),
+            error: "The picked date or time is invalid.".into(),
+        },
+    }
+}
+
+pub fn set_value_kinds() -> Vec<ffi::CodeLabelDto> {
+    SetValueKind::ALL
+        .into_iter()
+        .map(|kind| ffi::CodeLabelDto {
+            code: kind.code().into(),
+            label: kind.label().into(),
+        })
+        .collect()
+}
+
+pub fn grid_set_value_policy(request: ffi::GridSetValueRequestDto) -> ffi::GridSetValueDto {
+    let outcome = SetValueKind::from_code(&request.kind)
+        .ok_or_else(|| "Unknown set value choice".to_string())
+        .and_then(|kind| {
+            let driver = grid_driver(&request.driver).map_err(|error| error.to_string())?;
+            grid_set_value(
+                kind,
+                driver,
+                &request.database_type,
+                request.inserted,
+                request.nullable_known.then_some(request.nullable),
+            )
+            .map_err(|error| error.to_string())
+        });
+    match outcome {
+        Ok(SetValueOutcome::Null) => ffi::GridSetValueDto {
+            outcome: "null".into(),
+            ..Default::default()
+        },
+        Ok(SetValueOutcome::Text(text)) => ffi::GridSetValueDto {
+            outcome: "text".into(),
+            text,
+            ..Default::default()
+        },
+        Ok(SetValueOutcome::Expression(expression)) => ffi::GridSetValueDto {
+            outcome: "expression".into(),
+            expression: expression.sql().into(),
+            ..Default::default()
+        },
+        Ok(SetValueOutcome::Omit) => ffi::GridSetValueDto {
+            outcome: "omit".into(),
+            ..Default::default()
+        },
+        Err(error) => ffi::GridSetValueDto {
+            error,
+            ..Default::default()
+        },
+    }
+}
+
 fn request(source: ffi::GridEditRequestDto) -> Result<GridEditRequest, GridEditError> {
-    let driver = match source.driver.as_str() {
-        "sqlite" => GridEditDriver::Sqlite,
-        "postgres" | "postgresql" => GridEditDriver::Postgres,
-        "mysql" | "mariadb" => GridEditDriver::Mysql,
-        _ => return Err(GridEditError::UnsupportedTarget),
-    };
+    let driver = grid_driver(&source.driver)?;
     let columns = source
         .columns
         .into_iter()
@@ -40,6 +126,19 @@ fn request(source: ffi::GridEditRequestDto) -> Result<GridEditRequest, GridEditE
                     .map(|cell| convert::value(cell).map_err(|_| GridEditError::InvalidShape))
                     .collect::<Result<_, _>>()?,
                 touched: row.touched.into_iter().map(|value| value != 0).collect(),
+                expressions: row
+                    .expressions
+                    .iter()
+                    .map(|sql| {
+                        if sql.is_empty() {
+                            Ok(None)
+                        } else {
+                            GridCellExpression::from_sql(sql)
+                                .map(Some)
+                                .ok_or(GridEditError::InvalidShape)
+                        }
+                    })
+                    .collect::<Result<_, _>>()?,
                 inserted: row.inserted,
                 deleted: row.deleted,
             })

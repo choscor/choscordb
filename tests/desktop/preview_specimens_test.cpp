@@ -26,6 +26,7 @@
 #include <QComboBox>
 #include <QCompleter>
 #include <QContextMenuEvent>
+#include <QDateTimeEdit>
 #include <QDialog>
 #include <QDir>
 #include <QDockWidget>
@@ -462,6 +463,10 @@ void PreviewTest::componentFamiliesAreRendered() {
     }
     QVERIFY(window.selectSpecimen("numeric-fields"));
     QVERIFY(light->findChild<QDoubleSpinBox*>());
+    auto* moment = light->findChild<QDateTimeEdit*>("previewDateTimeField");
+    QVERIFY(moment);
+    QCOMPARE(moment->height(), light->findChild<QDoubleSpinBox*>()->height());
+    QCOMPARE(moment->text(), QString("2026-11-15 09:30:00"));
     QVERIFY(window.selectSpecimen("textareas"));
     QVERIFY(light->findChild<QTextEdit*>());
     QVERIFY(window.selectSpecimen("checks-toggles"));

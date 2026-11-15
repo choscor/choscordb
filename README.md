@@ -12,6 +12,8 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Tag each connection with an environment and a color. The sidebar and the result footer show the tag.
 - Set a safety level for each connection: run without confirmation, confirm destructive statements, confirm each statement, or read-only.
 - Read large results page by page. Filter, sort and edit table rows.
+- Set a cell to NULL, DEFAULT, an empty value or Now() from the Set value menu. Pick a date and time for date and time cells. Load a binary cell from a file, or save it to a file.
+- Sort by up to four columns with Shift+click. Hide result columns with the column chooser (Ctrl+Alt+F). ChoscorDB keeps the hidden columns for each table.
 - Copy rows as TSV, CSV, Markdown, HTML, JSON or SQL `INSERT` statements.
 - Export results to CSV, JSON, JSON Lines or SQL `INSERT` statements.
 - Browse schemas, tables, views, indexes and keys. See the DDL and an ERD of each table.

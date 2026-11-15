@@ -1,4 +1,4 @@
-use crate::{EditStatement, Value};
+use crate::{EditStatement, GridCellExpression, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridEditDriver {
@@ -23,6 +23,7 @@ pub struct GridEditRow {
     pub current: Vec<Value>,
     pub original: Vec<Value>,
     pub touched: Vec<bool>,
+    pub expressions: Vec<Option<GridCellExpression>>,
     pub inserted: bool,
     pub deleted: bool,
 }
@@ -69,6 +70,7 @@ pub enum GridEditError {
     OpaqueMatch,
     DeferredParameter,
     OpaqueParameter,
+    DefaultUnsupported,
     BinaryReviewLimit,
     NoStatements,
 }
@@ -86,6 +88,7 @@ impl std::fmt::Display for GridEditError {
             }
             Self::DeferredParameter => "Deferred values cannot be bound to grid edits.",
             Self::OpaqueParameter => "Fallback or unavailable values cannot be edited.",
+            Self::DefaultUnsupported => "SQLite cannot set an existing row to the column default.",
             Self::BinaryReviewLimit => {
                 "Binary parameter exceeds the 64 KiB review limit; narrow the edit."
             }
@@ -137,6 +140,7 @@ fn shaped(request: &GridEditRequest) -> bool {
         && request.rows.iter().all(|row| {
             row.current.len() == width
                 && row.touched.len() == width
+                && (row.expressions.is_empty() || row.expressions.len() == width)
                 && (row.inserted || row.original.len() == width)
         })
 }
@@ -289,7 +293,7 @@ fn push_param(
         Value::FallbackText { .. } | Value::Unavailable { .. } => {
             return Err(GridEditError::OpaqueParameter);
         }
-        Value::Binary(bytes) if bytes.len() > 65536 => {
+        Value::Binary(bytes) if bytes.len() > crate::MAX_GRID_BINARY_BYTES => {
             return Err(GridEditError::BinaryReviewLimit);
         }
         _ => {}
@@ -363,20 +367,27 @@ pub fn plan_grid_edits(request: &GridEditRequest) -> Result<GridEditPlan, GridEd
             let mut names = Vec::new();
             let mut values = Vec::new();
             for (index, column) in request.columns.iter().enumerate() {
-                if !row.touched[index] || column.generated {
+                let expression = row.expressions.get(index).copied().flatten();
+                if !row.touched[index]
+                    || column.generated
+                    || expression == Some(GridCellExpression::Default)
+                {
                     continue;
                 }
                 if !eligibility.insert_editable[index] {
                     return Err(GridEditError::ColumnNotEditable);
                 }
                 names.push(quoted(&column.name, delimiter)?);
-                values.push(push_param(
-                    &mut statement,
-                    &mut parameter_types,
-                    &row.current[index],
-                    column,
-                    request.driver,
-                )?);
+                values.push(match expression {
+                    Some(expression) => expression.sql().to_owned(),
+                    None => push_param(
+                        &mut statement,
+                        &mut parameter_types,
+                        &row.current[index],
+                        column,
+                        request.driver,
+                    )?,
+                });
             }
             statement.sql = if names.is_empty() {
                 if request.driver == GridEditDriver::Mysql {
@@ -405,13 +416,21 @@ pub fn plan_grid_edits(request: &GridEditRequest) -> Result<GridEditPlan, GridEd
                     if !eligibility.editable[index] {
                         return Err(GridEditError::ColumnNotEditable);
                     }
-                    let placeholder = push_param(
-                        &mut statement,
-                        &mut parameter_types,
-                        &row.current[index],
-                        column,
-                        request.driver,
-                    )?;
+                    let placeholder = match row.expressions.get(index).copied().flatten() {
+                        Some(GridCellExpression::Default)
+                            if request.driver == GridEditDriver::Sqlite =>
+                        {
+                            return Err(GridEditError::DefaultUnsupported);
+                        }
+                        Some(expression) => expression.sql().to_owned(),
+                        None => push_param(
+                            &mut statement,
+                            &mut parameter_types,
+                            &row.current[index],
+                            column,
+                            request.driver,
+                        )?,
+                    };
                     assignments.push(format!(
                         "{} = {placeholder}",
                         quoted(&column.name, delimiter)?

@@ -26,6 +26,7 @@ class RightSheet;
 class StatusLine;
 }
 class QComboBox;
+class QDateTimeEdit;
 namespace choscordb {
 class SqlEditor;
 class ValueDetailDialog;
@@ -86,7 +87,8 @@ class QueryWorkspace final : public QObject {
         SetNull,
         EditCell,
         ApplyEdits,
-        DiscardEdits
+        DiscardEdits,
+        ChooseColumns
     };
     static QList<ShortcutDescriptor> gridShortcuts();
     explicit QueryWorkspace(Widgets widgets, QObject* parent = nullptr);
@@ -139,6 +141,7 @@ class QueryWorkspace final : public QObject {
     void setGridShortcut(const QString& id, const QKeySequence& primary);
     void formatSql(bool minify, quint8 indent, bool uppercaseKeywords);
     void toggleSqlComment(bool block);
+    void setColumnContext(const QString& context);
   signals:
     void connectionReady(quint64 connection);
     void connectionNotice(const QString& notice);
@@ -182,21 +185,35 @@ class QueryWorkspace final : public QObject {
     void duplicateRow(const QModelIndex& index);
     void discardStagedEdits();
     QModelIndex gridTarget() const;
-    std::array<QAction*, 8> gridActions_{};
+    std::array<QAction*, 9> gridActions_{};
     std::optional<QPersistentModelIndex> menuTarget_;
     void configureEditability();
     void requestCellMetadata();
     void activateForeignKey(const QModelIndex& index);
     void setupResultViewControls();
+    void setupColumnChooser();
+    void appendSetValueActions(QMenu& menu, const QPersistentModelIndex& clicked, bool current);
+    void setCellValue(const QPersistentModelIndex& index, const QString& kind);
+    void loadCellFile(const QPersistentModelIndex& index);
+    void saveCellFile(const QPersistentModelIndex& index);
+    void populateColumnMenu(QMenu& menu);
+    void showColumnChooser();
+    void setColumnHidden(const QString& name, bool hide);
+    void storeHiddenColumns(const QStringList& hidden);
+    void applyHiddenColumns();
+    QStringList resultColumnNames() const;
+    QString columnContext_;
+    QStringList hiddenColumns_;
+    quint64 hiddenColumnsToken_ = 0;
     bool quickFilterAvailable(const QPersistentModelIndex& clicked) const;
     void appendQuickFilterActions(QMenu& menu, const QPersistentModelIndex& clicked);
     void activateQuickFilter(const QPersistentModelIndex& clicked, quint64 query,
                              CellFilterOperator operation);
     bool quickFilterPreparing_ = false;
-    void requestResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,
-                           const QString& sortDirection);
-    void submitResultView(const QList<ResultFilterCondition>& filters, qint32 sortColumn,
-                          const QString& sortDirection);
+    void requestResultView(const QList<ResultFilterCondition>& filters,
+                           const QList<ResultSortKey>& sorts);
+    void submitResultView(const QList<ResultFilterCondition>& filters,
+                          const QList<ResultSortKey>& sorts);
     void updateSortIndicator();
     void clearViewState();
     void clearResult();
@@ -267,6 +284,8 @@ class QueryWorkspace final : public QObject {
     bool jsonResultInvalidated_ = false;
     QPointer<design::RightSheet> cellEditSheet_;
     QPointer<QPlainTextEdit> cellEditText_;
+    QPointer<QDateTimeEdit> cellEditPicker_;
+    QString cellEditTemporal_;
     QPointer<QPushButton> cellEditSave_;
     QPointer<design::StatusLine> cellEditStatus_;
     QPersistentModelIndex cellEditIndex_;
@@ -375,8 +394,7 @@ class QueryWorkspace final : public QObject {
     bool externalWorkActive() const { return externalWork_ || !externalWorkSources_.isEmpty(); }
     bool cancellationPending_ = false;
     QList<ResultFilterCondition> viewFilters_, proposedViewFilters_, deferredViewFilters_;
-    qint32 viewSortColumn_ = -1, proposedViewSortColumn_ = -1, deferredViewSortColumn_ = -1;
-    QString viewSortDirection_, proposedViewSortDirection_, deferredViewSortDirection_;
+    QList<ResultSortKey> viewSorts_, proposedViewSorts_, deferredViewSorts_;
     bool viewBusy_ = false, deferredViewRequest_ = false, preserveViewOnRefresh_ = false;
     bool proposedFiltersFromDraft_ = false;
     std::optional<quint64> viewRefreshQuery_;

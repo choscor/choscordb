@@ -39,6 +39,7 @@ fn request(driver: GridEditDriver) -> GridEditRequest {
             current: vec![Value::Integer(7), Value::Text("new".into())],
             original: vec![Value::Integer(7), Value::Text("old".into())],
             touched: vec![false, true],
+            expressions: vec![],
             inserted: false,
             deleted: false,
         }],
@@ -77,6 +78,7 @@ fn planned_values_keep_database_types_through_review_and_apply() {
         .collect(),
         original: vec![],
         touched: vec![true; kinds.len()],
+        expressions: vec![],
         inserted: true,
         deleted: false,
     }];
@@ -225,6 +227,7 @@ fn insert_delete_and_default_values_respect_dialect() {
             current: vec![Value::Null, Value::Text("new".into())],
             original: vec![],
             touched: vec![false, true],
+            expressions: vec![],
             inserted: true,
             deleted: false,
         });

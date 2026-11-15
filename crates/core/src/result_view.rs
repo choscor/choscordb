@@ -37,6 +37,61 @@ pub struct ResultSort {
     pub direction: SortDirection,
 }
 
+pub const MAX_SORT_KEYS: usize = 4;
+
+pub fn validate_sorts(sorts: &[ResultSort]) -> Result<(), DriverError> {
+    if sorts.len() > MAX_SORT_KEYS {
+        return Err(invalid("Too many sort columns"));
+    }
+    for (index, sort) in sorts.iter().enumerate() {
+        if sorts[..index]
+            .iter()
+            .any(|other| other.column == sort.column)
+        {
+            return Err(invalid("A column can appear only one time in the sort"));
+        }
+    }
+    Ok(())
+}
+
+pub fn toggle_sort(
+    sorts: &[ResultSort],
+    column: usize,
+    additive: bool,
+) -> Result<Vec<ResultSort>, DriverError> {
+    let current = sorts.iter().position(|sort| sort.column == column);
+    let next = match current.map(|index| sorts[index].direction) {
+        None => Some(SortDirection::Ascending),
+        Some(SortDirection::Ascending) => Some(SortDirection::Descending),
+        Some(SortDirection::Descending) => None,
+    };
+    let mut output = if additive { sorts.to_vec() } else { Vec::new() };
+    match (additive.then_some(current).flatten(), next) {
+        (Some(index), Some(direction)) => output[index].direction = direction,
+        (Some(index), None) => {
+            output.remove(index);
+        }
+        (None, Some(direction)) => output.push(ResultSort { column, direction }),
+        (None, None) => {}
+    }
+    validate_sorts(&output)?;
+    Ok(output)
+}
+
+pub(crate) fn sort_compare_keys(
+    left: &[Value],
+    right: &[Value],
+    directions: &[SortDirection],
+) -> Result<Ordering, DriverError> {
+    for ((left, right), direction) in left.iter().zip(right).zip(directions) {
+        let ordering = sort_compare(left, right, *direction)?;
+        if ordering != Ordering::Equal {
+            return Ok(ordering);
+        }
+    }
+    Ok(Ordering::Equal)
+}
+
 fn invalid(message: &str) -> DriverError {
     DriverError::new(ErrorKind::InvalidInput, message)
 }

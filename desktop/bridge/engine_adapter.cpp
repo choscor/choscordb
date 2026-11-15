@@ -11,6 +11,7 @@
 #include <vector>
 namespace choscordb {
 using engine_adapter_detail::fromRust;
+using engine_adapter_detail::fromRustStrings;
 using engine_adapter_detail::objectGraph;
 using engine_adapter_detail::profileDto;
 using engine_adapter_detail::secretDraftsDto;
@@ -235,6 +236,9 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             preferences.showSystemSchemas = event.query_preferences.show_system_schemas;
             d_->connectionTimeoutSeconds = preferences.connectionTimeoutSeconds;
             emit queryPreferencesReady(event.request_token, preferences);
+        } else if (kind == "result_columns") {
+            emit hiddenColumnsReady(event.request_token, fromRust(event.result_columns_context),
+                                    fromRustStrings(event.hidden_columns));
         } else if (kind == "appearance_layout") {
             emit appearanceLayoutReady(event.request_token, event.has_appearance,
                                        appearanceLayout(event.appearance_layout));
@@ -600,8 +604,25 @@ void EngineAdapter::fetchPageAt(quint64 query, quint64 index) {
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
 }
+namespace {
+rust::Vec<ResultSortDto> resultSortDtos(const QList<ResultSortKey>& sorts) {
+    rust::Vec<ResultSortDto> output;
+    output.reserve(static_cast<size_t>(sorts.size()));
+    for (const auto& sort : sorts)
+        output.push_back({sort.column, toRust(sort.direction)});
+    return output;
+}
+}
+ResultSortToggle EngineAdapter::toggleResultSort(const QList<ResultSortKey>& sorts, quint32 column,
+                                                 bool additive) {
+    const auto dto = result_sort_toggle(resultSortDtos(sorts), column, additive);
+    ResultSortToggle output{{}, fromRust(dto.error)};
+    for (const auto& sort : dto.sorts)
+        output.sorts.append({sort.column, fromRust(sort.direction)});
+    return output;
+}
 bool EngineAdapter::applyResultView(quint64 query, const QList<ResultFilterCondition>& filters,
-                                    qint32 sortColumn, const QString& sortDirection) {
+                                    const QList<ResultSortKey>& sorts) {
     rust::Vec<ResultFilterDto> values;
     values.reserve(static_cast<size_t>(filters.size()));
     for (const auto& filter : filters) {
@@ -612,10 +633,7 @@ bool EngineAdapter::applyResultView(quint64 query, const QList<ResultFilterCondi
         value.value = toRust(filter.value);
         values.push_back(std::move(value));
     }
-    const auto direction = sortDirection.toUtf8();
-    auto reply = apply_result_view(*d_->engine, query, std::move(values),
-                                   sortColumn < 0 ? 0u : static_cast<quint32>(sortColumn),
-                                   utf8View(direction));
+    auto reply = apply_result_view(*d_->engine, query, std::move(values), resultSortDtos(sorts));
     if (!reply.accepted)
         emit commandFailed(fromRust(reply.error));
     return reply.accepted;

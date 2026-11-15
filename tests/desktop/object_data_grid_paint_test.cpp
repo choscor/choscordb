@@ -112,11 +112,12 @@ class ObjectDataGridPaintTest : public QObject {
         using namespace choscordb::design;
         HeaderFixture fixture;
         QVERIFY(fixture.ready());
-        fixture.header->setSortIndicatorShown(false);
+        auto* model = qobject_cast<choscordb::ResultTableModel*>(fixture.header->model());
+        QVERIFY(model);
+        model->setSortRanks({});
         const auto plain = fixture.grab(0);
         const auto mark = [&](Qt::SortOrder order) {
-            fixture.header->setSortIndicator(0, order);
-            fixture.header->setSortIndicatorShown(true);
+            model->setSortRanks({{0, order == Qt::AscendingOrder ? 1 : -1}});
             const auto marked = fixture.grab(0);
             QRect box;
             QList<int> widths(marked.height(), 0);

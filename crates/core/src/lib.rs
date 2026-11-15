@@ -7,8 +7,8 @@ mod metadata_cache;
 pub use document_io::{
     DocumentIoError, MAX_SAVED_SQL_DOCUMENTS, MAX_SQL_DOCUMENT_BYTES, SavedSqlDocument,
     SavedSqlDocuments, document_path_exists, ensure_saved_sql_directory, list_saved_sql_documents,
-    read_saved_sql_document, read_sql_document, saved_sql_document_identity, saved_sql_root,
-    write_sql_document,
+    read_cell_file, read_saved_sql_document, read_sql_document, saved_sql_document_identity,
+    saved_sql_root, write_cell_file, write_sql_document,
 };
 mod hot_cache;
 pub use hot_cache::CacheUsage;
@@ -47,8 +47,8 @@ mod result_view;
 mod ssh_trust;
 pub mod updater_machine;
 pub use choscordb_storage::{
-    APPEARANCE_LAYOUT_VERSION, AppearanceLayout, ConnectionColor, ConnectionEnvironment,
-    ConnectionProfile, ConnectionTone, DEFAULT_CONNECTION_TIMEOUT_SECONDS,
+    APPEARANCE_LAYOUT_VERSION, AppearanceLayout, ColumnLayoutError, ConnectionColor,
+    ConnectionEnvironment, ConnectionProfile, ConnectionTone, DEFAULT_CONNECTION_TIMEOUT_SECONDS,
     DEFAULT_EDITOR_FONT_SIZE, DEFAULT_FORMAT_INDENT, EDITOR_PREFERENCES_VERSION, EditorDocument,
     EditorPreferences, ExecutionGate, HistoryEntry, HistoryPolicy, HistoryStatus,
     MAX_APPEARANCE_LAYOUT_BYTES, MAX_COLLECTION_BYTES, MAX_CONNECTION_TIMEOUT_SECONDS,
@@ -58,13 +58,16 @@ pub use choscordb_storage::{
     MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, ObjectTab, PostgresTls, ProfileConfiguration,
     QUERY_PREFERENCES_VERSION, QueryPreferences, ResultColumnWidth, SafetyLevel, ShortcutCommand,
     ShortcutOverride, SidebarTab, ThemeMode, WindowGeometry, WorkspaceLayout, WorkspaceSnapshot,
-    WorkspaceTab,
+    WorkspaceTab, result_columns_context, toggle_hidden_column,
 };
 mod store;
 use choscordb_diagnostics::{EngineBoundaryEvent, Service as DiagnosticsService};
 use choscordb_driver_api::*;
 pub use protocol::*;
-pub use result_view::{FilterCondition, FilterOperator, ResultSort, SortDirection, value_matches};
+pub use result_view::{
+    FilterCondition, FilterOperator, MAX_SORT_KEYS, ResultSort, SortDirection, toggle_sort,
+    validate_sorts, value_matches,
+};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -487,8 +490,9 @@ impl Engine {
         &mut self,
         query: QueryId,
         filters: Vec<FilterCondition>,
-        sort: Option<ResultSort>,
+        sort: Vec<ResultSort>,
     ) -> std::result::Result<(), SubmitError> {
+        result_view::validate_sorts(&sort).map_err(|_| SubmitError::InvalidInput)?;
         let slot = self
             .queries
             .get_mut(query)
@@ -865,6 +869,7 @@ impl Engine {
         if matches!(
             &event,
             Event::QueryPreferences { .. }
+                | Event::ResultColumns { .. }
                 | Event::EditorPreferences { .. }
                 | Event::AppearanceLayout { .. }
                 | Event::HistoryFlushed { .. }

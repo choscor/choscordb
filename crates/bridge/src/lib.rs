@@ -35,12 +35,16 @@ mod result_json;
 pub use choscordb_core::CLIPBOARD_SQL_TABLE_REQUIRED;
 pub use completion::*;
 pub use diagnostics::*;
-pub use document_io::{document_path_status, read_sql_document_file, write_sql_document_file};
+pub use document_io::{
+    document_path_status, read_cell_file, read_sql_document_file, write_cell_file,
+    write_sql_document_file,
+};
 pub use edit_value::parse_grid_edit_value_policy;
 pub use foreign_key_filter::{foreign_key_predicate_policy, foreign_key_value_filterable_policy};
 pub use grid_edit::{
-    grid_cell_kind_policies, grid_editability_policy, grid_row_insert_error_policy,
-    plan_grid_edits_policy,
+    grid_binary_column_policy, grid_cell_kind_policies, grid_editability_policy,
+    grid_row_insert_error_policy, grid_set_value_policy, grid_temporal_kind_policy,
+    grid_temporal_text_policy, plan_grid_edits_policy, set_value_kinds,
 };
 pub use metadata_policy::{
     navigator_object_visible_policy, system_schema_node_policy, system_schemas_hidden_policy,
@@ -63,6 +67,10 @@ pub use profile_draft::{
 pub use quick_search::{
     QuickSearchQuery, TextFilterQuery, TextFinderQuery, quick_search_limits, quick_search_query,
     quick_search_status, text_filter_query, text_finder,
+};
+mod result_columns;
+pub use result_columns::{
+    result_column_toggle, result_columns_context, result_columns_get, result_columns_set,
 };
 mod query_preferences;
 pub use query_preferences::{
@@ -228,6 +236,21 @@ pub mod ffi {
         database_type: String,
         foreign_key_filterable: bool,
     }
+    #[derive(Clone)]
+    struct ResultSortDto {
+        column: u32,
+        direction: String,
+    }
+    #[derive(Default)]
+    struct HiddenColumnsToggleDto {
+        hidden: Vec<String>,
+        error: String,
+    }
+    #[derive(Default)]
+    struct ResultSortToggleDto {
+        sorts: Vec<ResultSortDto>,
+        error: String,
+    }
     struct ResultFilterDto {
         column: u32,
         operation: String,
@@ -253,8 +276,36 @@ pub mod ffi {
         current: Vec<CellDto>,
         original: Vec<CellDto>,
         touched: Vec<u8>,
+        expressions: Vec<String>,
         inserted: bool,
         deleted: bool,
+    }
+    struct GridDateTimeDto {
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: u32,
+        minute: u32,
+        second: u32,
+    }
+    struct GridTemporalTextDto {
+        text: String,
+        error: String,
+    }
+    struct GridSetValueRequestDto {
+        kind: String,
+        driver: String,
+        database_type: String,
+        inserted: bool,
+        nullable_known: bool,
+        nullable: bool,
+    }
+    #[derive(Default)]
+    struct GridSetValueDto {
+        outcome: String,
+        text: String,
+        expression: String,
+        error: String,
     }
     struct GridEditRequestDto {
         driver: String,
@@ -381,7 +432,7 @@ pub mod ffi {
         source_tables: Vec<String>,
         driver: String,
     }
-    struct CopyFormatOptionDto {
+    struct CodeLabelDto {
         code: String,
         label: String,
     }
@@ -1246,6 +1297,8 @@ pub mod ffi {
         history_policy: HistoryPolicyDto,
         editor_preferences: EditorPreferencesDto,
         query_preferences: QueryPreferencesDto,
+        result_columns_context: String,
+        hidden_columns: Vec<String>,
         has_appearance: bool,
         appearance_layout: AppearanceLayoutDto,
         history_recorded: bool,
@@ -1513,6 +1566,11 @@ pub mod ffi {
         fn grid_cell_kind_policies() -> Vec<GridCellKindPolicyDto>;
         fn grid_row_insert_error_policy(rows: u32) -> String;
         fn plan_grid_edits_policy(request: GridEditRequestDto) -> GridEditPlanDto;
+        fn set_value_kinds() -> Vec<CodeLabelDto>;
+        fn grid_binary_column_policy(database_type: &str) -> bool;
+        fn grid_temporal_kind_policy(database_type: &str) -> String;
+        fn grid_temporal_text_policy(kind: &str, picked: GridDateTimeDto) -> GridTemporalTextDto;
+        fn grid_set_value_policy(request: GridSetValueRequestDto) -> GridSetValueDto;
         fn quick_filter_options_policy(column: &str, value: CellDto) -> Vec<QuickFilterOptionDto>;
         fn quick_filter_compose_policy(
             columns: Vec<String>,
@@ -1575,7 +1633,7 @@ pub mod ffi {
             valid_unicode: bool,
         ) -> JsonViewResultDto;
         fn render_copy_policy(request: CopyRequestDto) -> CopyResultDto;
-        fn copy_format_options() -> Vec<CopyFormatOptionDto>;
+        fn copy_format_options() -> Vec<CodeLabelDto>;
         type RustDiagnostics;
         type DiagnosticCancellation;
         fn diagnostics_clone(service: &RustDiagnostics) -> Box<RustDiagnostics>;
@@ -1616,6 +1674,8 @@ pub mod ffi {
         fn document_path_status(path: &str) -> DocumentPathStatusDto;
         fn read_sql_document_file(path: &str) -> DocumentIoResultDto;
         fn write_sql_document_file(path: &str, bytes: &[u8]) -> DocumentIoResultDto;
+        fn read_cell_file(path: &str) -> DocumentIoResultDto;
+        fn write_cell_file(path: &str, bytes: &[u8]) -> DocumentIoResultDto;
         fn write_preview_capture_file(
             path: &str,
             png: &[u8],
@@ -1820,6 +1880,20 @@ pub mod ffi {
             token: u64,
         ) -> Submit;
         fn appearance_layout_reset(engine: &mut BridgeEngine, token: u64) -> Submit;
+        fn result_columns_context(profile_id: &str, object_id: &str) -> String;
+        fn result_column_toggle(
+            hidden: Vec<String>,
+            name: &str,
+            hide: bool,
+            columns: Vec<String>,
+        ) -> HiddenColumnsToggleDto;
+        fn result_columns_get(engine: &mut BridgeEngine, context: &str, token: u64) -> Submit;
+        fn result_columns_set(
+            engine: &mut BridgeEngine,
+            context: &str,
+            hidden: Vec<String>,
+            token: u64,
+        ) -> Submit;
         fn query_preferences_get(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn query_preferences_set(
             engine: &mut BridgeEngine,
@@ -2073,9 +2147,13 @@ pub mod ffi {
             engine: &mut BridgeEngine,
             query: u64,
             filters: Vec<ResultFilterDto>,
-            sort_column: u32,
-            sort_direction: &str,
+            sorts: Vec<ResultSortDto>,
         ) -> Submit;
+        fn result_sort_toggle(
+            sorts: Vec<ResultSortDto>,
+            column: u32,
+            additive: bool,
+        ) -> ResultSortToggleDto;
         fn cancel_result_view(engine: &mut BridgeEngine, query: u64) -> Submit;
         fn clear_result_view(engine: &mut BridgeEngine, query: u64) -> Submit;
         fn sql_export_table_error(table: Vec<String>) -> String;
@@ -2369,12 +2447,54 @@ fn filter_value(kind: &str, value: String) -> std::result::Result<Option<Value>,
         _ => return Err("Invalid filter value type".into()),
     }))
 }
+fn result_sorts(
+    sorts: Vec<ffi::ResultSortDto>,
+) -> std::result::Result<Vec<choscordb_core::ResultSort>, String> {
+    sorts
+        .into_iter()
+        .map(|sort| {
+            Ok(choscordb_core::ResultSort {
+                column: sort.column as usize,
+                direction: match sort.direction.as_str() {
+                    "ascending" => choscordb_core::SortDirection::Ascending,
+                    "descending" => choscordb_core::SortDirection::Descending,
+                    _ => return Err("Invalid sort direction".to_string()),
+                },
+            })
+        })
+        .collect()
+}
+fn result_sort_dto(sort: choscordb_core::ResultSort) -> ffi::ResultSortDto {
+    ffi::ResultSortDto {
+        column: sort.column as u32,
+        direction: match sort.direction {
+            choscordb_core::SortDirection::Ascending => "ascending",
+            choscordb_core::SortDirection::Descending => "descending",
+        }
+        .into(),
+    }
+}
+pub fn result_sort_toggle(
+    sorts: Vec<ffi::ResultSortDto>,
+    column: u32,
+    additive: bool,
+) -> ffi::ResultSortToggleDto {
+    match result_sorts(sorts.clone()).and_then(|current| {
+        choscordb_core::toggle_sort(&current, column as usize, additive)
+            .map_err(|error| error.message)
+    }) {
+        Ok(next) => ffi::ResultSortToggleDto {
+            sorts: next.into_iter().map(result_sort_dto).collect(),
+            error: String::new(),
+        },
+        Err(error) => ffi::ResultSortToggleDto { sorts, error },
+    }
+}
 pub fn apply_result_view(
     engine: &mut BridgeEngine,
     query: u64,
     filters: Vec<ffi::ResultFilterDto>,
-    sort_column: u32,
-    sort_direction: &str,
+    sorts: Vec<ffi::ResultSortDto>,
 ) -> ffi::Submit {
     submit(engine, |e| {
         let filters = filters
@@ -2410,18 +2530,7 @@ pub fn apply_result_view(
                 })
             })
             .collect::<std::result::Result<Vec<_>, String>>()?;
-        let sort = match sort_direction {
-            "" => None,
-            "ascending" => Some(choscordb_core::ResultSort {
-                column: sort_column as usize,
-                direction: choscordb_core::SortDirection::Ascending,
-            }),
-            "descending" => Some(choscordb_core::ResultSort {
-                column: sort_column as usize,
-                direction: choscordb_core::SortDirection::Descending,
-            }),
-            _ => return Err("Invalid sort direction".into()),
-        };
+        let sort = result_sorts(sorts)?;
         e.apply_result_view(unpack(query), filters, sort)
             .map(|()| query)
             .map_err(|error| error.to_string())

@@ -368,6 +368,16 @@ pub fn event(
             e.query_preferences = super::query_preferences::dto(preferences);
             "query_preferences"
         }
+        Event::ResultColumns {
+            request_token,
+            context,
+            hidden,
+        } => {
+            e.request_token = request_token;
+            e.result_columns_context = context;
+            e.hidden_columns = hidden;
+            "result_columns"
+        }
         Event::EditorPreferences {
             request_token,
             preferences,

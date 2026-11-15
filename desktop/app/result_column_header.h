@@ -11,6 +11,7 @@
 #include <QStyleOptionHeader>
 #include <QTextLayout>
 #include <algorithm>
+#include <cstdlib>
 #include <optional>
 
 namespace choscordb {
@@ -75,7 +76,12 @@ class ResultColumnHeader final : public QHeaderView {
         option.rect = rect;
         option.text.clear();
         option.icon = {};
-        const bool sorted = isSortIndicatorShown() && sortIndicatorSection() == logicalIndex;
+        const int sortRank =
+            model()
+                ->headerData(logicalIndex, Qt::Horizontal, ResultTableModel::HeaderSortRole)
+                .toInt();
+        const bool sorted = sortRank != 0;
+        const auto sortOrder = sortRank > 0 ? Qt::AscendingOrder : Qt::DescendingOrder;
         option.sortIndicator = QStyleOptionHeader::None;
         style()->drawControl(QStyle::CE_Header, &option, painter, this);
         painter->save();
@@ -94,21 +100,30 @@ class ResultColumnHeader final : public QHeaderView {
         }
         const int markSize = design::dimension(design::Dimension::IconSmall);
         if (sorted) {
-            if (!sortIcon_ || sortIconColor_ != text.rgba() ||
-                sortIconOrder_ != sortIndicatorOrder()) {
-                sortIcon_ = design::themedIcon(sortIndicatorOrder() == Qt::AscendingOrder
-                                                   ? design::Icon::ArrowUp
-                                                   : design::Icon::ArrowDown,
-                                               text, markSize);
+            if (!sortIcon_ || sortIconColor_ != text.rgba() || sortIconOrder_ != sortOrder) {
+                sortIcon_ =
+                    design::themedIcon(sortOrder == Qt::AscendingOrder ? design::Icon::ArrowUp
+                                                                       : design::Icon::ArrowDown,
+                                       text, markSize);
                 sortIconColor_ = text.rgba();
-                sortIconOrder_ = sortIndicatorOrder();
+                sortIconOrder_ = sortOrder;
             }
-            sortIcon_->paint(painter, QRect(rect.right() + 1 - inset() - markSize,
-                                            rect.center().y() - markSize / 2, markSize, markSize));
+            const QRect mark(rect.right() + 1 - inset() - markSize,
+                             rect.center().y() - markSize / 2, markSize, markSize);
+            sortIcon_->paint(painter, mark);
+            if (std::abs(sortRank) > 1) {
+                painter->setFont(secondaryFont());
+                painter->setPen(text);
+                painter->drawText(
+                    QRect(mark.left() - iconAdvance(), rect.top(), iconAdvance(), rect.height()),
+                    Qt::AlignRight | Qt::AlignVCenter, QString::number(std::abs(sortRank)));
+                painter->setFont(font());
+            }
         }
         painter->setPen(text);
         const int available =
-            std::max(0, rect.left() + rect.width() - x - inset() - (sorted ? iconAdvance() : 0));
+            std::max(0, rect.left() + rect.width() - x - inset() -
+                            (sorted ? iconAdvance() * (std::abs(sortRank) > 1 ? 2 : 1) : 0));
         const QString label = type.isEmpty() ? name : name + QStringLiteral(" · ") + type;
         const QFont& small = secondaryFont();
         auto& elided = elided_[logicalIndex];

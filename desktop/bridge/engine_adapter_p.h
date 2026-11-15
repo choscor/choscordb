@@ -12,7 +12,9 @@
 namespace choscordb {
 namespace engine_adapter_detail {
 using bridge_detail::fromRust;
+using bridge_detail::fromRustStrings;
 using bridge_detail::toRust;
+using bridge_detail::toRustStrings;
 using bridge_detail::utf8View;
 inline ProfileDto profileDto(const SavedProfile& value) {
     ProfileDto dto;

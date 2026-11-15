@@ -26,7 +26,7 @@
   {
     "path": "desktop/tools/preview/preview_standard.cpp",
     "rule": "sql-text",
-    "sha256": "1950b27c96aadcc83bccb945cf3c113e2eba1e80257e8aa3493a2bb258dfa30b",
+    "sha256": "fdab2fdfaeac6e7006ac9f6286dfe5d90cb7862d0c4eeb02ba810af76d8e97d4",
     "reason": "The CREATE TABLE literal populates a synthetic read-only SQL-editor specimen. This developer gallery does not execute it or derive application SQL from it."
   },
   {

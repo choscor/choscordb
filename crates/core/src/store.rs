@@ -174,7 +174,7 @@ impl Drop for Store {
 
 impl SortedRows {
     pub async fn new(
-        direction: crate::SortDirection,
+        directions: Vec<crate::SortDirection>,
         max_disk_bytes: u64,
         cache_bytes: usize,
         directory: Option<std::path::PathBuf>,
@@ -199,10 +199,10 @@ impl SortedRows {
                 .pragma_update(None, "max_page_count", maximum_pages)
                 .map_err(|_| sort_limit())?;
             connection.create_collation("typed_result_value", move |left, right| {
-                let left = serde_json::from_str::<Value>(left);
-                let right = serde_json::from_str::<Value>(right);
+                let left = serde_json::from_str::<Vec<Value>>(left);
+                let right = serde_json::from_str::<Vec<Value>>(right);
                 match (left, right) {
-                    (Ok(left), Ok(right)) => crate::result_view::sort_compare(&left, &right, direction).unwrap_or(std::cmp::Ordering::Equal),
+                    (Ok(left), Ok(right)) => crate::result_view::sort_compare_keys(&left, &right, &directions).unwrap_or(std::cmp::Ordering::Equal),
                     _ => std::cmp::Ordering::Equal,
                 }
             }).map_err(|_| sort_error())?;
@@ -229,7 +229,7 @@ impl SortedRows {
         result
     }
 
-    pub async fn insert(&mut self, rows: Vec<(Value, Row)>) -> Result<(), DriverError> {
+    pub async fn insert(&mut self, rows: Vec<(Vec<Value>, Row)>) -> Result<(), DriverError> {
         self.operate(move |state| {
             let transaction = state.connection.transaction().map_err(|_| sort_error())?;
             {

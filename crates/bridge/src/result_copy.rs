@@ -14,10 +14,10 @@ const FORMATS: [(&str, &str); 7] = [
     ("json", "JSON"),
 ];
 
-pub fn copy_format_options() -> Vec<ffi::CopyFormatOptionDto> {
+pub fn copy_format_options() -> Vec<ffi::CodeLabelDto> {
     FORMATS
         .iter()
-        .map(|(code, label)| ffi::CopyFormatOptionDto {
+        .map(|(code, label)| ffi::CodeLabelDto {
             code: (*code).into(),
             label: (*label).into(),
         })

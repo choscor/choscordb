@@ -15,5 +15,7 @@ class DocumentIo final : public QObject {
     QFuture<DocumentIoResult> read(QString path) const;
     QFuture<DocumentIoResult> readSaved(QString root, QString path) const;
     QFuture<DocumentIoResult> write(QString path, QByteArray bytes) const;
+    QFuture<DocumentIoResult> readCell(QString path) const;
+    QFuture<DocumentIoResult> writeCell(QString path, QByteArray bytes) const;
 };
 }

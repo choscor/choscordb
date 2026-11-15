@@ -244,10 +244,10 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
                 operator: FilterOperator::GreaterThan,
                 value: Some(Value::Integer(100)),
             }],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 0,
                 direction: SortDirection::Ascending,
-            }),
+            }],
         )
         .unwrap();
     event(
@@ -323,7 +323,7 @@ fn whole_result_view_filters_sorts_pages_and_clears_without_reexecution() {
                 operator: FilterOperator::LessThan,
                 value: Some(Value::Integer(10)),
             }],
-            None,
+            vec![],
         )
         .unwrap();
     engine.cancel_result_view(query).unwrap();
@@ -387,10 +387,10 @@ fn descending_text_sort_is_case_insensitive_stable_and_keeps_null_last() {
         .apply_result_view(
             query,
             vec![],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 0,
                 direction: SortDirection::Descending,
-            }),
+            }],
         )
         .unwrap();
     event(&mut engine, |e| {
@@ -534,10 +534,10 @@ fn sorting_a_single_fallback_cell_fails_at_the_result_view_seam() {
         .apply_result_view(
             query,
             vec![],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 0,
                 direction: SortDirection::Ascending,
-            }),
+            }],
         )
         .unwrap();
     let error = failed_view(&mut engine);
@@ -579,10 +579,10 @@ fn external_sort_keeps_engine_buffers_within_one_page_under_tight_memory() {
         .apply_result_view(
             query,
             vec![],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 0,
                 direction: SortDirection::Descending,
-            }),
+            }],
         )
         .unwrap();
     let mut maximum_buffered = 0;
@@ -651,10 +651,10 @@ fn cancelling_a_live_transform_keeps_already_stored_original_pages_readable() {
         .apply_result_view(
             query,
             vec![],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 0,
                 direction: SortDirection::Descending,
-            }),
+            }],
         )
         .unwrap();
     engine.cancel_result_view(query).unwrap();
@@ -752,7 +752,7 @@ fn sqlite_declared_types_compare_against_typed_filter_operands() {
                     value: Some(Value::Json("{\"n\":1.0,\"Name\":\"A\"}".into())),
                 },
             ],
-            None,
+            vec![],
         )
         .unwrap();
     event(&mut engine, |event| {
@@ -776,7 +776,7 @@ fn sqlite_declared_types_compare_against_typed_filter_operands() {
                 operator: FilterOperator::Equals,
                 value: Some(Value::Json("{\"Name\":\"a\",\"n\":1}".into())),
             }],
-            None,
+            vec![],
         )
         .unwrap();
     event(&mut engine, |event| {
@@ -800,10 +800,10 @@ fn sqlite_declared_types_compare_against_typed_filter_operands() {
         .apply_result_view(
             query,
             vec![],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 6,
                 direction: SortDirection::Ascending,
-            }),
+            }],
         )
         .unwrap();
     assert_eq!(
@@ -863,10 +863,10 @@ fn aggregate_disk_budget_holds_across_success_failure_cancel_and_replacement() {
             .apply_result_view(
                 query,
                 vec![],
-                Some(ResultSort {
+                vec![ResultSort {
                     column: 0,
                     direction,
-                }),
+                }],
             )
             .unwrap();
         event(&mut engine, |event| {
@@ -877,10 +877,10 @@ fn aggregate_disk_budget_holds_across_success_failure_cancel_and_replacement() {
         .apply_result_view(
             query,
             vec![],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 2,
                 direction: SortDirection::Ascending,
-            }),
+            }],
         )
         .unwrap();
     assert_eq!(
@@ -891,10 +891,10 @@ fn aggregate_disk_budget_holds_across_success_failure_cancel_and_replacement() {
         .apply_result_view(
             query,
             vec![],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 0,
                 direction: SortDirection::Ascending,
-            }),
+            }],
         )
         .unwrap();
     event(
@@ -914,10 +914,10 @@ fn aggregate_disk_budget_holds_across_success_failure_cancel_and_replacement() {
         .apply_result_view(
             query,
             vec![],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 0,
                 direction: SortDirection::Ascending,
-            }),
+            }],
         )
         .unwrap();
     event(&mut engine, |event| {
@@ -966,10 +966,10 @@ fn delayed_inflight_cancel_reports_progress_then_preserves_cursor() {
         .apply_result_view(
             query,
             vec![],
-            Some(ResultSort {
+            vec![ResultSort {
                 column: 0,
                 direction: SortDirection::Descending,
-            }),
+            }],
         )
         .unwrap();
     let wait_started = std::time::Instant::now();
@@ -1081,10 +1081,10 @@ fn temporal_filters_and_sorts_use_normalized_database_values() {
             .apply_result_view(
                 query,
                 vec![],
-                Some(ResultSort {
+                vec![ResultSort {
                     column,
                     direction: SortDirection::Ascending,
-                }),
+                }],
             )
             .unwrap();
         event(&mut engine, |event| {
@@ -1152,7 +1152,7 @@ fn empty_results_still_validate_sql_filters() {
                     operator,
                     value: Some(Value::Text(text.into())),
                 }],
-                None,
+                vec![],
             )
             .unwrap();
         assert_eq!(
@@ -1227,7 +1227,7 @@ fn sql_predicate_rejects_oversized_intermediate_values() {
                 operator: FilterOperator::Sql,
                 value: Some(Value::Text("length(zeroblob(1000000000)) > 0".into())),
             }],
-            None,
+            vec![],
         )
         .unwrap();
     assert!(failed_view(&mut engine).message.contains("too big"));
@@ -1277,7 +1277,9 @@ fn view_build_time(page_size: u32, sort: bool) -> Duration {
             sort.then_some(ResultSort {
                 column: 0,
                 direction: SortDirection::Descending,
-            }),
+            })
+            .into_iter()
+            .collect(),
         )
         .unwrap();
     let deadline = started + Duration::from_secs(600);

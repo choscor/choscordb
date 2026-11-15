@@ -1,5 +1,6 @@
 #pragma once
 #include "models/result_table_model.h"
+#include <QDateTime>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -44,7 +45,18 @@ struct GridEditColumn {
 struct GridEditRow {
     std::vector<Cell> current, original;
     std::vector<bool> touched;
+    std::vector<QString> expressions;
     bool inserted = false, deleted = false;
+};
+struct GridTemporalText {
+    QString text;
+    QString error;
+};
+struct GridSetValue {
+    QString outcome;
+    QString text;
+    QString expression;
+    QString error;
 };
 struct GridEditRequest {
     QString driver, qualifiedName, parameterStyle, reason;
@@ -162,6 +174,19 @@ struct ProfileTagOptions {
 struct CellFilterComposition {
     QString expression;
     QString validationError;
+    QString error;
+};
+struct ResultSortKey {
+    quint32 column = 0;
+    QString direction;
+    bool operator==(const ResultSortKey&) const = default;
+};
+struct HiddenColumnsToggle {
+    QStringList hidden;
+    QString error;
+};
+struct ResultSortToggle {
+    QList<ResultSortKey> sorts;
     QString error;
 };
 struct ResultFilterCondition {
@@ -570,6 +595,11 @@ class EngineAdapter final : public QObject {
     static QueryPreferenceLimits queryPreferenceLimits();
     bool getQueryPreferences(quint64 token);
     bool setQueryPreferences(const QueryPreferences& preferences, quint64 token);
+    static QString resultColumnsContext(const QString& profileId, const QString& objectId);
+    static HiddenColumnsToggle toggleHiddenColumn(const QStringList& hidden, const QString& name,
+                                                  bool hide, const QStringList& columns);
+    bool getHiddenColumns(const QString& context, quint64 token);
+    bool setHiddenColumns(const QString& context, const QStringList& hidden, quint64 token);
     static EditorPreferenceLimits editorPreferenceLimits();
     bool getEditorPreferences(quint64 token);
     bool setEditorPreferences(const EditorPreferences& preferences, quint64 token);
@@ -627,7 +657,9 @@ class EngineAdapter final : public QObject {
     void fetchPage(quint64 query);
     void fetchPageAt(quint64 query, quint64 index);
     bool applyResultView(quint64 query, const QList<ResultFilterCondition>& filters,
-                         qint32 sortColumn = -1, const QString& sortDirection = {});
+                         const QList<ResultSortKey>& sorts = {});
+    static ResultSortToggle toggleResultSort(const QList<ResultSortKey>& sorts, quint32 column,
+                                             bool additive);
     bool cancelResultView(quint64 query);
     bool clearResultView(quint64 query);
     bool cancelQuery(quint64 query);
@@ -671,6 +703,13 @@ class EngineAdapter final : public QObject {
     static ObjectKindTraits objectKindTraits(const QString& kind);
     static const NavigatorSearchBudget& navigatorSearchBudget();
     static const QList<CodeLabel>& copyFormats();
+    static const QList<CodeLabel>& setValueKinds();
+    static bool gridBinaryColumn(const QString& databaseType);
+    static QString gridTemporalKind(const QString& databaseType);
+    static GridTemporalText gridTemporalText(const QString& kind, const QDateTime& picked);
+    static GridSetValue gridSetValue(const QString& kind, const QString& driver,
+                                     const QString& databaseType, bool inserted,
+                                     std::optional<bool> nullable);
     static const ProfileTagOptions& profileTagOptions();
     static DriverWorkflow driverWorkflow(const QString& driver);
     static const TransactionGuard& transactionGuard(bool transactionActive);
@@ -755,6 +794,7 @@ class EngineAdapter final : public QObject {
     static SqlGate executionGate(const QString& safety, const SqlSelection& range);
   signals:
     void queryPreferencesReady(quint64 token, const choscordb::QueryPreferences& preferences);
+    void hiddenColumnsReady(quint64 token, const QString& context, const QStringList& hidden);
     void shutdownReady();
     void shutdownFailed(const QString& error, bool retryable);
     void historyWriteFailed(quint64 query, const QString& error);

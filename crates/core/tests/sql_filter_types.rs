@@ -184,7 +184,7 @@ fn apply(engine: &mut choscordb_core::Engine, query: Handle, predicate: &str) {
                 operator: FilterOperator::Sql,
                 value: Some(Value::Text(predicate.into())),
             }],
-            None,
+            vec![],
         )
         .unwrap();
 }

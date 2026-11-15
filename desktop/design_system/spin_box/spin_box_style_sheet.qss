@@ -1,9 +1,9 @@
-QSpinBox, QDoubleSpinBox {
+QSpinBox, QDoubleSpinBox, QDateTimeEdit {
   padding-right: @space-6;
   font-weight: 400;
 }
 
-QSpinBox::up-button, QDoubleSpinBox::up-button {
+QSpinBox::up-button, QDoubleSpinBox::up-button, QDateTimeEdit::up-button {
   subcontrol-origin: padding;
   subcontrol-position: center right;
   position: relative;
@@ -13,7 +13,7 @@ QSpinBox::up-button, QDoubleSpinBox::up-button {
   border: 0;
 }
 
-QSpinBox::down-button, QDoubleSpinBox::down-button {
+QSpinBox::down-button, QDoubleSpinBox::down-button, QDateTimeEdit::down-button {
   subcontrol-origin: padding;
   subcontrol-position: center right;
   position: relative;
@@ -23,7 +23,8 @@ QSpinBox::down-button, QDoubleSpinBox::down-button {
   border: 0;
 }
 
-QSpinBox::up-arrow, QDoubleSpinBox::up-arrow, QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow, QDateTimeEdit::up-arrow,
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow, QDateTimeEdit::down-arrow {
   width: @icon-size-sm;
   height: @icon-size-sm;
 }

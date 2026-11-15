@@ -13,6 +13,7 @@ CPP_SUFFIXES = {".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".mm"}
 STOCK_CONTROLS = {
     "QCheckBox",
     "QComboBox",
+    "QDateTimeEdit",
     "QDoubleSpinBox",
     "QFontComboBox",
     "QGraphicsView",

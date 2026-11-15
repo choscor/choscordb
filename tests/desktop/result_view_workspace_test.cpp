@@ -430,7 +430,7 @@ class ResultViewWorkspaceTest : public QObject {
                                      header->viewport()->mapToGlobal(headerPoint));
         QApplication::sendEvent(header->viewport(), &headerMenu);
         QCOMPARE(headerLabels, (QStringList{"Sort ascending", "Sort descending", "Clear sort", "|",
-                                            "Copy column name"}));
+                                            "Copy column name", "Columns"}));
         QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("3"));
         auto* bar = sqlFilterBar(grid);
         QVERIFY(bar && bar->isVisible());

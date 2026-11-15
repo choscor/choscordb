@@ -7,11 +7,13 @@
 #include "design_system/text/text.h"
 #include <QAccessible>
 #include <QAction>
+#include <QDateTimeEdit>
 #include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QMimeData>
 #include <QPlainTextEdit>
+#include <QSignalBlocker>
 #include <QTableView>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -198,10 +200,28 @@ void QueryWorkspace::openCellEditor(const QPersistentModelIndex& index) {
         cellEditSheet_ = new design::RightSheet(widgets_.dialogParent);
         cellEditSheet_->setObjectName("cellEditSheet");
         cellEditSheet_->setTitle(tr("Edit cell"));
-        cellEditText_ = new CellDraftTextEdit(cellEditSheet_);
+        auto* body = new QWidget(cellEditSheet_);
+        auto* bodyLayout = new QVBoxLayout(body);
+        bodyLayout->setContentsMargins(0, 0, 0, 0);
+        bodyLayout->setSpacing(design::spacing(design::Spacing::Two));
+        cellEditPicker_ = new QDateTimeEdit(body);
+        cellEditPicker_->setObjectName("cellEditDateTime");
+        cellEditPicker_->setAccessibleName(tr("Pick date and time"));
+        bodyLayout->addWidget(cellEditPicker_);
+        cellEditText_ = new CellDraftTextEdit(body);
         cellEditText_->setObjectName("cellEditText");
         cellEditText_->setAccessibleName(tr("Cell value"));
-        cellEditSheet_->setBody(cellEditText_);
+        bodyLayout->addWidget(cellEditText_);
+        cellEditSheet_->setBody(body);
+        connect(cellEditPicker_, &QDateTimeEdit::dateTimeChanged, this,
+                [this](const QDateTime& picked) {
+                    const auto text = EngineAdapter::gridTemporalText(cellEditTemporal_, picked);
+                    if (!text.error.isEmpty()) {
+                        cellEditError(text.error);
+                        return;
+                    }
+                    cellEditText_->setPlainText(text.text);
+                });
         cellEditStatus_ = cellEditSheet_->sections()->addStatusLine();
         cellEditStatus_->setObjectName("cellEditStatusLine");
         cellEditStatus_->findChild<QLabel*>("statusMessage")->setObjectName("cellEditStatus");
@@ -232,6 +252,17 @@ void QueryWorkspace::openCellEditor(const QPersistentModelIndex& index) {
     const bool null = value && std::holds_alternative<std::monostate>(*value);
     static_cast<CellDraftTextEdit*>(cellEditText_.data())
         ->setDraftText(null || omitted ? QString{} : index.data(Qt::EditRole).toString());
+    cellEditTemporal_ = EngineAdapter::gridTemporalKind(
+        model_->columns()[static_cast<std::size_t>(index.column())].databaseType);
+    {
+        const QSignalBlocker blocker(cellEditPicker_);
+        cellEditPicker_->setDisplayFormat(
+            cellEditTemporal_ == QLatin1String("date")   ? QStringLiteral("yyyy-MM-dd")
+            : cellEditTemporal_ == QLatin1String("time") ? QStringLiteral("HH:mm:ss")
+                                                         : QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+        cellEditPicker_->setDateTime(QDateTime::currentDateTime());
+    }
+    cellEditPicker_->setVisible(!cellEditTemporal_.isEmpty());
     cellEditText_->setReadOnly(false);
     cellEditText_->setAccessibleDescription({});
     cellEditSave_->setEnabled(!cellEditParsing_);

@@ -2,6 +2,7 @@ mod appearance;
 mod metadata_cache;
 mod preferences;
 mod query_preferences;
+mod result_columns;
 pub use appearance::{
     APPEARANCE_LAYOUT_VERSION, AppearanceLayout, MAX_APPEARANCE_LAYOUT_BYTES,
     MAX_RESULT_COLUMN_NAME_BYTES, MAX_RESULT_COLUMN_WIDTHS, MAX_SCREEN_NAME_BYTES,
@@ -19,6 +20,11 @@ pub use preferences::{
 pub use query_preferences::{
     DEFAULT_CONNECTION_TIMEOUT_SECONDS, MAX_CONNECTION_TIMEOUT_SECONDS, MAX_QUERY_TIMEOUT_SECONDS,
     QUERY_PREFERENCES_VERSION, QueryPreferences,
+};
+pub use result_columns::{
+    ColumnLayoutError, MAX_HIDDEN_COLUMN_CONTEXT_BYTES, MAX_HIDDEN_COLUMN_CONTEXTS,
+    MAX_HIDDEN_COLUMN_NAME_BYTES, MAX_HIDDEN_COLUMNS, result_columns_context, toggle_hidden_column,
+    validate_hidden_result_columns,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -48,6 +54,8 @@ pub enum StorageError {
     ResourceLimit,
     #[error("this setting must be changed through its dedicated API")]
     ReservedSetting,
+    #[error("invalid hidden result columns")]
+    InvalidColumnLayout,
     #[error("invalid editor recovery or history data")]
     InvalidDocument,
     #[error("invalid history retention policy")]
@@ -629,6 +637,7 @@ impl Storage {
             || key == "editor_preferences"
             || key == "query_preferences"
             || key == "appearance_layout"
+            || key == "result_column_layouts"
         {
             return Err(StorageError::ReservedSetting);
         }

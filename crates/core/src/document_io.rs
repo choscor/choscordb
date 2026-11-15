@@ -29,6 +29,8 @@ pub enum DocumentIoError {
     NotRegularFile,
     #[error("SQL files are limited to 16 MiB.")]
     TooLarge,
+    #[error("Cell files are limited to 64 KiB.")]
+    CellTooLarge,
     #[error("Path is not a saved SQL file in the selected directory.")]
     InvalidSavedPath,
     #[error("{0}")]
@@ -240,6 +242,22 @@ pub fn saved_sql_document_identity(path: &Path) -> Result<PathBuf, DocumentIoErr
 }
 
 pub fn read_sql_document(path: &Path) -> Result<Vec<u8>, DocumentIoError> {
+    read_open_sql_document(open_regular_candidate(path)?)
+}
+
+pub fn read_cell_file(path: &Path) -> Result<Vec<u8>, DocumentIoError> {
+    read_limited(
+        open_regular_candidate(path)?,
+        choscordb_driver_api::MAX_GRID_BINARY_BYTES,
+        DocumentIoError::CellTooLarge,
+    )
+}
+
+pub fn write_cell_file(path: &Path, bytes: &[u8]) -> Result<(), DocumentIoError> {
+    write_atomically(path, bytes)
+}
+
+fn open_regular_candidate(path: &Path) -> Result<File, DocumentIoError> {
     #[cfg(unix)]
     let file = {
         use rustix::fs::{CWD, Mode, OFlags, openat};
@@ -250,21 +268,28 @@ pub fn read_sql_document(path: &Path) -> Result<Vec<u8>, DocumentIoError> {
     };
     #[cfg(not(unix))]
     let file = File::open(path)?;
-    read_open_sql_document(file)
+    Ok(file)
 }
 
 fn read_open_sql_document(file: File) -> Result<Vec<u8>, DocumentIoError> {
+    read_limited(file, MAX_SQL_DOCUMENT_BYTES, DocumentIoError::TooLarge)
+}
+
+fn read_limited(
+    file: File,
+    limit: usize,
+    too_large: DocumentIoError,
+) -> Result<Vec<u8>, DocumentIoError> {
     if !file.metadata()?.is_file() {
         return Err(DocumentIoError::NotRegularFile);
     }
-    if file.metadata()?.len() > MAX_SQL_DOCUMENT_BYTES as u64 {
-        return Err(DocumentIoError::TooLarge);
+    if file.metadata()?.len() > limit as u64 {
+        return Err(too_large);
     }
     let mut bytes = Vec::new();
-    file.take((MAX_SQL_DOCUMENT_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() > MAX_SQL_DOCUMENT_BYTES {
-        return Err(DocumentIoError::TooLarge);
+    file.take((limit + 1) as u64).read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        return Err(too_large);
     }
     Ok(bytes)
 }
@@ -273,6 +298,10 @@ pub fn write_sql_document(path: &Path, bytes: &[u8]) -> Result<(), DocumentIoErr
     if bytes.len() > MAX_SQL_DOCUMENT_BYTES {
         return Err(DocumentIoError::TooLarge);
     }
+    write_atomically(path, bytes)
+}
+
+fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), DocumentIoError> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())

@@ -20,7 +20,7 @@ struct GridCommandSpec {
     const char* sequence;
     const char* name;
 };
-constexpr std::array<GridCommandSpec, 8> gridCommands = {{
+constexpr std::array<GridCommandSpec, 9> gridCommands = {{
     {"grid_add_row", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Add row"), "Ctrl+Shift+N",
      nullptr},
     {"grid_duplicate_row", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Duplicate row"),
@@ -36,6 +36,8 @@ constexpr std::array<GridCommandSpec, 8> gridCommands = {{
      nullptr},
     {"grid_discard_edits", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Discard"),
      "Ctrl+Shift+Backspace", nullptr},
+    {"grid_choose_columns", QT_TRANSLATE_NOOP("choscordb::QueryWorkspace", "Choose columns…"),
+     "Ctrl+Alt+F", "chooseColumns"},
 }};
 constexpr auto setNullAlternate = "Backspace";
 QString gridLabel(std::size_t command) {
@@ -82,9 +84,10 @@ void QueryWorkspace::setGridShortcut(const QString& id, const QKeySequence& prim
     updateApplyToolTip();
 }
 void QueryWorkspace::setupGridCommands() {
-    const std::array<QPushButton*, 8> buttons = {
+    const std::array<QPushButton*, 9> buttons = {
         widgets_.addRow,  nullptr, widgets_.deleteRows, widgets_.restoreRows,
-        widgets_.setNull, nullptr, widgets_.applyEdits, widgets_.discardEdits};
+        widgets_.setNull, nullptr, widgets_.applyEdits, widgets_.discardEdits,
+        nullptr};
     for (std::size_t i = 0; i < gridActions_.size(); ++i) {
         const auto command = static_cast<GridCommand>(i);
         auto* action = new QAction(gridLabel(i), widgets_.grid);
@@ -127,6 +130,7 @@ void QueryWorkspace::updateGridActions() {
         ->setEnabled(gridAction(GridCommand::AddRow)->isEnabled() && target.isValid() &&
                      target.model() == model_);
     gridAction(GridCommand::EditCell)->setEnabled(cellEditEligible(target));
+    gridAction(GridCommand::ChooseColumns)->setEnabled(model_->columnCount() > 0);
     for (std::size_t i = 0; i < gridActions_.size(); ++i) {
         auto* action = gridActions_[i];
         const auto reason =
@@ -169,6 +173,7 @@ QString QueryWorkspace::gridBlockedReason(GridCommand command) const {
         return model_->hasPendingEdits() ? editTransactionGuard().applyEdits : QString();
     case GridCommand::RestoreRows:
     case GridCommand::DiscardEdits:
+    case GridCommand::ChooseColumns:
         return {};
     }
     return {};
@@ -206,6 +211,9 @@ void QueryWorkspace::runGridCommand(GridCommand command) {
         break;
     case GridCommand::DiscardEdits:
         discardStagedEdits();
+        break;
+    case GridCommand::ChooseColumns:
+        showColumnChooser();
         break;
     }
 }

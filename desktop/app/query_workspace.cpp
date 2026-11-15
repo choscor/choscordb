@@ -67,6 +67,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     setupRowLimit();
     setupSafetyLevel();
     setupResultViewControls();
+    setupColumnChooser();
     querySettings_ = new QuerySettingsController(adapter_, this);
     setupCellEditor();
     connect(querySettings_, &QuerySettingsController::readyChanged, this,
@@ -87,7 +88,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
                 });
             }
             export_->setQuery(*query_);
-            export_->setResultViewActive(!viewFilters_.isEmpty() || viewSortColumn_ >= 0);
+            export_->setResultViewActive(!viewFilters_.isEmpty() || !viewSorts_.isEmpty());
             export_->show();
             export_->raise();
         });
@@ -307,6 +308,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
             }
             if (widgets_.addRow) {
                 menu.addSeparator();
+                appendSetValueActions(menu, clicked, current);
                 for (auto command :
                      {GridCommand::DuplicateRow, GridCommand::AddRow, GridCommand::DeleteRows,
                       GridCommand::RestoreRows, GridCommand::SetNull, GridCommand::ApplyEdits,

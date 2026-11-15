@@ -45,9 +45,10 @@ pub enum ShortcutCommand {
     MinifySql,
     ToggleLineComment,
     ToggleBlockComment,
+    GridChooseColumns,
 }
 impl ShortcutCommand {
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 33] = [
         Self::NewQuery,
         Self::ChoscorDBFile,
         Self::SaveSqlFile,
@@ -80,6 +81,7 @@ impl ShortcutCommand {
         Self::MinifySql,
         Self::ToggleLineComment,
         Self::ToggleBlockComment,
+        Self::GridChooseColumns,
     ];
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -36,3 +36,26 @@ pub fn document_path_status(path: &str) -> crate::ffi::DocumentPathStatusDto {
         },
     }
 }
+
+pub fn read_cell_file(path: &str) -> DocumentIoResultDto {
+    match choscordb_core::read_cell_file(Path::new(path)) {
+        Ok(bytes) => DocumentIoResultDto {
+            bytes,
+            error: String::new(),
+        },
+        Err(error) => DocumentIoResultDto {
+            bytes: Vec::new(),
+            error: error.to_string(),
+        },
+    }
+}
+
+pub fn write_cell_file(path: &str, bytes: &[u8]) -> DocumentIoResultDto {
+    let error = choscordb_core::write_cell_file(Path::new(path), bytes)
+        .err()
+        .map_or_else(String::new, |error| error.to_string());
+    DocumentIoResultDto {
+        bytes: Vec::new(),
+        error,
+    }
+}

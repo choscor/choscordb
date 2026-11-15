@@ -158,6 +158,9 @@ The SQL results, the object `Data` page and the object metadata use this one loo
 A changed cell has a focus-ring-width bar at its start in `text-kumo-warning`. A new row has only the `kumo-success-tint` fill.
 A row to delete has struck-through text. A `NULL` value uses italic `Callout` text.
 The sorted column shows the `ArrowUp` or `ArrowDown` icon at `IconSmall` at its end.
+When the sort has more than one column, each sorted column also shows its sort position as `Callout` text before the icon.
+The header menu and the `Choose columns…` command (Ctrl+Alt+F) show a checkable menu of the columns. The engine refuses to hide the last visible column.
+`QDateTimeEdit` uses the spin box rules and the field base rules. The cell edit sheet shows it for a date or time column.
 Each `::item` rule of a list, tree or table view sets `border: none`. Qt 6.8 ignores the padding of a table item without a border or a background. Lists and trees use the same rule.
 Desktop tests measure the rendered text inset of a table cell, a list row and a tree row.
 Document tabs are Kumo `underline` tabs on `kumo-base`, with `Body` text at weight 500.

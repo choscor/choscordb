@@ -37,4 +37,20 @@ QFuture<DocumentIoResult> DocumentIo::write(QString path, QByteArray bytes) cons
         return fromDto(write_sql_document_file(utf8View(encoded), bridge_detail::byteView(bytes)));
     });
 }
+QFuture<DocumentIoResult> DocumentIo::readCell(QString path) const {
+    return QtConcurrent::run([path = std::move(path)]() {
+        if (!path.isValidUtf16())
+            return DocumentIoResult{{}, QObject::tr("Path is not valid Unicode.")};
+        const auto encoded = path.toUtf8();
+        return fromDto(read_cell_file(utf8View(encoded)));
+    });
+}
+QFuture<DocumentIoResult> DocumentIo::writeCell(QString path, QByteArray bytes) const {
+    return QtConcurrent::run([path = std::move(path), bytes = std::move(bytes)]() {
+        if (!path.isValidUtf16())
+            return DocumentIoResult{{}, QObject::tr("Path is not valid Unicode.")};
+        const auto encoded = path.toUtf8();
+        return fromDto(write_cell_file(utf8View(encoded), bridge_detail::byteView(bytes)));
+    });
+}
 }

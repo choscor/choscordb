@@ -1,9 +1,9 @@
-QLineEdit, QSpinBox, QDoubleSpinBox, QKeySequenceEdit {
+QLineEdit, QSpinBox, QDoubleSpinBox, QDateTimeEdit, QKeySequenceEdit {
   min-height: @control-height;
   max-height: @control-height;
 }
 
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QKeySequenceEdit {
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateTimeEdit, QKeySequenceEdit {
   padding: 0 @space-3;
   border: 1px solid @kumo-line;
   border-radius: @radius-lg;

@@ -22,6 +22,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QDateTimeEdit>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
 #include <QFrame>
@@ -77,6 +78,10 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         decimal->setDecimals(2);
         decimal->setValue(12.5);
         form->addRow("Decimal", decimal);
+        auto* moment = new QDateTimeEdit(QDateTime(QDate(2026, 11, 15), QTime(9, 30)), host);
+        moment->setObjectName("previewDateTimeField");
+        moment->setDisplayFormat("yyyy-MM-dd HH:mm:ss");
+        form->addRow("Date and time", moment);
         layout->addLayout(form);
     } else if (id == "selects") {
         auto* select = new QComboBox(host);

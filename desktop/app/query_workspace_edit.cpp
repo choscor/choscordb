@@ -60,7 +60,7 @@ GridEditRequest editRequest(const QString& driver, const QString& qualifiedName,
             return request;
         request.rows.push_back(
             {rows[index], inserted[index] ? ResultTableModel::Row{} : model.originalRow(index),
-             model.touchedRow(index), inserted[index], deleted[index]});
+             model.touchedRow(index), model.expressionRow(index), inserted[index], deleted[index]});
     }
     return request;
 }

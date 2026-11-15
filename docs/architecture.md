@@ -78,6 +78,25 @@ The gate can run the statement, ask for confirmation, or reject a statement that
 The engine closes the catalog session when the connection disconnects.
 If the catalog session closes because of a connection error, the next read opens it again.
 
+### Result views and hidden columns
+
+`apply_result_view` sorts a result by up to `MAX_SORT_KEYS` (4) columns. `toggle_sort` gives the next sort list for a header click.
+A plain click replaces the sort. A Shift+click adds, reverses or removes one key.
+
+The `storage` crate keeps the hidden result columns of each table in the `result_column_layouts` setting.
+`result_columns_context` makes the key from the profile ID and the object ID. A connection without a profile has no key, and its hidden columns stay in memory.
+The setting keeps the most recent `MAX_HIDDEN_COLUMN_CONTEXTS` (128) tables.
+`toggle_hidden_column` refuses to hide the last visible column.
+
+### Set value
+
+`grid_set_value` in `driver-api` gives the result of a Set value choice for a column type and a driver.
+NULL needs a nullable column. Empty needs a text column. Now() needs a date or time column and gives `CURRENT_DATE`, `CURRENT_TIME` or `CURRENT_TIMESTAMP`.
+DEFAULT omits the column from an inserted row. For an existing row it writes `DEFAULT`, but SQLite cannot do this, and the engine returns a typed error.
+The grid stages an expression as `GridEditRow::expressions`. `plan_grid_edits` writes it into the statement without a parameter, so the review shows it.
+`GridTemporalKind::text` makes the ISO text of a picked date and time.
+`read_cell_file` and `write_cell_file` in `core` read and write a binary cell. A cell file can have up to `MAX_GRID_BINARY_BYTES` (64 KiB).
+
 ### Metadata cache
 
 The `storage` crate keeps the navigator children of saved connection profiles in the `metadata_cache` table.

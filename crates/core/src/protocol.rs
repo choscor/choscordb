@@ -117,6 +117,11 @@ pub enum Event {
         request_token: u64,
         preferences: crate::QueryPreferences,
     },
+    ResultColumns {
+        request_token: u64,
+        context: String,
+        hidden: Vec<String>,
+    },
     EditorPreferences {
         request_token: u64,
         preferences: crate::EditorPreferences,

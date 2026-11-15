@@ -23,6 +23,8 @@ pub(crate) enum Command {
     Policy(u64),
     SetPolicy(HistoryPolicy, u64),
     Record(HistoryEntry, u64),
+    ResultColumns(String, u64),
+    SetResultColumns(String, Vec<String>, u64),
 }
 impl Command {
     pub(crate) fn token(&self) -> u64 {
@@ -44,7 +46,9 @@ impl Command {
             | Self::Clear(t)
             | Self::Policy(t)
             | Self::SetPolicy(_, t)
-            | Self::Record(_, t) => *t,
+            | Self::Record(_, t)
+            | Self::ResultColumns(_, t)
+            | Self::SetResultColumns(_, _, t) => *t,
         }
     }
 }
@@ -89,6 +93,9 @@ fn failure(error: StorageError) -> DriverError {
                 ErrorKind::InvalidInput,
                 "Appearance and layout preferences are invalid",
             );
+        }
+        StorageError::InvalidColumnLayout => {
+            return DriverError::new(ErrorKind::InvalidInput, "Hidden result columns are invalid");
         }
         _ => {}
     }
@@ -203,6 +210,21 @@ pub(crate) fn execute(storage: &mut Storage, command: Command) -> Result<Event, 
                 policy,
             }
         }
+        Command::ResultColumns(context, _) => Event::ResultColumns {
+            request_token,
+            hidden: storage.hidden_result_columns(&context).map_err(failure)?,
+            context,
+        },
+        Command::SetResultColumns(context, hidden, _) => {
+            storage
+                .set_hidden_result_columns(&context, &hidden)
+                .map_err(failure)?;
+            Event::ResultColumns {
+                request_token,
+                context,
+                hidden,
+            }
+        }
         Command::Record(entry, _) => {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -253,6 +275,18 @@ impl Engine {
         self.submit_recovery(Command::SetEditorPreferences(preferences, token))
     }
 
+    pub fn result_columns_get(&self, context: String, token: u64) -> Result<(), SubmitError> {
+        self.submit_recovery(Command::ResultColumns(context, token))
+    }
+    pub fn result_columns_set(
+        &self,
+        context: String,
+        hidden: Vec<String>,
+        token: u64,
+    ) -> Result<(), SubmitError> {
+        self.submit_recovery(Command::SetResultColumns(context, hidden, token))
+    }
+
     pub fn history_flush(&self, token: u64) -> Result<(), SubmitError> {
         self.submit_recovery(Command::Flush(token))
     }
@@ -273,6 +307,14 @@ impl Engine {
             }
             Command::SetPolicy(policy, _) => policy.validate().map(|()| 0),
             Command::Record(entry, _) => entry.validate().map(|()| 0),
+            Command::ResultColumns(context, _) => {
+                choscordb_storage::validate_hidden_result_columns(context, &[])
+                    .map(|()| context.len())
+            }
+            Command::SetResultColumns(context, hidden, _) => {
+                choscordb_storage::validate_hidden_result_columns(context, hidden)
+                    .map(|()| context.len() + hidden.iter().map(String::len).sum::<usize>())
+            }
             _ => Ok(0),
         }
         .map_err(invalid)?;
