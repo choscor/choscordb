@@ -111,6 +111,7 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/table_export_dialog/table_export_dialog.cpp
   desktop/widgets/table_import_dialog/table_import_dialog.cpp
   desktop/widgets/sql_file_dialog/sql_file_dialog.cpp
+  desktop/widgets/text_prompt_dialog/text_prompt_dialog.cpp
   desktop/widgets/structure_editor_dialog/structure_editor_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog.cpp
   desktop/widgets/profile_dialog/profile_dialog_actions.cpp
@@ -143,6 +144,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/main_window_ui_pins.cpp
   desktop/app/main_window_ui_connection.cpp
   desktop/app/main_window_workspace.cpp
+  desktop/app/main_window_saved_sql.cpp
   desktop/app/main_window_lifecycle.cpp
   desktop/app/main_window_navigator.cpp
   desktop/app/main_window_object_actions.cpp

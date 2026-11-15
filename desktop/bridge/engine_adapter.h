@@ -753,6 +753,11 @@ class EngineAdapter final : public QObject {
     std::optional<quint64> importTable(quint64 connection, const TableImportRequest& request,
                                        QString* error);
     static QList<CodeLabel> sqlFileModes();
+    static QList<CodeLabel> savedSqlSorts();
+    static QString savedSqlSetKeyword(const QString& root, const QString& path,
+                                      const QString& keyword);
+    static QString savedSqlCreateFolder(const QString& root, const QString& parent,
+                                        const QString& name);
     std::optional<quint64> runSqlFile(quint64 connection, const QString& path,
                                       const QString& driver, const QString& sqlMode,
                                       const QString& mode, QString* error);

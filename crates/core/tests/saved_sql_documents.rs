@@ -1,10 +1,22 @@
 #[cfg(unix)]
 use choscordb_core::read_sql_document;
 use choscordb_core::{
-    ensure_saved_sql_directory, list_saved_sql_documents, read_saved_sql_document,
-    saved_sql_document_identity,
+    SavedSqlSort, SavedSqlTree, ensure_saved_sql_directory, read_saved_sql_document,
+    saved_sql_document_identity, saved_sql_tree,
 };
 use std::{fs, path::PathBuf};
+
+fn listing(root: &std::path::Path) -> SavedSqlTree {
+    saved_sql_tree(root, SavedSqlSort::Name).unwrap()
+}
+
+fn files(tree: &SavedSqlTree) -> Vec<PathBuf> {
+    tree.nodes
+        .iter()
+        .filter(|node| !node.folder)
+        .map(|node| node.relative_path.clone())
+        .collect()
+}
 
 #[test]
 fn lists_nested_sql_files_in_name_order_without_other_files() {
@@ -16,48 +28,37 @@ fn lists_nested_sql_files_in_name_order_without_other_files() {
     fs::write(root.join("reports/b.sql"), b"SELECT 'b';").unwrap();
     fs::write(root.join("reports/notes.txt"), b"not sql").unwrap();
 
-    let listing = list_saved_sql_documents(&root).unwrap();
-    let paths: Vec<PathBuf> = listing
-        .documents
-        .iter()
-        .map(|document| document.relative_path.clone())
-        .collect();
+    let tree = listing(&root);
     assert_eq!(
-        paths,
+        files(&tree),
         [
-            PathBuf::from("reports/b.sql"),
             PathBuf::from("reports/weekly/a.sql"),
+            PathBuf::from("reports/b.sql"),
             PathBuf::from("z.sql"),
         ]
     );
-    assert_eq!(listing.documents[0].path, root.join("reports/b.sql"));
-    assert_eq!(listing.documents[0].size_bytes, 11);
-    assert!(!listing.has_more);
+    assert_eq!(tree.nodes[2].path, root.join("reports/weekly/a.sql"));
+    assert!(!tree.has_more);
 }
 
 #[test]
 fn missing_directory_is_empty_and_listing_is_bounded() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("sql");
-    let missing = list_saved_sql_documents(&root).unwrap();
-    assert!(missing.documents.is_empty());
+    let missing = listing(&root);
+    assert!(missing.nodes.is_empty());
     assert!(!missing.has_more);
 
     fs::create_dir(&root).unwrap();
     for index in 0..1001 {
         fs::write(root.join(format!("{index:04}.sql")), b"SELECT 1;").unwrap();
     }
-    let listing = list_saved_sql_documents(&root).unwrap();
-    assert_eq!(listing.documents.len(), 1000);
-    assert_eq!(
-        listing.documents.first().unwrap().relative_path,
-        PathBuf::from("0000.sql")
-    );
-    assert_eq!(
-        listing.documents.last().unwrap().relative_path,
-        PathBuf::from("0999.sql")
-    );
-    assert!(listing.has_more);
+    let tree = listing(&root);
+    let paths = files(&tree);
+    assert_eq!(paths.len(), 1000);
+    assert_eq!(paths.first().unwrap(), &PathBuf::from("0000.sql"));
+    assert_eq!(paths.last().unwrap(), &PathBuf::from("0999.sql"));
+    assert!(tree.has_more);
 }
 
 #[test]
@@ -152,12 +153,8 @@ fn symlinked_files_and_folders_are_never_listed_or_opened() {
     symlink(real.join("outside.sql"), root.join("linked.sql")).unwrap();
     symlink(&real, root.join("linked_folder")).unwrap();
 
-    let listing = list_saved_sql_documents(&root).unwrap();
-    assert_eq!(listing.documents.len(), 1);
-    assert_eq!(
-        listing.documents[0].relative_path,
-        PathBuf::from("good.sql")
-    );
+    assert_eq!(listing(&root).nodes.len(), 1);
+    assert_eq!(files(&listing(&root)), [PathBuf::from("good.sql")]);
     assert!(read_saved_sql_document(&root, &root.join("linked.sql")).is_err());
     assert!(read_saved_sql_document(&root, &root.join("linked_folder/outside.sql")).is_err());
 }
@@ -251,12 +248,7 @@ fn listing_never_enumerates_a_folder_swapped_to_an_outside_symlink() {
         }
     });
     for _ in 0..2000 {
-        let listing = list_saved_sql_documents(&root).unwrap();
-        assert!(
-            listing.documents.iter().all(
-                |document| document.relative_path != std::path::Path::new("nested/private.sql")
-            )
-        );
+        assert!(!files(&listing(&root)).contains(&PathBuf::from("nested/private.sql")));
     }
     stop.store(true, Ordering::Relaxed);
     worker.join().unwrap();

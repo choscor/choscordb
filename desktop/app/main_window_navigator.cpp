@@ -321,19 +321,20 @@ void MainWindow::connectNavigator(const Ui& ui) {
                               model = navigatorController->model()] {
         const auto connection = completionConnection();
         if (!connection) {
-            completion_->setCatalog(CompletionService{});
+            completion_->setCatalog(CompletionService(savedSnippets_));
             return;
         }
         const auto limits = CompletionService::limits();
         auto snapshot = model->completionSnapshot(*connection, limits);
         *catalogSize = static_cast<qsizetype>(snapshot.objects.size());
-        QList<CompletionCandidate> items;
-        items.reserve(*catalogSize);
+        QList<CompletionCandidate> items = savedSnippets_;
+        items.reserve(*catalogSize + savedSnippets_.size());
         for (auto& object : snapshot.objects)
             items.append(
                 {std::move(object.name), std::move(object.qualifiedName), std::move(object.kind)});
         completion_->setCatalog(CompletionService(std::move(items), snapshot.partial));
     };
+    rebuildCompletion_ = rebuildCompletion;
     connect(workspace_, &QueryWorkspace::documentTargetChanged, this, rebuildCompletion);
     const auto rebuildLoadedCompletion = coalescedCall(this, rebuildCompletion);
     connect(navigatorController->model(), &NavigatorModel::completionChanged, this,

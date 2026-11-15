@@ -4,6 +4,7 @@ pub enum CompletionKind {
     Schema,
     Table,
     Column,
+    Snippet,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Completion {

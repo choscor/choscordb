@@ -192,6 +192,17 @@ A run with failed statements does not show a success message.
 Cancel asks the driver to cancel the current statement. A transaction run rolls back when it fails or stops.
 The splitter does not run `psql` commands. The `COPY … FROM stdin` data of a `pg_dump` file fails. Use `pg_dump --inserts` for these files.
 
+### Saved queries
+
+The Saved queries panel shows the `.sql` files in the `sql` folder beside the application database.
+`saved_sql_tree` in `core` reads the folder without symlinks. It gives folders first, then files, in name order or newest first.
+The panel shows the rows in this order. "Sort by name" and "Sort by date modified" are in the context menu.
+"New folder…" calls `create_saved_sql_folder`. A folder name has no slash and does not start with a dot.
+A first line `-- keyword: name` gives the file a keyword. "Set keyword…" adds, changes or removes this line with `set_saved_sql_keyword`.
+A keyword has 1 to 64 letters, digits or underscores. A keyword file is limited to 64 KiB, and all snippets to 8 MiB.
+The listing gives each snippet to SQL completion with the kind `snippet`. Its insert text is the file text after the keyword line.
+The panel shows the keyword errors of the listing.
+
 ### Structure editor
 
 The navigator "Edit structure…" item on a table and "Design new table…" on a connection, database or schema open the structure editor.

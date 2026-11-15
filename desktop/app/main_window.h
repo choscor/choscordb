@@ -2,6 +2,7 @@
 #include "app/object_action_sql.h"
 #include "app/pin_store.h"
 #include "app/result_column_widths.h"
+#include "bridge/completion_service.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/quick_search/quick_search_dialog.h"
 #include "design_system/toast_region/toast_region.h"
@@ -80,6 +81,7 @@ class MainWindow final : public QMainWindow {
     void addSqlTextActions(QMenu* editMenu);
     void addRunSqlFileAction(QMenu* fileMenu);
     void connectWorkspace(const Ui& ui, const QString& storagePath);
+    QString connectSavedSql(const Ui& ui, const QString& storagePath);
     void connectLifecycle(const Ui& ui, const QString& storagePath);
     void connectNavigator(const Ui& ui);
     void connectDiagnostics();
@@ -213,6 +215,8 @@ class MainWindow final : public QMainWindow {
     quint64 sidebarHistoryToken_ = 0;
     bool sidebarHistoryOpen_ = false;
     std::function<void()> refreshSavedFiles_;
+    std::function<void()> rebuildCompletion_;
+    QList<CompletionCandidate> savedSnippets_;
     EditorPreferencesController* preferences_ = nullptr;
     AppearanceController* appearance_ = nullptr;
     std::shared_ptr<ResultColumnWidths> resultColumnWidths_ =

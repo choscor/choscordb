@@ -1,28 +1,13 @@
-use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt, OpenOptionsSyncExt};
+#[cfg(windows)]
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::Dir;
 use std::{
-    collections::BTreeMap,
     fs::{self, File},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
 };
 
 pub const MAX_SQL_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
-pub const MAX_SAVED_SQL_DOCUMENTS: usize = 1000;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SavedSqlDocument {
-    pub path: PathBuf,
-    pub relative_path: PathBuf,
-    pub size_bytes: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SavedSqlDocuments {
-    pub documents: Vec<SavedSqlDocument>,
-    pub has_more: bool,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum DocumentIoError {
     #[error("Path is not a regular file.")]
@@ -37,71 +22,7 @@ pub enum DocumentIoError {
     Io(#[from] std::io::Error),
 }
 
-pub fn list_saved_sql_documents(root: &Path) -> Result<SavedSqlDocuments, DocumentIoError> {
-    let mut listing = SavedSqlDocuments {
-        documents: Vec::new(),
-        has_more: false,
-    };
-    let root_directory = match open_saved_root(root) {
-        Ok(directory) => directory,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(listing),
-        Err(error) => return Err(error.into()),
-    };
-    let mut documents = BTreeMap::new();
-    let mut pending = vec![(root_directory, PathBuf::new())];
-    while let Some((directory, relative_dir)) = pending.pop() {
-        let entries = match directory.entries() {
-            Ok(entries) => entries,
-            Err(_) if !relative_dir.as_os_str().is_empty() => {
-                continue;
-            }
-            Err(error) => return Err(error.into()),
-        };
-        for entry in entries {
-            let entry = entry?;
-            let file_type = match entry.file_type() {
-                Ok(file_type) => file_type,
-                Err(_) => continue,
-            };
-            if file_type.is_symlink() {
-                continue;
-            }
-            let name = entry.file_name();
-            let relative_path = relative_dir.join(&name);
-            if file_type.is_dir() {
-                if let Ok(child) = directory.open_dir_nofollow(&name) {
-                    pending.push((child, relative_path));
-                }
-            } else if file_type.is_file() && is_sql_path(&relative_path) {
-                let mut options = cap_std::fs::OpenOptions::new();
-                options.read(true).follow(FollowSymlinks::No).nonblock(true);
-                let Ok(file) = directory.open_with(&name, &options) else {
-                    continue;
-                };
-                let Ok(metadata) = file.metadata() else {
-                    continue;
-                };
-                if !metadata.is_file() {
-                    continue;
-                }
-                let document = SavedSqlDocument {
-                    path: root.join(&relative_path),
-                    relative_path,
-                    size_bytes: metadata.len(),
-                };
-                documents.insert(document.relative_path.clone(), document);
-                if documents.len() > MAX_SAVED_SQL_DOCUMENTS {
-                    listing.has_more = true;
-                    documents.pop_last();
-                }
-            }
-        }
-    }
-    listing.documents = documents.into_values().collect();
-    Ok(listing)
-}
-
-fn open_saved_root(root: &Path) -> std::io::Result<Dir> {
+pub(crate) fn open_saved_root(root: &Path) -> std::io::Result<Dir> {
     #[cfg(unix)]
     {
         use rustix::fs::{CWD, Mode, OFlags, openat};
@@ -202,7 +123,7 @@ pub fn read_saved_sql_document(root: &Path, path: &Path) -> Result<Vec<u8>, Docu
     }
 }
 
-fn is_sql_path(path: &Path) -> bool {
+pub(crate) fn is_sql_path(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("sql"))
 }

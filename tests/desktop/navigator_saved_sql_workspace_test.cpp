@@ -1,20 +1,30 @@
 #include "app/main_window.h"
 #include "app/workspace_recovery.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
+#include "design_system/menu/embedded_popup.h"
 #include "design_system/status_line/status_line.h"
 #include "design_system/toast_region/toast_region.h"
 #include "navigator_sql_workspace_test.h"
+#include "widgets/editor_completion/editor_completion.h"
 #include "widgets/sql_editor/sql_editor.h"
+#include <QAbstractItemView>
 #include <QAction>
+#include <QCompleter>
+#include <QDateTime>
+#include <QDialog>
 #include <QDir>
 #include <QFile>
+#include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QSet>
 #include <QStandardPaths>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QTreeWidget>
+#include <Qsci/qsciscintilla.h>
 #include <QtTest>
 
 void NavigatorSqlWorkspaceTest::savedPanelFiltersFolderTreeAndReusesEditedTab() {
@@ -238,4 +248,114 @@ void NavigatorSqlWorkspaceTest::savedPanelUsesTheFolderBesideTheApplicationDatab
     QVERIFY(list);
     QTRY_COMPARE(
         list->findItems("beside-database.sql", Qt::MatchExactly | Qt::MatchRecursive).size(), 1);
+}
+
+namespace {
+bool triggerSavedMenu(QTreeWidget* list, const QPoint& point, const char* name) {
+    bool triggered = false;
+    QTimer::singleShot(0, list, [&] {
+        auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+        if (!menu)
+            return;
+        auto* action = menu->findChild<QAction*>(name);
+        menu->close();
+        if (action) {
+            action->trigger();
+            triggered = true;
+        }
+    });
+    emit list->customContextMenuRequested(point);
+    return triggered;
+}
+QStringList topLevelNames(QTreeWidget* list) {
+    QStringList names;
+    for (int i = 0; i < list->topLevelItemCount(); ++i)
+        names << list->topLevelItem(i)->text(0);
+    return names;
+}
+QDialog* promptDialog(QWidget& window, const char* name) {
+    for (auto* dialog : window.findChildren<QDialog*>(name))
+        if (dialog->isVisible())
+            return dialog;
+    return nullptr;
+}
+}
+
+void NavigatorSqlWorkspaceTest::savedQueryFoldersSortAndKeywordSnippets() {
+    QTemporaryDir storage;
+    QVERIFY(storage.isValid());
+    QVERIFY(QDir().mkpath(storage.filePath("sql")));
+    const auto write = [&](const char* name, const char* sql, int ageSeconds) {
+        QFile file(storage.filePath(QStringLiteral("sql/") + name));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(sql);
+        QVERIFY(file.setFileTime(QDateTime::currentDateTime().addSecs(-ageSeconds),
+                                 QFileDevice::FileModificationTime));
+    };
+    write("a.sql", "SELECT 'a';", 600);
+    write("b.sql", "SELECT 'b';", 60);
+    choscordb::MainWindow window(nullptr, storage.filePath("workspace.sqlite"));
+    window.show();
+    if (auto* recovery = window.findChild<choscordb::WorkspaceRecoveryController*>())
+        QTRY_VERIFY(recovery->isReady());
+    window.findChild<QPushButton*>("sidebarSaved")->click();
+    auto* list = window.findChild<QTreeWidget*>("sidebarSavedFiles");
+    QVERIFY(list);
+    QTRY_COMPARE(topLevelNames(list), QStringList({"a.sql", "b.sql"}));
+    const QPoint blank(5, list->viewport()->height() - 5);
+    QVERIFY(triggerSavedMenu(list, blank, "savedSort_modified"));
+    QTRY_COMPARE(topLevelNames(list), QStringList({"b.sql", "a.sql"}));
+
+    QVERIFY(triggerSavedMenu(list, blank, "savedNewFolder"));
+    QDialog* dialog = nullptr;
+    QTRY_VERIFY((dialog = promptDialog(window, "savedFolderPrompt")));
+    dialog->findChild<QLineEdit*>("savedFolderPromptField")->setText("reports");
+    dialog->findChild<QPushButton*>("savedFolderPromptAccept")->click();
+    QTRY_COMPARE(topLevelNames(list), QStringList({"reports", "b.sql", "a.sql"}));
+    QVERIFY(QDir(storage.filePath("sql/reports")).exists());
+    QVERIFY(triggerSavedMenu(list, blank, "savedNewFolder"));
+    QTRY_VERIFY((dialog = promptDialog(window, "savedFolderPrompt")));
+    dialog->findChild<QLineEdit*>("savedFolderPromptField")->setText("reports");
+    dialog->findChild<QPushButton*>("savedFolderPromptAccept")->click();
+    const auto fieldError = [dialog] {
+        for (auto* label : dialog->findChildren<QLabel*>())
+            if (label->property("designRole").toString() == "fieldError" && label->isVisible())
+                return label->text();
+        return QString();
+    };
+    QTRY_COMPARE(fieldError(), QString("A folder or file with this name exists."));
+    dialog->findChild<QPushButton*>("savedFolderPromptCancel")->click();
+    QTRY_VERIFY(!promptDialog(window, "savedFolderPrompt"));
+
+    auto* fileA = list->findItems("a.sql", Qt::MatchExactly).value(0);
+    QVERIFY(fileA);
+    QVERIFY(triggerSavedMenu(list, list->visualItemRect(fileA).center(), "savedSetKeyword"));
+    QTRY_VERIFY((dialog = promptDialog(window, "savedKeywordPrompt")));
+    dialog->findChild<QLineEdit*>("savedKeywordPromptField")->setText("pick_a");
+    dialog->findChild<QPushButton*>("savedKeywordPromptAccept")->click();
+    QTRY_VERIFY(list->findItems("a.sql", Qt::MatchExactly).value(0) &&
+                list->findItems("a.sql", Qt::MatchExactly)
+                    .value(0)
+                    ->toolTip(0)
+                    .contains("Keyword: pick_a"));
+    QFile keyed(storage.filePath("sql/a.sql"));
+    QVERIFY(keyed.open(QIODevice::ReadOnly));
+    QCOMPARE(keyed.readAll(), QByteArray("-- keyword: pick_a\nSELECT 'a';"));
+
+    window.findChild<QAction*>("newQuery")->trigger();
+    auto* editor = qobject_cast<choscordb::SqlEditor*>(
+        window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+    QVERIFY(editor);
+    editor->setText("pick");
+    editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 4L);
+    editor->setFocus();
+    auto* completion = window.findChild<choscordb::EditorCompletionController*>();
+    QVERIFY(completion);
+    auto* popup = completion->findChild<QCompleter*>()->popup();
+    completion->requestCompletion();
+    QTRY_VERIFY(popup->isVisible());
+    QVERIFY2(popup->model()->index(0, 0).data().toString().startsWith("pick_a"),
+             qPrintable(popup->model()->index(0, 0).data().toString()));
+    QTest::keyClick(popup, Qt::Key_Return);
+    QTRY_COMPARE(editor->text(), QString("SELECT 'a';"));
 }

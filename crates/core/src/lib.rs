@@ -4,11 +4,16 @@ pub mod connection_machine;
 mod deferred;
 mod document_io;
 mod metadata_cache;
+mod saved_sql;
 pub use document_io::{
-    DocumentIoError, MAX_SAVED_SQL_DOCUMENTS, MAX_SQL_DOCUMENT_BYTES, SavedSqlDocument,
-    SavedSqlDocuments, document_path_exists, ensure_saved_sql_directory, list_saved_sql_documents,
+    DocumentIoError, MAX_SQL_DOCUMENT_BYTES, document_path_exists, ensure_saved_sql_directory,
     read_cell_file, read_saved_sql_document, read_sql_document, saved_sql_document_identity,
     saved_sql_root, write_cell_file, write_sql_document,
+};
+pub use saved_sql::{
+    MAX_SAVED_SQL_DOCUMENTS, MAX_SAVED_SQL_SCAN_ENTRIES, MAX_SNIPPET_FILE_BYTES,
+    MAX_SNIPPET_KEYWORD_CHARS, MAX_SNIPPET_TOTAL_BYTES, SavedSqlNode, SavedSqlSnippet,
+    SavedSqlSort, SavedSqlTree, create_saved_sql_folder, saved_sql_tree, set_saved_sql_keyword,
 };
 mod hot_cache;
 pub use hot_cache::CacheUsage;

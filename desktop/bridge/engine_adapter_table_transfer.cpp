@@ -213,6 +213,17 @@ EngineAdapter::importTable(quint64 connection, const TableImportRequest& request
 QList<CodeLabel> EngineAdapter::sqlFileModes() {
     return codeLabels(sql_file_modes());
 }
+QList<CodeLabel> EngineAdapter::savedSqlSorts() {
+    return codeLabels(saved_sql_sorts());
+}
+QString EngineAdapter::savedSqlSetKeyword(const QString& root, const QString& path,
+                                          const QString& keyword) {
+    return fromRust(saved_sql_set_keyword(toRust(root), toRust(path), toRust(keyword)));
+}
+QString EngineAdapter::savedSqlCreateFolder(const QString& root, const QString& parent,
+                                            const QString& name) {
+    return fromRust(saved_sql_create_folder(toRust(root), toRust(parent), toRust(name)));
+}
 std::optional<quint64> EngineAdapter::runSqlFile(quint64 connection, const QString& path,
                                                  const QString& driver, const QString& sqlMode,
                                                  const QString& mode, QString* error) {

@@ -407,7 +407,8 @@ void ModernUiTest::sidebarListsHaveContextMenus() {
     auto* savedItem = new QTreeWidgetItem(saved, {"report.sql"});
     savedItem->setData(0, Qt::UserRole, QStringLiteral("reports/report.sql"));
     QCOMPARE(menuLabels(saved, saved->visualItemRect(savedItem).center(), "Copy path"),
-             (QStringList{"Open", "Copy path"}));
+             (QStringList{"Open", "Copy path", QString::fromUtf8("Set keyword\u2026"), QString(),
+                          "Sort by name", "Sort by date modified"}));
     QCOMPARE(QGuiApplication::clipboard()->text(), QString("reports/report.sql"));
 }
 

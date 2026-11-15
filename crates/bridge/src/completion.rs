@@ -34,6 +34,7 @@ pub fn completion_catalog(
             "schema" | "database" => language::CompletionKind::Schema,
             "table" | "view" => language::CompletionKind::Table,
             "column" => language::CompletionKind::Column,
+            "snippet" => language::CompletionKind::Snippet,
             _ => {
                 partial = true;
                 continue;
@@ -94,6 +95,7 @@ pub fn complete_sql(
                     language::CompletionKind::Schema => "schema",
                     language::CompletionKind::Table => "table",
                     language::CompletionKind::Column => "column",
+                    language::CompletionKind::Snippet => "snippet",
                 }
                 .into(),
             })

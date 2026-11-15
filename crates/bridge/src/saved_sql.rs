@@ -1,29 +1,67 @@
-use crate::ffi::{DocumentIoResultDto, SavedSqlEntryDto, SavedSqlListingDto, SavedSqlPathDto};
+use crate::code_label;
+use crate::ffi::{
+    self, DocumentIoResultDto, SavedSqlEntryDto, SavedSqlListingDto, SavedSqlPathDto,
+};
+use choscordb_core::SavedSqlSort;
 use std::path::Path;
 
-pub fn saved_sql_list_directory(root: &str) -> SavedSqlListingDto {
-    match choscordb_core::list_saved_sql_documents(Path::new(root)) {
-        Ok(listing) => SavedSqlListingDto {
-            entries: listing
-                .documents
+pub fn saved_sql_sorts() -> Vec<ffi::CodeLabelDto> {
+    SavedSqlSort::ALL
+        .into_iter()
+        .map(|sort| code_label(sort.code(), sort.label()))
+        .collect()
+}
+
+pub fn saved_sql_list_directory(root: &str, sort: &str) -> SavedSqlListingDto {
+    let limit = choscordb_core::MAX_SAVED_SQL_DOCUMENTS as u32;
+    let failed = |error: String| SavedSqlListingDto {
+        limit,
+        error,
+        ..SavedSqlListingDto::default()
+    };
+    let Some(sort) = SavedSqlSort::from_code(sort) else {
+        return failed(format!("Unknown saved SQL sort: {sort}"));
+    };
+    match choscordb_core::saved_sql_tree(Path::new(root), sort) {
+        Ok(tree) => SavedSqlListingDto {
+            entries: tree
+                .nodes
                 .into_iter()
-                .map(|document| SavedSqlEntryDto {
-                    path: document.path.to_string_lossy().into_owned(),
-                    relative_path: document.relative_path.to_string_lossy().into_owned(),
-                    size_bytes: document.size_bytes,
+                .map(|node| SavedSqlEntryDto {
+                    path: node.path.to_string_lossy().into_owned(),
+                    relative_path: node.relative_path.to_string_lossy().into_owned(),
+                    folder: node.folder,
+                    keyword: node.keyword.unwrap_or_default(),
                 })
                 .collect(),
-            has_more: listing.has_more,
-            limit: choscordb_core::MAX_SAVED_SQL_DOCUMENTS as u32,
+            snippets: tree
+                .snippets
+                .into_iter()
+                .map(|snippet| ffi::SqlCompletionDto {
+                    label: snippet.keyword,
+                    insert_text: snippet.sql,
+                    kind: "snippet".into(),
+                })
+                .collect(),
+            errors: tree.errors,
+            has_more: tree.has_more,
+            limit,
             error: String::new(),
         },
-        Err(error) => SavedSqlListingDto {
-            entries: Vec::new(),
-            has_more: false,
-            limit: choscordb_core::MAX_SAVED_SQL_DOCUMENTS as u32,
-            error: error.to_string(),
-        },
+        Err(error) => failed(error.to_string()),
     }
+}
+
+pub fn saved_sql_set_keyword(root: &str, path: &str, keyword: &str) -> String {
+    choscordb_core::set_saved_sql_keyword(Path::new(root), Path::new(path), keyword)
+        .err()
+        .unwrap_or_default()
+}
+
+pub fn saved_sql_create_folder(root: &str, parent: &str, name: &str) -> String {
+    choscordb_core::create_saved_sql_folder(Path::new(root), Path::new(parent), name)
+        .err()
+        .unwrap_or_default()
 }
 
 pub fn saved_sql_root(storage_path: &str, default_data_directory: &str) -> String {

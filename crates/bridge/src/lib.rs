@@ -107,8 +107,9 @@ pub use preview_capture::write_preview_capture_file;
 mod recovery;
 mod saved_sql;
 pub use saved_sql::{
-    saved_sql_document_identity, saved_sql_list_directory, saved_sql_prepare_directory,
-    saved_sql_read_file, saved_sql_root,
+    saved_sql_create_folder, saved_sql_document_identity, saved_sql_list_directory,
+    saved_sql_prepare_directory, saved_sql_read_file, saved_sql_root, saved_sql_set_keyword,
+    saved_sql_sorts,
 };
 mod update;
 use choscordb_core::{Engine, EngineConfig};
@@ -1683,10 +1684,14 @@ pub mod ffi {
     struct SavedSqlEntryDto {
         path: String,
         relative_path: String,
-        size_bytes: u64,
+        folder: bool,
+        keyword: String,
     }
+    #[derive(Default)]
     struct SavedSqlListingDto {
         entries: Vec<SavedSqlEntryDto>,
+        snippets: Vec<SqlCompletionDto>,
+        errors: Vec<String>,
         has_more: bool,
         limit: u32,
         error: String,
@@ -1885,7 +1890,10 @@ pub mod ffi {
             png: &[u8],
             metadata: PreviewCaptureDto,
         ) -> PreviewCaptureResultDto;
-        fn saved_sql_list_directory(root: &str) -> SavedSqlListingDto;
+        fn saved_sql_sorts() -> Vec<CodeLabelDto>;
+        fn saved_sql_list_directory(root: &str, sort: &str) -> SavedSqlListingDto;
+        fn saved_sql_set_keyword(root: &str, path: &str, keyword: &str) -> String;
+        fn saved_sql_create_folder(root: &str, parent: &str, name: &str) -> String;
         fn saved_sql_prepare_directory(root: &str) -> String;
         fn saved_sql_root(storage_path: &str, default_data_directory: &str) -> String;
         fn saved_sql_document_identity(path: &str) -> SavedSqlPathDto;
