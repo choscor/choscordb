@@ -37,7 +37,15 @@ void NavigationProfileDelegate::paint(QPainter* painter, const QStyleOptionViewI
         .paint(painter, icon);
     const auto title = index.data(Qt::DisplayRole).toString().section('\n', 0, 0);
     const int textLeft = icon.right() + 1 + spacing(Spacing::TwoHalf);
-    const int textWidth = qMax(0, bounds.right() - textLeft - inset);
+    const auto tone = index.data(ToneRole);
+    const int marker = spacing(Spacing::Two);
+    const int textRight = bounds.right() - inset - (tone.isValid() ? marker + inset : 0);
+    const int textWidth = qMax(0, textRight - textLeft);
+    if (tone.isValid()) {
+        painter->setBrush(statusToneColor(colors, StatusTone(tone.toInt())));
+        painter->drawEllipse(QRect(bounds.right() - inset - marker + 1,
+                                   bounds.center().y() - marker / 2 + 1, marker, marker));
+    }
     auto titleFont = resolveTypography(TextStyle::Body);
     titleFont.setWeight(QFont::Medium);
     painter->setFont(titleFont);

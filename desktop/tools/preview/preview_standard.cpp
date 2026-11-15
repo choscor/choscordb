@@ -243,8 +243,10 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
             item->setData(NavigationProfileDelegate::DriverRole, driver);
             if (driver == "mysql")
                 item->setToolTip("MySQL · Dolphin icon");
-            if (driver == "mariadb")
+            if (driver == "mariadb") {
                 item->setToolTip("MariaDB · Seal icon");
+                item->setData(NavigationProfileDelegate::ToneRole, int(StatusTone::Danger));
+            }
         }
         list->setCurrentRow(1);
         list->item(0)->setSelected(true);

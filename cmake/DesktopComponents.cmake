@@ -113,6 +113,7 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/profile_dialog/ssh_host_key_dialog.cpp
   desktop/widgets/profile_dialog/ssh_private_key_editor.cpp
   desktop/widgets/profile_dialog/profile_dialog_private_key.cpp
+  desktop/widgets/profile_dialog/profile_dialog_tags.cpp
 )
 target_include_directories(choscordb-widgets PUBLIC desktop)
 target_include_directories(choscordb-widgets SYSTEM PUBLIC ${QSCINTILLA_INCLUDE_DIR})
@@ -133,6 +134,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/main_window_ui.cpp
   desktop/app/main_window_sql_actions.cpp
   desktop/app/main_window_ui_pins.cpp
+  desktop/app/main_window_ui_connection.cpp
   desktop/app/main_window_workspace.cpp
   desktop/app/main_window_lifecycle.cpp
   desktop/app/main_window_navigator.cpp
@@ -144,6 +146,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_workspace.cpp
   desktop/app/query_workspace_copy.cpp
   desktop/app/query_workspace_sql_edit.cpp
+  desktop/app/query_workspace_safety.cpp
   desktop/app/query_workspace_grid_commands.cpp
   desktop/app/query_workspace_edit.cpp
   desktop/app/query_workspace_cell_edit.cpp

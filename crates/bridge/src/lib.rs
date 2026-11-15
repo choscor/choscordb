@@ -52,6 +52,8 @@ pub use result_json::{
 };
 mod preferences;
 mod profile_draft;
+mod profile_tags;
+pub use profile_tags::{profile_tag_options, sql_execution_gate};
 mod quick_search;
 pub use profile_draft::{
     profile_draft_credentials, profile_draft_defaults, profile_draft_normalize,
@@ -471,6 +473,24 @@ pub mod ffi {
         ssh_authentication: String,
         ssh_identity_source: String,
         ssh_identity_file: String,
+        environment: String,
+        environment_label: String,
+        color: String,
+        safety: String,
+        tone: String,
+        tag_label: String,
+    }
+    struct ProfileChoiceDto {
+        code: String,
+        label: String,
+    }
+    struct ProfileTagOptionsDto {
+        environments: Vec<ProfileChoiceDto>,
+        colors: Vec<ProfileChoiceDto>,
+        safety_levels: Vec<ProfileChoiceDto>,
+        labelled_environment: String,
+        session_locked_safety: String,
+        max_environment_label_bytes: u32,
     }
     #[derive(Default)]
     struct ProfileSecretDraftsDto {
@@ -1287,6 +1307,14 @@ pub mod ffi {
         start: u64,
         end: u64,
         confirmation_required: bool,
+        reads_only: bool,
+    }
+    #[derive(Default)]
+    struct SqlGateDto {
+        decision: String,
+        title: String,
+        message: String,
+        accept: String,
     }
     #[derive(Default)]
     struct ObjectActionStatementDto {
@@ -1819,6 +1847,7 @@ pub mod ffi {
             token: u64,
         ) -> Submit;
         fn profile_list(engine: &mut BridgeEngine, token: u64) -> Submit;
+        fn profile_tag_options() -> ProfileTagOptionsDto;
         fn validate_connection_profile(profile: ProfileDto) -> String;
         fn profile_draft_defaults(profile: ProfileDto) -> ProfileDto;
         fn profile_draft_normalize(
@@ -2086,6 +2115,7 @@ pub mod ffi {
             driver: &str,
             sql_mode: &str,
         ) -> SqlRange;
+        fn sql_execution_gate(safety: &str, reads_only: bool, destructive: bool) -> SqlGateDto;
     }
 }
 
@@ -2497,6 +2527,7 @@ pub fn sql_execution_range(
             start: range.start as u64,
             end: range.end as u64,
             confirmation_required: safety == language::Safety::ConfirmationRequired,
+            reads_only: language::reads_only(&sql[range.clone()], mysql),
         }
     })
     .unwrap_or_default()
@@ -2792,6 +2823,9 @@ fn profile_with_session_timeout(
     dto: ffi::ProfileDto,
     session_timeout: Option<u32>,
 ) -> std::result::Result<choscordb_core::ConnectionProfile, String> {
+    let (environment, color, safety) = profile_tags::parse(&dto)?;
+    let environment_label =
+        (!dto.environment_label.is_empty()).then(|| dto.environment_label.clone());
     use choscordb_core::{ConnectionProfile, PostgresTls, ProfileConfiguration};
     let dto = profile_draft::profile_draft_defaults(dto);
     let ssh = if dto.driver == "sqlite" {
@@ -2873,6 +2907,10 @@ fn profile_with_session_timeout(
         _ => return Err("Unknown connection driver".into()),
     };
     let mut profile = ConnectionProfile {
+        environment,
+        environment_label,
+        color,
+        safety,
         id: dto.id,
         name: dto.name,
         group_id: (!dto.group_id.is_empty()).then_some(dto.group_id),

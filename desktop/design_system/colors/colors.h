@@ -57,6 +57,9 @@ struct Colors final {
 };
 
 enum class Emphasis { Brand, Danger };
+enum class StatusTone { Neutral, Brand, Success, Warning, Danger };
+[[nodiscard]] QColor statusToneColor(const Colors& colors, StatusTone tone);
+[[nodiscard]] const char* statusToneBadgeVariant(StatusTone tone);
 
 struct EmphasisFill final {
     QColor ring;

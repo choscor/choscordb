@@ -63,8 +63,8 @@ pub(crate) enum Kind {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Token<'a> {
-    kind: Kind,
-    text: &'a str,
+    pub(crate) kind: Kind,
+    pub(crate) text: &'a str,
     start: usize,
     newline_before: bool,
 }

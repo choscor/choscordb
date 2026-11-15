@@ -88,6 +88,8 @@ struct MainWindow::Ui {
     design::Button* applyResultEdits{};
     QLabel* resultEditReason{};
     QComboBox* rowLimit{};
+    QComboBox* safetyLevel{};
+    QLabel* connectionTag{};
     QPlainTextEdit* messages{};
     QList<QAction*> searchActions{};
     ToastRegion* toast{};

@@ -498,6 +498,17 @@ void PreviewTest::navigationProfileRowsShowRegularAndSelectedStates() {
         QCOMPARE(list->item(3)->text(), QString("test mariadb"));
         QCOMPARE(list->item(3)->toolTip(), QString("MariaDB · Seal icon"));
         const auto mariadbRow = list->visualItemRect(list->item(3));
+        const auto toneColors = choscordb::design::resolvedThemeForWidget(*list).colors;
+        using choscordb::design::Spacing;
+        const int markerCenter = mariadbRow.right() - choscordb::design::spacing(Spacing::One) -
+                                 choscordb::design::spacing(Spacing::Three) -
+                                 choscordb::design::spacing(Spacing::Two) / 2 + 1;
+        QCOMPARE(
+            list->viewport()
+                ->grab(mariadbRow)
+                .toImage()
+                .pixelColor(markerCenter - mariadbRow.left(), mariadbRow.height() / 2),
+            choscordb::design::statusToneColor(toneColors, choscordb::design::StatusTone::Danger));
         const auto seal = list->viewport()->grab(mariadbRow).toImage();
         list->item(3)->setData(choscordb::design::NavigationProfileDelegate::DriverRole, "unknown");
         QVERIFY(seal != list->viewport()->grab(mariadbRow).toImage());

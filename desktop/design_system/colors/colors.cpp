@@ -243,4 +243,35 @@ QList<std::pair<QString, QColor>> colorTokens(const Colors& colors) {
     };
 }
 
+QColor statusToneColor(const Colors& colors, StatusTone tone) {
+    switch (tone) {
+    case StatusTone::Neutral:
+        return colors.textSubtle;
+    case StatusTone::Brand:
+        return colors.brand;
+    case StatusTone::Success:
+        return colors.textSuccess;
+    case StatusTone::Warning:
+        return colors.textWarning;
+    case StatusTone::Danger:
+        return colors.textDanger;
+    }
+    return colors.textSubtle;
+}
+const char* statusToneBadgeVariant(StatusTone tone) {
+    switch (tone) {
+    case StatusTone::Neutral:
+        return "secondary";
+    case StatusTone::Brand:
+        return "outline";
+    case StatusTone::Success:
+        return "success";
+    case StatusTone::Warning:
+        return "warning";
+    case StatusTone::Danger:
+        return "error";
+    }
+    return "secondary";
+}
+
 }

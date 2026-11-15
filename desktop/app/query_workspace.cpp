@@ -65,6 +65,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     });
     setupGridCommands();
     setupRowLimit();
+    setupSafetyLevel();
     setupResultViewControls();
     querySettings_ = new QuerySettingsController(adapter_, this);
     setupCellEditor();
@@ -509,9 +510,9 @@ void QueryWorkspace::showProfiles(const QString& profileId) {
                                 : QVariantMap{});
                     setDocumentStatus(widgets_.currentEditor(), QueryState::Connecting, {},
                                       profile.name);
-                    connectionDrivers_.insert(id, profile.driver);
-                    if (savedProfile)
-                        connectionProfiles_.insert(id, profile.id);
+                    rememberProfile(id, profile);
+                    if (!savedProfile)
+                        connectionProfiles_.remove(id);
                 });
     }
     if (!profileId.isEmpty())
@@ -670,8 +671,7 @@ std::optional<quint64> QueryWorkspace::connectSavedProfile(const SavedProfile& p
                      ? widgets_.currentEditor()->property("resultStatus").toMap()
                      : QVariantMap{});
         setDocumentStatus(widgets_.currentEditor(), QueryState::Connecting, {}, profile.name);
-        connectionProfiles_.insert(*id, profile.id);
-        connectionDrivers_.insert(*id, profile.driver);
+        rememberProfile(*id, profile);
     }
     return id;
 }
@@ -713,6 +713,7 @@ QString QueryWorkspace::readOnlyReason() const {
 void QueryWorkspace::updateActions() {
     observeEditTransaction();
     syncRowLimit();
+    syncConnectionTag();
     if (invalidatePending_ && !workInFlight()) {
         invalidateResult();
         return;
@@ -840,13 +841,18 @@ void QueryWorkspace::execute(RunScope scope) {
                                        : tr("No executable statement at the cursor."));
         return;
     }
-    if (range.confirmation) {
-        if (!ConfirmationDialog::confirm(widgets_.dialogParent, tr("Run statement?"),
-                                         tr("This statement can change or delete data."),
-                                         tr("Run statement"),
-                                         ConfirmationDialog::Consequence::Destructive))
-            return;
+    const auto gate =
+        EngineAdapter::executionGate(connectionTags_.value(*connection).safety, range);
+    if (gate.decision == SqlGateDecision::Reject) {
+        message(gate.message);
+        return;
     }
+    if (gate.decision == SqlGateDecision::Confirm &&
+        !ConfirmationDialog::confirm(widgets_.dialogParent, gate.title, gate.message, gate.accept,
+                                     range.confirmation
+                                         ? ConfirmationDialog::Consequence::Destructive
+                                         : ConfirmationDialog::Consequence::Safe))
+        return;
     if (!connectionAvailable(*connection) || workInFlight() || widgets_.currentEditor() != editor)
         return;
     if (resultEditor_ && resultEditor_ != editor &&

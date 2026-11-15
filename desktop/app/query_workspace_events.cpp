@@ -385,6 +385,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             connectionProfiles_.remove(e.id);
             connectionDrivers_.remove(e.id);
             connectionSqlModes_.remove(e.id);
+            connectionTags_.remove(e.id);
+            connectionRowLimits_.remove(e.id);
             disconnecting_.remove(e.id);
         }
         message(text(e.error) +
@@ -403,6 +405,8 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         connectionProfiles_.remove(e.id);
         connectionDrivers_.remove(e.id);
         connectionSqlModes_.remove(e.id);
+        connectionTags_.remove(e.id);
+        connectionRowLimits_.remove(e.id);
         liveConnections_.removeIf([&e](const LiveConnection& live) { return live.id == e.id; });
         documentChanged();
         if (queryConnection_ == e.id) {

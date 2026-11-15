@@ -650,14 +650,30 @@ quint32 EngineAdapter::recentHistoryRows() {
     static const quint32 rows = recent_history_rows();
     return rows;
 }
-const QList<CopyFormatOption>& EngineAdapter::copyFormats() {
-    static const QList<CopyFormatOption> formats = [] {
-        QList<CopyFormatOption> output;
+const QList<CodeLabel>& EngineAdapter::copyFormats() {
+    static const QList<CodeLabel> formats = [] {
+        QList<CodeLabel> output;
         for (const auto& option : copy_format_options())
             output.append({fromRust(option.code), fromRust(option.label)});
         return output;
     }();
     return formats;
+}
+const ProfileTagOptions& EngineAdapter::profileTagOptions() {
+    static const ProfileTagOptions options = [] {
+        const auto dto = profile_tag_options();
+        auto choices = [](const auto& values) {
+            QList<CodeLabel> output;
+            for (const auto& value : values)
+                output.append({fromRust(value.code), fromRust(value.label)});
+            return output;
+        };
+        return ProfileTagOptions{
+            choices(dto.environments),           choices(dto.colors),
+            choices(dto.safety_levels),          fromRust(dto.labelled_environment),
+            fromRust(dto.session_locked_safety), int(dto.max_environment_label_bytes)};
+    }();
+    return options;
 }
 const NavigatorSearchBudget& EngineAdapter::navigatorSearchBudget() {
     static const NavigatorSearchBudget budget = [] {

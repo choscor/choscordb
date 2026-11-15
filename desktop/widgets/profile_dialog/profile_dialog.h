@@ -45,6 +45,10 @@ class ProfileDialog final : public DialogShell {
     design::FieldValidation* validationFor(QWidget* field) const;
     void showFieldError(QWidget* field, const QString& message);
     void createPrivateKeyControls();
+    void createTagControls();
+    void setTagDraft(const SavedProfile& profile);
+    void readTagDraft(SavedProfile& profile) const;
+    void updateTagControls();
     void updatePrivateKeyControls();
     void updateRowVisibility();
     void setSecurityDraft(const SavedProfile& profile);
@@ -100,6 +104,9 @@ class ProfileDialog final : public DialogShell {
     QLineEdit* tlsSecret_;
     QWidget* tlsSecretField_ = nullptr;
     QComboBox* sshIdentitySource_ = nullptr;
+    QComboBox *environment_ = nullptr, *color_ = nullptr, *safety_ = nullptr;
+    QLineEdit* environmentLabel_ = nullptr;
+    QWidget* environmentLabelRow_ = nullptr;
     SshPrivateKeyEditor* sshPrivateKey_ = nullptr;
     QLabel* sshPrivateKeyHelp_ = nullptr;
     std::optional<SshPrivateKeyDraft> pendingPrivateKey_;

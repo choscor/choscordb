@@ -47,15 +47,16 @@ mod result_view;
 mod ssh_trust;
 pub mod updater_machine;
 pub use choscordb_storage::{
-    APPEARANCE_LAYOUT_VERSION, AppearanceLayout, ConnectionProfile,
-    DEFAULT_CONNECTION_TIMEOUT_SECONDS, DEFAULT_EDITOR_FONT_SIZE, DEFAULT_FORMAT_INDENT,
-    EDITOR_PREFERENCES_VERSION, EditorDocument, EditorPreferences, HistoryEntry, HistoryPolicy,
-    HistoryStatus, MAX_APPEARANCE_LAYOUT_BYTES, MAX_COLLECTION_BYTES,
-    MAX_CONNECTION_TIMEOUT_SECONDS, MAX_EDITOR_FONT_SIZE, MAX_FONT_FAMILY_BYTES, MAX_FORMAT_INDENT,
+    APPEARANCE_LAYOUT_VERSION, AppearanceLayout, ConnectionColor, ConnectionEnvironment,
+    ConnectionProfile, ConnectionTone, DEFAULT_CONNECTION_TIMEOUT_SECONDS,
+    DEFAULT_EDITOR_FONT_SIZE, DEFAULT_FORMAT_INDENT, EDITOR_PREFERENCES_VERSION, EditorDocument,
+    EditorPreferences, ExecutionGate, HistoryEntry, HistoryPolicy, HistoryStatus,
+    MAX_APPEARANCE_LAYOUT_BYTES, MAX_COLLECTION_BYTES, MAX_CONNECTION_TIMEOUT_SECONDS,
+    MAX_EDITOR_FONT_SIZE, MAX_ENVIRONMENT_LABEL_BYTES, MAX_FONT_FAMILY_BYTES, MAX_FORMAT_INDENT,
     MAX_QUERY_TIMEOUT_SECONDS, MAX_SCREEN_NAME_BYTES, MAX_SHORTCUT_SEQUENCE_BYTES, MAX_SQL_BYTES,
     MAX_WINDOW_DIMENSION, MAX_WORKSPACE_DOCUMENTS, MIN_EDITOR_FONT_SIZE, MIN_FORMAT_INDENT,
     MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, ObjectTab, PostgresTls, ProfileConfiguration,
-    QUERY_PREFERENCES_VERSION, QueryPreferences, ResultColumnWidth, ShortcutCommand,
+    QUERY_PREFERENCES_VERSION, QueryPreferences, ResultColumnWidth, SafetyLevel, ShortcutCommand,
     ShortcutOverride, SidebarTab, ThemeMode, WindowGeometry, WorkspaceLayout, WorkspaceSnapshot,
     WorkspaceTab,
 };

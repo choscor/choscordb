@@ -58,6 +58,7 @@ class WorkspaceTest : public QObject {
     void connectionDraftUsesTheSharedDiscardPrompt();
     void connectionFormHasNoTlsSettings();
     void savedTlsVerificationSurvivesProfileEdit();
+    void profileEnvironmentColorAndSafetySurviveEdit();
     void savedDisabledTlsSurvivesProfileEdit();
     void newServerProfilePrefersTlsWithoutSetup_data();
     void newServerProfilePrefersTlsWithoutSetup();

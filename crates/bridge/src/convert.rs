@@ -875,7 +875,15 @@ pub fn event(
 }
 
 pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileDto {
+    let mut tags = ffi::ProfileDto::default();
+    crate::profile_tags::fill(&mut tags, &value);
     let mut dto = ffi::ProfileDto {
+        environment: tags.environment,
+        environment_label: tags.environment_label,
+        color: tags.color,
+        safety: tags.safety,
+        tone: tags.tone,
+        tag_label: tags.tag_label,
         id: value.id,
         name: value.name,
         group_id: value.group_id.unwrap_or_default(),

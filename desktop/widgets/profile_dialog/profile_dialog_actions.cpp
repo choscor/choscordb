@@ -87,6 +87,7 @@ SavedProfile ProfileDialog::draft() const {
     value.sshAuthentication = sshAuthentication_->currentData().toString();
     value.sshIdentitySource = sshIdentitySource_->currentData().toString();
     value.sshIdentityFile = sshIdentityFile_->text();
+    readTagDraft(value);
     return EngineAdapter::normalizeProfileDraft(current_, value, secretDrafts());
 }
 
@@ -122,6 +123,7 @@ void ProfileDialog::setDraft(const SavedProfile& profile) {
     password_->setPlaceholderText(value.credentialRef.isEmpty() ? QString() : tr("Saved password"));
     saveCredentials_->setChecked(EngineAdapter::profileHasSavedCredentials(value));
     setSecurityDraft(value);
+    setTagDraft(value);
     filling_ = false;
     dirty_ = false;
     const auto title = value.id.isEmpty() ? tr("New connection") : tr("Edit connection");

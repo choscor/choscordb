@@ -106,6 +106,10 @@ fn profile(driver: &str, authentication: Option<SshAuthentication>) -> Connectio
         ssh_jump_credential_refs: Default::default(),
         ssh_private_key_ref: None,
         ssh_jump_private_key_refs: Default::default(),
+        environment: Default::default(),
+        environment_label: None,
+        color: Default::default(),
+        safety: Default::default(),
         tls_credential_ref: None,
         ssh_credential_ref: Some("stale-ssh".into()),
     }

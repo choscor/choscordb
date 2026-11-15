@@ -158,6 +158,9 @@ impl DatabaseDriver for SqliteDriver {
 }
 #[async_trait]
 impl Connection for SqliteConnection {
+    fn read_only_session_sql(&self) -> Option<&'static str> {
+        Some("PRAGMA query_only = ON")
+    }
     async fn inspect_result_cells(
         &mut self,
         object: Option<&ObjectId>,

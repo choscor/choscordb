@@ -2,6 +2,7 @@
 
 #include "app/appearance_controller.h"
 #include "app/application_data.h"
+#include "app/connection_tone.h"
 #include "app/editor_preferences.h"
 #include "app/main_window_ui.h"
 #include "app/navigator_controller.h"
@@ -475,7 +476,9 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                             rowsMetric,
                             visibleSizeMetric,
                             resultEditReason,
-                            ui.rowLimit},
+                            ui.rowLimit,
+                            ui.safetyLevel,
+                            ui.connectionTag},
                            this);
     preferences_->addGrid(workspace_);
     connect(workspace_, &QueryWorkspace::foreignKeyRequested, this, &MainWindow::openReferencedRow);
@@ -634,10 +637,14 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 auto* item = new QListWidgetItem(profile.name, savedConnections);
                 item->setData(Qt::UserRole, QVariant::fromValue(profile));
                 item->setData(design::NavigationProfileDelegate::DriverRole, profile.driver);
+                if (const auto tone = connectionTone(profile.tone))
+                    item->setData(design::NavigationProfileDelegate::ToneRole, int(*tone));
                 item->setIcon(design::themedIcon(design::driverIcon(profile.driver),
                                                  theme_->resolvedTheme().colors.textSubtle,
                                                  design::dimension(design::Dimension::Icon)));
-                item->setToolTip(profile.name);
+                item->setToolTip(profile.tagLabel.isEmpty()
+                                     ? profile.name
+                                     : tr("%1 · %2").arg(profile.name, profile.tagLabel));
                 if (profile.id == focused)
                     savedConnections->setCurrentItem(item, QItemSelectionModel::NoUpdate);
                 for (const auto& live : workspace_->liveConnections()) {

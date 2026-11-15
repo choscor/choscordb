@@ -53,6 +53,12 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.sshAuthentication = fromRust(dto.ssh_authentication);
     value.sshIdentitySource = fromRust(dto.ssh_identity_source);
     value.sshIdentityFile = fromRust(dto.ssh_identity_file);
+    value.environment = fromRust(dto.environment);
+    value.environmentLabel = fromRust(dto.environment_label);
+    value.color = fromRust(dto.color);
+    value.safety = fromRust(dto.safety);
+    value.tone = fromRust(dto.tone);
+    value.tagLabel = fromRust(dto.tag_label);
     return value;
 }
 void assignAppearance(AppearanceLayout& value, const AppearanceLayoutDto& dto) {
@@ -921,6 +927,15 @@ SqlSelection EngineAdapter::executionRange(const QString& sql, quint64 cursor, q
         sql_execution_range(utf8View(bytes), cursor, start, end,
                             scope == RunScope::All ? ExecutionScope::All : ExecutionScope::Current,
                             utf8View(driverBytes), utf8View(modeBytes));
-    return {range.valid, range.start, range.end, range.confirmation_required};
+    return {range.valid, range.start, range.end, range.confirmation_required, range.reads_only};
+}
+SqlGate EngineAdapter::executionGate(const QString& safety, const SqlSelection& range) {
+    const auto bytes = safety.toUtf8();
+    const auto dto = sql_execution_gate(utf8View(bytes), range.readsOnly, range.confirmation);
+    const auto decision = fromRust(dto.decision);
+    return {decision == QStringLiteral("run")       ? SqlGateDecision::Run
+            : decision == QStringLiteral("confirm") ? SqlGateDecision::Confirm
+                                                    : SqlGateDecision::Reject,
+            fromRust(dto.title), fromRust(dto.message), fromRust(dto.accept)};
 }
 }

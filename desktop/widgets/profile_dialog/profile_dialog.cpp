@@ -122,6 +122,7 @@ ProfileDialog::ProfileDialog(EngineAdapter* adapter, QWidget* parent)
     nameValidation_ = new design::FieldValidation(name_, form_);
     sections->addFormRow(formLayout_, tr("Name"), nameValidation_);
     connect(name_, &QLineEdit::textChanged, this, [this] { nameValidation_->setError({}); });
+    createTagControls();
     path_ = line("profilePath");
     path_->setAccessibleName(tr("Database file"));
     path_->setPlaceholderText(tr("/path/to/database.sqlite"));

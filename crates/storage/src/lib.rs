@@ -79,6 +79,179 @@ pub struct ConnectionProfile {
     pub ssh_jump_credential_refs: std::collections::BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub ssh_jump_private_key_refs: std::collections::BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub environment: ConnectionEnvironment,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_label: Option<String>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub color: ConnectionColor,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub safety: SafetyLevel,
+}
+
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
+}
+
+pub const MAX_ENVIRONMENT_LABEL_BYTES: usize = 32;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionEnvironment {
+    #[default]
+    None,
+    Local,
+    Development,
+    Testing,
+    Staging,
+    Production,
+    Custom,
+}
+
+impl ConnectionEnvironment {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Local => "local",
+            Self::Development => "development",
+            Self::Testing => "testing",
+            Self::Staging => "staging",
+            Self::Production => "production",
+            Self::Custom => "custom",
+        }
+    }
+    pub fn from_code(code: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|value| value.code() == code)
+    }
+    pub const ALL: [Self; 7] = [
+        Self::None,
+        Self::Local,
+        Self::Development,
+        Self::Testing,
+        Self::Staging,
+        Self::Production,
+        Self::Custom,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "None",
+            Self::Local => "Local",
+            Self::Development => "Development",
+            Self::Testing => "Testing",
+            Self::Staging => "Staging",
+            Self::Production => "Production",
+            Self::Custom => "Custom",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionColor {
+    #[default]
+    Automatic,
+    Neutral,
+    Blue,
+    Green,
+    Orange,
+    Red,
+}
+
+impl ConnectionColor {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Automatic => "automatic",
+            Self::Neutral => "neutral",
+            Self::Blue => "blue",
+            Self::Green => "green",
+            Self::Orange => "orange",
+            Self::Red => "red",
+        }
+    }
+    pub fn from_code(code: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|value| value.code() == code)
+    }
+    pub const ALL: [Self; 6] = [
+        Self::Automatic,
+        Self::Neutral,
+        Self::Blue,
+        Self::Green,
+        Self::Orange,
+        Self::Red,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Automatic => "Automatic",
+            Self::Neutral => "Gray",
+            Self::Blue => "Blue",
+            Self::Green => "Green",
+            Self::Orange => "Orange",
+            Self::Red => "Red",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ConnectionTone {
+    Neutral,
+    Brand,
+    Success,
+    Warning,
+    Danger,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SafetyLevel {
+    Silent,
+    #[default]
+    ConfirmWrites,
+    ConfirmAll,
+    ReadOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionGate {
+    Run,
+    Confirm,
+    Reject,
+}
+impl SafetyLevel {
+    pub fn gate(self, reads_only: bool, destructive: bool) -> ExecutionGate {
+        match self {
+            Self::Silent => ExecutionGate::Run,
+            Self::ConfirmWrites if destructive => ExecutionGate::Confirm,
+            Self::ConfirmWrites => ExecutionGate::Run,
+            Self::ConfirmAll => ExecutionGate::Confirm,
+            Self::ReadOnly if reads_only => ExecutionGate::Run,
+            Self::ReadOnly => ExecutionGate::Reject,
+        }
+    }
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Silent => "silent",
+            Self::ConfirmWrites => "confirm_writes",
+            Self::ConfirmAll => "confirm_all",
+            Self::ReadOnly => "read_only",
+        }
+    }
+    pub fn from_code(code: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|value| value.code() == code)
+    }
+    pub const ALL: [Self; 4] = [
+        Self::Silent,
+        Self::ConfirmWrites,
+        Self::ConfirmAll,
+        Self::ReadOnly,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Silent => "Run without confirmation",
+            Self::ConfirmWrites => "Confirm destructive statements",
+            Self::ConfirmAll => "Confirm each statement",
+            Self::ReadOnly => "Read-only",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -904,9 +1077,48 @@ fn validate_server_endpoint(host: &str, tls: &TlsMode, ssh: Option<&SshTunnel>) 
 }
 
 impl ConnectionProfile {
+    pub fn tone(&self) -> Option<ConnectionTone> {
+        Some(match (self.color, self.environment) {
+            (ConnectionColor::Neutral, _) => ConnectionTone::Neutral,
+            (ConnectionColor::Blue, _) => ConnectionTone::Brand,
+            (ConnectionColor::Green, _) => ConnectionTone::Success,
+            (ConnectionColor::Orange, _) => ConnectionTone::Warning,
+            (ConnectionColor::Red, _) => ConnectionTone::Danger,
+            (ConnectionColor::Automatic, ConnectionEnvironment::None) => return None,
+            (ConnectionColor::Automatic, ConnectionEnvironment::Local) => ConnectionTone::Neutral,
+            (
+                ConnectionColor::Automatic,
+                ConnectionEnvironment::Development | ConnectionEnvironment::Testing,
+            ) => ConnectionTone::Success,
+            (ConnectionColor::Automatic, ConnectionEnvironment::Staging) => ConnectionTone::Warning,
+            (ConnectionColor::Automatic, ConnectionEnvironment::Production) => {
+                ConnectionTone::Danger
+            }
+            (ConnectionColor::Automatic, ConnectionEnvironment::Custom) => ConnectionTone::Brand,
+        })
+    }
+
+    pub fn tag_label(&self) -> Option<String> {
+        match self.environment {
+            ConnectionEnvironment::None => None,
+            ConnectionEnvironment::Custom => self.environment_label.clone(),
+            environment => Some(environment.label().into()),
+        }
+    }
+
     pub fn validate(&self) -> Result<()> {
         validate_field(&self.id, 256)?;
         validate_field(&self.name, 1024)?;
+        let custom = self.environment == ConnectionEnvironment::Custom;
+        match &self.environment_label {
+            Some(label)
+                if custom
+                    && !label.trim().is_empty()
+                    && label.len() <= MAX_ENVIRONMENT_LABEL_BYTES
+                    && !label.chars().any(char::is_control) => {}
+            None if !custom => {}
+            _ => return Err(StorageError::InvalidProfile),
+        }
         if self.ssh_jump_credential_refs.len() > 5 {
             return Err(StorageError::InvalidProfile);
         }

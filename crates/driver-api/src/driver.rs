@@ -228,6 +228,9 @@ pub trait Connection: Send {
     fn sibling_sessions(&self) -> Option<Arc<dyn SessionOpener>> {
         None
     }
+    fn read_only_session_sql(&self) -> Option<&'static str> {
+        None
+    }
     async fn idle_transaction_state(&mut self) -> Result<Option<IdleTransactionState>> {
         Ok(None)
     }

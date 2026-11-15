@@ -374,6 +374,9 @@ Use `design::Icon` roles. Do not use Qt standard icons. Do not show icons in men
   `secondary` is `kumo-fill` with `text-kumo-badge-neutral-subtle`. `outline` is `kumo-base` with a `kumo-fill` border.
   `error`, `success` and `warning` use the status tint with the status text.
 - **Driver badge:** A driver name uses the `outline` badge.
+- **Status tone:** `StatusTone` names a semantic tone: `Neutral`, `Brand`, `Success`, `Warning` or `Danger`.
+  `statusToneColor` gives the text color of the tone. `statusToneBadgeVariant` gives its badge variant.
+  A saved connection row paints a dot in the tone color. The connection tag in the result footer is a badge.
 - **Progress:** A progress bar is the Kumo `meter`. Its track is `kumo-fill` and `Progress` high, with full round ends.
   The indicator is `kumo-brand`.
 - **Spinner:** The spinner paints the Kumo `loader`: a track ring at 10% and a round-capped arc in `text-kumo-subtle`.

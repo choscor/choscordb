@@ -45,6 +45,10 @@ inline ProfileDto profileDto(const SavedProfile& value) {
     dto.ssh_authentication = toRust(value.sshAuthentication);
     dto.ssh_identity_source = toRust(value.sshIdentitySource);
     dto.ssh_identity_file = toRust(value.sshIdentityFile);
+    dto.environment = toRust(value.environment);
+    dto.environment_label = toRust(value.environmentLabel);
+    dto.color = toRust(value.color);
+    dto.safety = toRust(value.safety);
     return dto;
 }
 inline ProfileSecretDraftsDto secretDraftsDto(const ProfileSecretDrafts& value) {

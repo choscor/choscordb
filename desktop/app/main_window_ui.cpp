@@ -4,6 +4,7 @@
 
 #include "app/editor_preferences.h"
 #include "app/main_window_ui.h"
+#include "app/main_window_ui_connection.h"
 #include "app/main_window_ui_pins.h"
 #include "app/main_window_widgets.h"
 #include "app/object_explorer.h"
@@ -490,11 +491,7 @@ MainWindow::Ui MainWindow::buildUi() {
     cancelButton->setVariant(design::ButtonVariant::Outline);
     cancelButton->setEnabled(false);
     auto* cancelSlot = toolbar->addWidget(cancelButton);
-    auto* rowLimit = new QComboBox(toolbar);
-    rowLimit->setObjectName("rowLimit");
-    rowLimit->setAccessibleName(tr("Row limit for SELECT"));
-    rowLimit->setToolTip(tr("Row limit for SELECT"));
-    toolbar->addWidget(rowLimit);
+    const auto connectionToolbar = buildConnectionToolbar(toolbar);
     cancelSlot->setVisible(false);
     connect(cancelButton, &QPushButton::clicked, cancel, &QAction::trigger);
     connect(cancel, &QAction::changed, cancelButton, [cancel, cancelButton, cancelSlot] {
@@ -795,7 +792,8 @@ MainWindow::Ui MainWindow::buildUi() {
     paneHeaderLayout->addWidget(resultEditReason);
     resultAreaLayout->addWidget(paneHeader);
     resultAreaLayout->addWidget(results, 1);
-    resultAreaLayout->addWidget(resultFooter);
+    const auto footerRow = buildResultFooterRow(resultFooter);
+    resultAreaLayout->addWidget(footerRow.row);
     splitter->addWidget(resultArea);
     sqlResultArea_ = resultArea;
     splitter->setSizes({design::layoutMetrics().initialEditorHeight,
@@ -974,7 +972,9 @@ MainWindow::Ui MainWindow::buildUi() {
         .discardResultEdits = discardResultEdits,
         .applyResultEdits = applyResultEdits,
         .resultEditReason = resultEditReason,
-        .rowLimit = rowLimit,
+        .rowLimit = connectionToolbar.rowLimit,
+        .safetyLevel = connectionToolbar.safetyLevel,
+        .connectionTag = footerRow.connectionTag,
         .messages = messages,
         .searchActions = searchActions,
         .toast = toast,

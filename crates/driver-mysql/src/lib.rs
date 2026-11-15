@@ -519,6 +519,9 @@ impl MysqlConnection {
 }
 #[async_trait]
 impl Connection for MysqlConnection {
+    fn read_only_session_sql(&self) -> Option<&'static str> {
+        Some("SET SESSION TRANSACTION READ ONLY")
+    }
     fn sibling_sessions(&self) -> Option<Arc<dyn SessionOpener>> {
         Some(Arc::new(Sessions {
             flavor: self.flavor,

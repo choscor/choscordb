@@ -94,6 +94,8 @@ struct SavedProfile {
     QString sshHost, sshUser, sshAuthentication, sshIdentityFile;
     QString sshIdentitySource;
     quint16 sshPort = 0;
+    QString environment, environmentLabel, color, safety;
+    QString tone, tagLabel;
 };
 struct SavedHistoryEntry {
     QString id, profileId, sql;
@@ -147,9 +149,15 @@ struct CellFilterOption {
     bool enabled;
     QString reason;
 };
-struct CopyFormatOption {
+struct CodeLabel {
     QString code;
     QString label;
+};
+struct ProfileTagOptions {
+    QList<CodeLabel> environments, colors, safetyLevels;
+    QString labelledEnvironment;
+    QString sessionLockedSafety;
+    int maxEnvironmentLabelBytes = 0;
 };
 struct CellFilterComposition {
     QString expression;
@@ -505,6 +513,12 @@ struct SqlSelection {
     quint64 start;
     quint64 end;
     bool confirmation;
+    bool readsOnly = false;
+};
+enum class SqlGateDecision : uint8_t { Run, Confirm, Reject };
+struct SqlGate {
+    SqlGateDecision decision = SqlGateDecision::Reject;
+    QString title, message, accept;
 };
 enum class ObjectInspectionPane { Columns = 0, Indexes = 1, Keys = 2, Ddl = 3 };
 enum class MetadataAvailability { Available, Unsupported, Unavailable };
@@ -656,7 +670,8 @@ class EngineAdapter final : public QObject {
     static QString gridRowInsertError(qsizetype rows);
     static ObjectKindTraits objectKindTraits(const QString& kind);
     static const NavigatorSearchBudget& navigatorSearchBudget();
-    static const QList<CopyFormatOption>& copyFormats();
+    static const QList<CodeLabel>& copyFormats();
+    static const ProfileTagOptions& profileTagOptions();
     static DriverWorkflow driverWorkflow(const QString& driver);
     static const TransactionGuard& transactionGuard(bool transactionActive);
     static RowStatus rowStatus(RowStatusCause cause, const QString& detail = {});
@@ -737,6 +752,7 @@ class EngineAdapter final : public QObject {
     static SqlSelection executionRange(const QString& sql, quint64 cursor, quint64 start,
                                        quint64 end, RunScope scope, const QString& driver = {},
                                        const QString& sqlMode = {});
+    static SqlGate executionGate(const QString& safety, const SqlSelection& range);
   signals:
     void queryPreferencesReady(quint64 token, const choscordb::QueryPreferences& preferences);
     void shutdownReady();

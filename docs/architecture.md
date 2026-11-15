@@ -68,6 +68,13 @@ The query session answers navigator reads in these conditions:
 The engine reads the transaction state after each statement, when its result is complete.
 While a result streams, the engine uses the last state.
 
+A profile with the `ReadOnly` safety level locks the query session after the connection opens.
+The driver gives the lock statement through `Connection::read_only_session_sql`.
+SQLite uses `PRAGMA query_only`. PostgreSQL and MySQL make each transaction read-only.
+If a driver has no lock statement, the connection fails with an `Unsupported` error.
+Before a statement runs, `sql_execution_gate` applies the safety level.
+The gate can run the statement, ask for confirmation, or reject a statement that can change data.
+
 The engine closes the catalog session when the connection disconnects.
 If the catalog session closes because of a connection error, the next read opens it again.
 

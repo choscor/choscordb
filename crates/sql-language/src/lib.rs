@@ -8,6 +8,8 @@ pub use format::{
     format_edit, format_sql, toggle_block_comment, toggle_line_comment,
 };
 mod highlight;
+mod reads_only;
+pub use reads_only::reads_only;
 mod history_preview;
 pub use highlight::{HighlightKind, HighlightSpan, highlight};
 pub use history_preview::{HistoryPreview, history_sql_preview};

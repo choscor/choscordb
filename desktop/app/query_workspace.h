@@ -71,6 +71,8 @@ class QueryWorkspace final : public QObject {
         QLabel* visibleSizeMetric = nullptr;
         QLabel* editReason = nullptr;
         QComboBox* rowLimit = nullptr;
+        QComboBox* safetyLevel = nullptr;
+        QLabel* connectionTag = nullptr;
     };
     struct LiveConnection {
         quint64 id = 0;
@@ -334,6 +336,13 @@ class QueryWorkspace final : public QObject {
     QHash<quint64, QString> connectionSqlModes_;
     QHash<quint64, quint32> connectionRowLimits_;
     std::optional<quint32> appliedRowLimit_;
+    struct ConnectionTag {
+        QString profileSafety, safety, label, tone;
+    };
+    QHash<quint64, ConnectionTag> connectionTags_;
+    void rememberProfile(quint64 connection, const SavedProfile& profile);
+    void setupSafetyLevel();
+    void syncConnectionTag();
     void setupRowLimit();
     void syncRowLimit();
     QString resultRowsText(quint64 count) const;

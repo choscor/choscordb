@@ -242,6 +242,52 @@ void WorkspaceTest::savedTlsVerificationSurvivesProfileEdit() {
     QCOMPARE(updated.rootCertificate, QString("/tmp/ca.pem"));
 }
 
+void WorkspaceTest::profileEnvironmentColorAndSafetySurviveEdit() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    choscordb::EngineAdapter adapter(nullptr, directory.filePath("metadata.sqlite"));
+    choscordb::ProfileDialog dialog(&adapter);
+    choscordb::SavedProfile profile;
+    profile.name = "Tagged";
+    profile.driver = "sqlite";
+    profile.path = ":memory:";
+    profile.environment = "custom";
+    profile.environmentLabel = "QA";
+    profile.safety = "read_only";
+    QSignalSpy saved(&adapter, &choscordb::EngineAdapter::profileSaved);
+    QTRY_VERIFY(dialog.findChild<QPushButton*>("profileSave")->isEnabled());
+    dialog.saveDraft(profile);
+    QTRY_COMPARE(saved.count(), 1);
+    const auto first = qvariant_cast<choscordb::SavedProfile>(saved.at(0).at(1));
+    QCOMPARE(first.tagLabel, QString("QA"));
+    QCOMPARE(first.tone, QString("brand"));
+    QCOMPARE(first.color, QString("automatic"));
+    dialog.show();
+    QCoreApplication::processEvents();
+    auto* environment = dialog.findChild<QComboBox*>("profileEnvironment");
+    auto* label = dialog.findChild<QLineEdit*>("profileEnvironmentLabel");
+    auto* color = dialog.findChild<QComboBox*>("profileColor");
+    auto* safety = dialog.findChild<QComboBox*>("profileSafety");
+    QVERIFY(environment && label && color && safety);
+    QCOMPARE(environment->currentData().toString(), QString("custom"));
+    QCOMPARE(label->text(), QString("QA"));
+    QVERIFY(label->isVisibleTo(&dialog));
+    QCOMPARE(safety->currentData().toString(), QString("read_only"));
+    environment->setCurrentIndex(environment->findData("production"));
+    QVERIFY(!label->isVisibleTo(&dialog));
+    color->setCurrentIndex(color->findData("blue"));
+    auto* save = dialog.findChild<QPushButton*>("profileSave");
+    QTRY_VERIFY(save->isEnabled());
+    save->click();
+    QTRY_COMPARE(saved.count(), 2);
+    const auto updated = qvariant_cast<choscordb::SavedProfile>(saved.at(1).at(1));
+    QCOMPARE(updated.environment, QString("production"));
+    QVERIFY(updated.environmentLabel.isEmpty());
+    QCOMPARE(updated.tagLabel, QString("Production"));
+    QCOMPARE(updated.tone, QString("brand"));
+    QCOMPARE(updated.safety, QString("read_only"));
+}
+
 void WorkspaceTest::savedDisabledTlsSurvivesProfileEdit() {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -722,7 +768,7 @@ void WorkspaceTest::scrolledConnectionFormEndsAtItsLastVisibleRow() {
             lastBottom = qMax(lastBottom, child->geometry().bottom() + 1);
     }
     QVERIFY2(scroll->verticalScrollBar()->maximum() > 0, "form must scroll at this height");
-    QCOMPARE(form->height(), lastBottom + form->layout()->contentsMargins().bottom());
+    QTRY_COMPARE(form->height(), lastBottom + form->layout()->contentsMargins().bottom());
     auto* body = scroll->parentWidget();
     QCOMPARE(scroll->y(), 0);
     QCOMPARE(scroll->geometry().bottom() + 1, body->height());

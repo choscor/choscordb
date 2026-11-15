@@ -1155,6 +1155,7 @@ struct ProfileDriver {
     inner: Arc<dyn DatabaseDriver>,
     commands: mpsc::Sender<Command>,
     references: CredentialReferences,
+    read_only: bool,
 }
 #[async_trait::async_trait]
 impl DatabaseDriver for ProfileDriver {
@@ -1171,6 +1172,23 @@ impl DatabaseDriver for ProfileDriver {
         self.connect_options(options).await
     }
 }
+async fn lock_read_only(connection: &mut dyn Connection) -> choscordb_driver_api::Result<()> {
+    let sql = connection.read_only_session_sql().ok_or_else(|| {
+        DriverError::new(
+            ErrorKind::Unsupported,
+            "This driver cannot open a read-only connection",
+        )
+    })?;
+    let mut cursor = connection
+        .execute(sql, choscordb_driver_api::QueryOptions::default())
+        .await?;
+    while cursor
+        .fetch_page(choscordb_driver_api::PageSize::new(100)?)
+        .await?
+        .has_more
+    {}
+    Ok(())
+}
 impl ProfileDriver {
     async fn connect_options(
         &self,
@@ -1179,7 +1197,11 @@ impl ProfileDriver {
         let budget = connection_budget(&options);
         tokio::time::timeout(budget, async {
             resolve_options(&self.commands, self.references.clone(), &mut options).await?;
-            self.inner.connect(options).await
+            let mut connection = self.inner.connect(options).await?;
+            if self.read_only {
+                lock_read_only(connection.as_mut()).await?;
+            }
+            Ok(connection)
         })
         .await
         .map_err(|_| {
@@ -1240,6 +1262,7 @@ impl Engine {
             inner,
             commands: self.profiles.clone(),
             references: CredentialReferences::from_profile(&profile),
+            read_only: profile.safety == choscordb_storage::SafetyLevel::ReadOnly,
         });
         let connection = self.connect_driver_with_timeout(
             driver,
