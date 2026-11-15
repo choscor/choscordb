@@ -1,4 +1,5 @@
 use super::*;
+use crate::profiles::ProfileBackup;
 use crate::{
     BACKUP_OUTPUT_TRUNCATED, BackupDirection, BackupPlan, BackupRequest, BackupTarget, ExportId,
     MAX_BACKUP_LINE_BYTES, MAX_BACKUP_OUTPUT_LINES, ToolCommand, backup_output_line, plan_backup,
@@ -123,9 +124,10 @@ async fn run_tool(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    if let Some((key, secret)) = &command.password {
-        process.env(key, secret.expose());
-    }
+    match &command.password {
+        Some(secret) => process.env(command.password_env, secret.expose()),
+        None => process.env_remove(command.password_env),
+    };
     let mut child = process.spawn().map_err(|error| {
         DriverError::new(ErrorKind::Io, format!("{name} cannot start: {error}"))
     })?;
@@ -170,17 +172,32 @@ async fn run_tool(
     }
 }
 
+type Source<'a> = (&'a BackupTarget, Option<&'a ProfileBackup>);
+
 async fn run_plan(
     connection: &mut dyn Connection,
-    target: &BackupTarget,
+    (session, profile): Source<'_>,
     request: &BackupRequest,
     output: &mut Output<'_>,
     cancellation: &Cancellation,
     shutdown: &watch::Receiver<bool>,
 ) -> Result<()> {
+    let resolved;
+    let target = match profile {
+        Some(profile) => {
+            if profile.read_only && request.direction == BackupDirection::Restore {
+                return Err(DriverError::new(
+                    ErrorKind::Unsupported,
+                    "This connection is read-only. A restore can change data.",
+                ));
+            }
+            resolved = profile.target()?;
+            &resolved
+        }
+        None => session,
+    };
     let path = std::env::var_os("PATH");
-    let plan = plan_backup(target, request, path.as_deref())
-        .map_err(|message| DriverError::new(ErrorKind::InvalidInput, message))?;
+    let plan = plan_backup(target, request, path.as_deref())?;
     match plan {
         BackupPlan::SqliteVacuum { sql } => {
             output.line(sql.clone()).await;
@@ -201,7 +218,7 @@ async fn run_plan(
 
 pub(super) async fn run(
     connection: &mut dyn Connection,
-    target: &BackupTarget,
+    source: Source<'_>,
     run: ExportId,
     request: BackupRequest,
     cancellation: Cancellation,
@@ -215,7 +232,7 @@ pub(super) async fn run(
     };
     let outcome = run_plan(
         connection,
-        target,
+        source,
         &request,
         &mut output,
         &cancellation,
@@ -257,7 +274,8 @@ mod tests {
             program: "/bin/sh".into(),
             args: vec!["-c".into(), script.into()],
             env: vec![("BACKUP_MODE", "plain".into())],
-            password: password.map(|value| ("BACKUP_SECRET", Secret::new(value))),
+            password_env: "BACKUP_SECRET",
+            password: password.map(Secret::new),
             stdin: None,
         };
         let outcome = run_tool(
@@ -297,16 +315,24 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn a_cancelled_tool_stops() {
+    async fn a_cancel_stops_a_running_tool() {
         let cancellation = Cancellation::default();
-        cancellation.cancel();
-        let (outcome, _) = run_script("sleep 30", None, &cancellation).await;
+        let stopper = cancellation.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            stopper.cancel();
+        });
+        let started = std::time::Instant::now();
+        let (outcome, lines) =
+            run_script("echo started; sleep 30; echo late", None, &cancellation).await;
+        assert!(started.elapsed() < Duration::from_secs(10));
         let error = outcome.unwrap_err();
         assert_eq!(error.kind, ErrorKind::Cancelled);
         assert_eq!(
             error.message,
             "The backup was cancelled. The backup file can be incomplete."
         );
+        assert_eq!(lines[1..], ["started"]);
     }
 
     #[cfg(unix)]

@@ -56,9 +56,9 @@ mod explain;
 pub use explain::{MAX_PLAN_NODES, PlanNode, explain_sql, parse_explain};
 mod backup;
 pub use backup::{
-    BACKUP_OUTPUT_TRUNCATED, BackupDirection, BackupOption, BackupPlan, BackupRequest,
-    BackupTarget, MAX_BACKUP_LINE_BYTES, MAX_BACKUP_OUTPUT_LINES, ToolCommand, backup_options,
-    backup_output_line, backup_unavailable, backup_uses_tool, plan_backup,
+    BACKUP_OUTPUT_TRUNCATED, BackupDirection, BackupFamily, BackupOption, BackupPlan,
+    BackupRequest, BackupTarget, MAX_BACKUP_LINE_BYTES, MAX_BACKUP_OUTPUT_LINES, ToolCommand,
+    backup_output_line, plan_backup,
 };
 mod sql_file;
 pub use sql_file::{
@@ -158,6 +158,7 @@ pub struct Engine {
     exports: Arena<ExportSlot>,
     export_owners: HashMap<ConnectionId, ExportId>,
     connection_profiles: HashMap<ConnectionId, String>,
+    profile_backups: HashMap<ConnectionId, Arc<profiles::ProfileBackup>>,
     events_tx: mpsc::Sender<Event>,
     events: mpsc::Receiver<Event>,
     shutdown: watch::Sender<bool>,
@@ -252,6 +253,7 @@ impl Engine {
             exports: Arena::default(),
             export_owners: HashMap::new(),
             connection_profiles: HashMap::new(),
+            profile_backups: HashMap::new(),
             events_tx,
             events,
             shutdown,
@@ -563,10 +565,12 @@ impl Engine {
         connection: ConnectionId,
         request: BackupRequest,
     ) -> std::result::Result<ExportId, SubmitError> {
+        let profile = self.profile_backups.get(&connection).cloned();
         self.start_transfer(connection, |run, cancellation| actor::Command::Backup {
             run,
             request: Box::new(request),
             cancellation,
+            profile,
         })
     }
     pub fn cancel_export(&self, export: ExportId) -> std::result::Result<(), SubmitError> {
@@ -1063,6 +1067,7 @@ impl Engine {
             .send_replace(true);
         self.connections.remove(connection);
         self.connection_profiles.remove(&connection);
+        self.profile_backups.remove(&connection);
         self.connection_count -= 1;
         Ok(())
     }
@@ -1118,6 +1123,7 @@ impl Engine {
                 self.connection_count -= 1;
             }
             self.connection_profiles.remove(connection);
+            self.profile_backups.remove(connection);
             if let Some(export) = self.export_owners.remove(connection)
                 && let Some(slot) = self.exports.remove(export)
             {

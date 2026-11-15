@@ -1,5 +1,5 @@
 use crate::{BridgeEngine, ffi, pack, submit, unpack};
-use choscordb_core::{BackupDirection, BackupRequest};
+use choscordb_core::{BackupDirection, BackupFamily, BackupRequest};
 
 fn direction(restore: bool) -> BackupDirection {
     if restore {
@@ -11,8 +11,16 @@ fn direction(restore: bool) -> BackupDirection {
 
 pub fn backup_form(driver: &str, restore: bool) -> ffi::BackupFormDto {
     let direction = direction(restore);
+    let Some(family) = BackupFamily::from_driver(driver) else {
+        return ffi::BackupFormDto {
+            options: Vec::new(),
+            unavailable: "This driver does not support backup and restore.".into(),
+            uses_tool: false,
+        };
+    };
     ffi::BackupFormDto {
-        options: choscordb_core::backup_options(driver, direction)
+        options: family
+            .options(direction)
             .iter()
             .map(|option| ffi::BackupOptionDto {
                 code: option.code.into(),
@@ -20,10 +28,8 @@ pub fn backup_form(driver: &str, restore: bool) -> ffi::BackupFormDto {
                 default_on: option.default,
             })
             .collect(),
-        unavailable: choscordb_core::backup_unavailable(driver, direction)
-            .unwrap_or("")
-            .to_owned(),
-        uses_tool: choscordb_core::backup_uses_tool(driver),
+        unavailable: family.unavailable(direction).unwrap_or("").to_owned(),
+        uses_tool: family.uses_tool(),
     }
 }
 
@@ -33,7 +39,6 @@ pub fn start_backup(
     request: &ffi::BackupRequestDto,
 ) -> ffi::Submit {
     let planned = BackupRequest::new(
-        &request.driver,
         direction(request.restore),
         &request.file,
         &request.tool_folder,

@@ -51,7 +51,6 @@ struct BackupForm {
     bool usesTool = false;
 };
 struct BackupRequest {
-    QString driver;
     bool restore = false;
     QString file, toolFolder;
     QStringList options;

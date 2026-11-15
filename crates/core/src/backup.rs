@@ -1,4 +1,4 @@
-use choscordb_driver_api::{ConnectionOptions, Secret, TlsMode};
+use choscordb_driver_api::{ConnectionOptions, DriverError, ErrorKind, Secret, TlsMode};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
@@ -155,27 +155,49 @@ const MYSQL_RESTORE: &[BackupOption] = &[option(
     "",
 )];
 
-pub fn backup_options(driver: &str, direction: BackupDirection) -> &'static [BackupOption] {
-    match (driver, direction) {
-        ("postgres", BackupDirection::Backup) => POSTGRES_BACKUP,
-        ("postgres", BackupDirection::Restore) => POSTGRES_RESTORE,
-        ("mysql" | "mariadb", BackupDirection::Backup) => MYSQL_BACKUP,
-        ("mysql" | "mariadb", BackupDirection::Restore) => MYSQL_RESTORE,
-        _ => &[],
-    }
-}
-
 const SQLITE_RESTORE_UNAVAILABLE: &str = "ChoscorDB cannot restore over an open SQLite database. Open the backup file as a new connection.";
 
-pub fn backup_uses_tool(driver: &str) -> bool {
-    matches!(driver, "postgres" | "mysql" | "mariadb")
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackupFamily {
+    Sqlite,
+    Postgres,
+    Mysql,
+    Mariadb,
 }
 
-pub fn backup_unavailable(driver: &str, direction: BackupDirection) -> Option<&'static str> {
-    match (driver, direction) {
-        ("postgres" | "mysql" | "mariadb", _) | ("sqlite", BackupDirection::Backup) => None,
-        ("sqlite", BackupDirection::Restore) => Some(SQLITE_RESTORE_UNAVAILABLE),
-        _ => Some("This driver does not support backup and restore."),
+impl BackupFamily {
+    pub fn from_driver(driver: &str) -> Option<Self> {
+        match driver {
+            "sqlite" => Some(Self::Sqlite),
+            "postgres" => Some(Self::Postgres),
+            "mysql" => Some(Self::Mysql),
+            "mariadb" => Some(Self::Mariadb),
+            _ => None,
+        }
+    }
+    pub fn options(self, direction: BackupDirection) -> &'static [BackupOption] {
+        match (self, direction) {
+            (Self::Sqlite, _) => &[],
+            (Self::Postgres, BackupDirection::Backup) => POSTGRES_BACKUP,
+            (Self::Postgres, BackupDirection::Restore) => POSTGRES_RESTORE,
+            (Self::Mysql | Self::Mariadb, BackupDirection::Backup) => MYSQL_BACKUP,
+            (Self::Mysql | Self::Mariadb, BackupDirection::Restore) => MYSQL_RESTORE,
+        }
+    }
+    pub fn uses_tool(self) -> bool {
+        self != Self::Sqlite
+    }
+    pub fn unavailable(self, direction: BackupDirection) -> Option<&'static str> {
+        (self == Self::Sqlite && direction == BackupDirection::Restore)
+            .then_some(SQLITE_RESTORE_UNAVAILABLE)
+    }
+    fn client(self) -> &'static str {
+        match self {
+            Self::Sqlite => "SQLite",
+            Self::Postgres => "PostgreSQL",
+            Self::Mysql => "MySQL",
+            Self::Mariadb => "MariaDB",
+        }
     }
 }
 
@@ -184,20 +206,16 @@ pub struct BackupRequest {
     pub direction: BackupDirection,
     pub file: PathBuf,
     pub tool_folder: Option<PathBuf>,
-    options: Vec<BackupOption>,
+    selected: Vec<String>,
 }
 
 impl BackupRequest {
     pub fn new(
-        driver: &str,
         direction: BackupDirection,
         file: &str,
         tool_folder: &str,
         selected: &[String],
     ) -> Result<Self, String> {
-        if let Some(reason) = backup_unavailable(driver, direction) {
-            return Err(reason.to_owned());
-        }
         let file = PathBuf::from(file.trim());
         if file.as_os_str().is_empty() {
             return Err(format!("Choose a {} file.", direction.noun()));
@@ -210,59 +228,59 @@ impl BackupRequest {
             folder if Path::new(folder).is_absolute() => Some(PathBuf::from(folder)),
             _ => return Err("Enter the full path of the tool folder.".to_owned()),
         };
-        let table = backup_options(driver, direction);
-        let mut options = Vec::with_capacity(table.len());
-        for code in selected {
-            let Some(found) = table.iter().find(|candidate| candidate.code == code) else {
-                return Err(format!("Unknown {} option: {code}", direction.noun()));
-            };
-            if !options.contains(found) {
-                options.push(*found);
-            }
-        }
-        let chosen = |code: &str| options.iter().any(|option| option.code == code);
-        if chosen("schema_only") && chosen("data_only") {
-            return Err("Choose schema only or data only, not both.".to_owned());
-        }
-        options.sort_by_key(|chosen| table.iter().position(|option| option == chosen));
         Ok(Self {
             direction,
             file,
             tool_folder,
-            options,
+            selected: selected.to_vec(),
         })
     }
 
-    fn flags(&self, table: &[BackupOption]) -> Vec<String> {
-        table
-            .iter()
-            .map(|option| {
-                if self.options.contains(option) {
-                    option.on
-                } else {
-                    option.off
-                }
-            })
-            .filter(|flag| !flag.is_empty())
-            .map(str::to_owned)
-            .collect()
-    }
-
-    fn selected(&self, code: &str) -> bool {
-        self.options.iter().any(|option| option.code == code)
+    fn chosen(&self, family: BackupFamily) -> Result<Vec<BackupOption>, String> {
+        let table = family.options(self.direction);
+        let mut chosen = Vec::with_capacity(table.len());
+        for code in &self.selected {
+            let Some(found) = table.iter().find(|candidate| candidate.code == code) else {
+                return Err(format!(
+                    "{} has no {} option {code}.",
+                    family.client(),
+                    self.direction.noun()
+                ));
+            };
+            if !chosen.contains(found) {
+                chosen.push(*found);
+            }
+        }
+        let has = |code: &str| {
+            chosen
+                .iter()
+                .any(|option: &BackupOption| option.code == code)
+        };
+        if has("schema_only") && has("data_only") {
+            return Err("Choose schema only or data only, not both.".to_owned());
+        }
+        Ok(chosen)
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ServerFamily {
-    Postgres,
-    Mysql,
-    Mariadb,
+fn flags(table: &[BackupOption], chosen: &[BackupOption]) -> Vec<String> {
+    table
+        .iter()
+        .map(|option| {
+            if chosen.contains(option) {
+                option.on
+            } else {
+                option.off
+            }
+        })
+        .filter(|flag| !flag.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 #[derive(Debug)]
 pub struct ServerTarget {
-    family: ServerFamily,
+    family: BackupFamily,
     host: String,
     port: u16,
     database: String,
@@ -272,7 +290,25 @@ pub struct ServerTarget {
     root_certificate: Option<PathBuf>,
 }
 
-#[derive(Debug)]
+impl Clone for ServerTarget {
+    fn clone(&self) -> Self {
+        Self {
+            family: self.family,
+            host: self.host.clone(),
+            port: self.port,
+            database: self.database.clone(),
+            user: self.user.clone(),
+            password: self
+                .password
+                .as_ref()
+                .map(|secret| Secret::new(secret.expose())),
+            tls: self.tls.clone(),
+            root_certificate: self.root_certificate.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum BackupTarget {
     Sqlite,
     Server(Box<ServerTarget>),
@@ -308,7 +344,7 @@ impl BackupTarget {
                 ssh,
                 ..
             } => (
-                ServerFamily::Postgres,
+                BackupFamily::Postgres,
                 proxy,
                 host,
                 port,
@@ -333,7 +369,7 @@ impl BackupTarget {
                 ssh,
                 ..
             } => (
-                ServerFamily::Mysql,
+                BackupFamily::Mysql,
                 proxy,
                 host,
                 port,
@@ -358,7 +394,7 @@ impl BackupTarget {
                 ssh,
                 ..
             } => (
-                ServerFamily::Mariadb,
+                BackupFamily::Mariadb,
                 proxy,
                 host,
                 port,
@@ -402,15 +438,16 @@ pub struct ToolCommand {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub env: Vec<(&'static str, String)>,
-    pub password: Option<(&'static str, Secret)>,
+    pub password_env: &'static str,
+    pub password: Option<Secret>,
     pub stdin: Option<PathBuf>,
 }
 
 impl ToolCommand {
     pub fn preview(&self) -> String {
         let mut parts = Vec::with_capacity(self.args.len() + 3);
-        if let Some((name, _)) = &self.password {
-            parts.push(format!("{name}=<hidden>"));
+        if self.password.is_some() {
+            parts.push(format!("{}=<hidden>", self.password_env));
         }
         parts.push(shell_word(&self.program.to_string_lossy()));
         parts.extend(self.args.iter().map(|arg| shell_word(arg)));
@@ -448,27 +485,34 @@ pub fn plan_backup(
     target: &BackupTarget,
     request: &BackupRequest,
     path: Option<&OsStr>,
-) -> Result<BackupPlan, String> {
+) -> Result<BackupPlan, DriverError> {
+    let invalid = |message: String| DriverError::new(ErrorKind::InvalidInput, message);
     match target {
-        BackupTarget::Unavailable(reason) => Err((*reason).to_owned()),
-        BackupTarget::Sqlite => plan_sqlite(request),
-        BackupTarget::Server(server) => {
-            check_file(request)?;
-            let program = find_tool(server.family, request, path)?;
-            Ok(BackupPlan::Tool(match server.family {
-                ServerFamily::Postgres => postgres_command(server, request, program)?,
-                ServerFamily::Mysql | ServerFamily::Mariadb => {
-                    mysql_command(server, request, program)?
-                }
-            }))
-        }
+        BackupTarget::Unavailable(reason) => Err(DriverError::new(ErrorKind::Unsupported, *reason)),
+        BackupTarget::Sqlite => match BackupFamily::Sqlite.unavailable(request.direction) {
+            Some(reason) => Err(DriverError::new(ErrorKind::Unsupported, reason)),
+            None => plan_sqlite(request).map_err(invalid),
+        },
+        BackupTarget::Server(server) => plan_server(server, request, path).map_err(invalid),
     }
 }
 
+fn plan_server(
+    server: &ServerTarget,
+    request: &BackupRequest,
+    path: Option<&OsStr>,
+) -> Result<BackupPlan, String> {
+    let chosen = request.chosen(server.family)?;
+    check_file(request)?;
+    let program = find_tool(server.family, request, path)?;
+    Ok(BackupPlan::Tool(match server.family {
+        BackupFamily::Postgres => postgres_command(server, request, &chosen, program)?,
+        _ => mysql_command(server, request, &chosen, program)?,
+    }))
+}
+
 fn plan_sqlite(request: &BackupRequest) -> Result<BackupPlan, String> {
-    if request.direction == BackupDirection::Restore {
-        return Err(SQLITE_RESTORE_UNAVAILABLE.to_owned());
-    }
+    request.chosen(BackupFamily::Sqlite)?;
     if request.file.exists() {
         return Err("Choose a new file. SQLite cannot back up into an existing file.".to_owned());
     }
@@ -496,19 +540,20 @@ fn check_file(request: &BackupRequest) -> Result<(), String> {
     }
 }
 
-fn tool_names(family: ServerFamily, direction: BackupDirection) -> &'static [&'static str] {
+fn tool_names(family: BackupFamily, direction: BackupDirection) -> &'static [&'static str] {
     match (family, direction) {
-        (ServerFamily::Postgres, BackupDirection::Backup) => &["pg_dump"],
-        (ServerFamily::Postgres, BackupDirection::Restore) => &["pg_restore"],
-        (ServerFamily::Mysql, BackupDirection::Backup) => &["mysqldump"],
-        (ServerFamily::Mysql, BackupDirection::Restore) => &["mysql"],
-        (ServerFamily::Mariadb, BackupDirection::Backup) => &["mariadb-dump", "mysqldump"],
-        (ServerFamily::Mariadb, BackupDirection::Restore) => &["mariadb", "mysql"],
+        (BackupFamily::Sqlite, _) => &[],
+        (BackupFamily::Postgres, BackupDirection::Backup) => &["pg_dump"],
+        (BackupFamily::Postgres, BackupDirection::Restore) => &["pg_restore"],
+        (BackupFamily::Mysql, BackupDirection::Backup) => &["mysqldump"],
+        (BackupFamily::Mysql, BackupDirection::Restore) => &["mysql"],
+        (BackupFamily::Mariadb, BackupDirection::Backup) => &["mariadb-dump", "mysqldump"],
+        (BackupFamily::Mariadb, BackupDirection::Restore) => &["mariadb", "mysql"],
     }
 }
 
 fn find_tool(
-    family: ServerFamily,
+    family: BackupFamily,
     request: &BackupRequest,
     path: Option<&OsStr>,
 ) -> Result<PathBuf, String> {
@@ -529,12 +574,8 @@ fn find_tool(
             return Ok(found);
         }
     }
-    let name = names[0];
-    let client = match family {
-        ServerFamily::Postgres => "PostgreSQL",
-        ServerFamily::Mysql => "MySQL",
-        ServerFamily::Mariadb => "MariaDB",
-    };
+    let name = names.first().copied().unwrap_or("The client tool");
+    let client = family.client();
     Err(match &request.tool_folder {
         Some(folder) => format!(
             "{name} is not in {}. Choose the folder that contains the {client} client tools.",
@@ -549,8 +590,11 @@ fn find_tool(
 fn database(server: &ServerTarget) -> Result<String, String> {
     match server.database.as_str() {
         "" => Err("Enter a database in the connection.".to_owned()),
-        name if name.starts_with('-') || name.contains('\0') => {
+        name if name.starts_with('-') => {
             Err("The database name cannot start with a hyphen.".to_owned())
+        }
+        name if name.contains('\0') => {
+            Err("The database name cannot contain a NUL character.".to_owned())
         }
         name => Ok(name.to_owned()),
     }
@@ -559,6 +603,7 @@ fn database(server: &ServerTarget) -> Result<String, String> {
 fn postgres_command(
     server: &ServerTarget,
     request: &BackupRequest,
+    chosen: &[BackupOption],
     program: PathBuf,
 ) -> Result<ToolCommand, String> {
     let database = database(server)?;
@@ -566,20 +611,23 @@ fn postgres_command(
         format!("--host={}", server.host),
         format!("--port={}", server.port),
         format!("--username={}", server.user),
-        format!("--dbname={database}"),
+        format!(
+            "--dbname=dbname='{}'",
+            database.replace('\\', "\\\\").replace('\'', "\\'")
+        ),
         "--no-password".to_owned(),
         "--verbose".to_owned(),
     ];
     match request.direction {
         BackupDirection::Backup => {
-            args.extend(request.flags(POSTGRES_BACKUP));
+            args.extend(flags(POSTGRES_BACKUP, chosen));
             args.push(format!("--file={}", path_text(&request.file)?));
         }
         BackupDirection::Restore => {
             if !postgres_archive(&request.file)? {
                 return Err("pg_restore needs a custom or tar archive. Run a plain SQL backup with Run SQL file.".to_owned());
             }
-            args.extend(request.flags(POSTGRES_RESTORE));
+            args.extend(flags(POSTGRES_RESTORE, chosen));
             args.push(path_text(&request.file)?);
         }
     }
@@ -601,7 +649,8 @@ fn postgres_command(
         program,
         args,
         env,
-        password: password("PGPASSWORD", server),
+        password_env: "PGPASSWORD",
+        password: password(server),
         stdin: None,
     })
 }
@@ -618,28 +667,28 @@ fn postgres_archive(file: &Path) -> Result<bool, String> {
 fn mysql_command(
     server: &ServerTarget,
     request: &BackupRequest,
+    chosen: &[BackupOption],
     program: PathBuf,
 ) -> Result<ToolCommand, String> {
     let database = database(server)?;
     let mut args = vec![
         format!("--host={}", server.host),
         format!("--port={}", server.port),
+        "--protocol=TCP".to_owned(),
         format!("--user={}", server.user),
     ];
     args.extend(mysql_tls(server)?);
     let stdin = match request.direction {
         BackupDirection::Backup => {
             args.push("--verbose".to_owned());
-            args.extend(request.flags(MYSQL_BACKUP));
+            args.extend(flags(MYSQL_BACKUP, chosen));
             args.push(format!("--result-file={}", path_text(&request.file)?));
             args.push(database);
             None
         }
         BackupDirection::Restore => {
             args.push(format!("--database={database}"));
-            if request.selected("force") {
-                args.push("--force".to_owned());
-            }
+            args.extend(flags(MYSQL_RESTORE, chosen));
             Some(request.file.clone())
         }
     };
@@ -647,7 +696,8 @@ fn mysql_command(
         program,
         args,
         env: Vec::new(),
-        password: password("MYSQL_PWD", server),
+        password_env: "MYSQL_PWD",
+        password: password(server),
         stdin,
     })
 }
@@ -655,9 +705,9 @@ fn mysql_command(
 fn mysql_tls(server: &ServerTarget) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = match (server.family, &server.tls) {
         (_, TlsMode::Prefer) => Vec::new(),
-        (ServerFamily::Mariadb, TlsMode::Disable) => vec!["--skip-ssl".into()],
-        (ServerFamily::Mariadb, TlsMode::Require) => vec!["--ssl".into()],
-        (ServerFamily::Mariadb, TlsMode::VerifyCa | TlsMode::VerifyFull) => {
+        (BackupFamily::Mariadb, TlsMode::Disable) => vec!["--skip-ssl".into()],
+        (BackupFamily::Mariadb, TlsMode::Require) => vec!["--ssl".into()],
+        (BackupFamily::Mariadb, TlsMode::VerifyCa | TlsMode::VerifyFull) => {
             vec!["--ssl".into(), "--ssl-verify-server-cert".into()]
         }
         (_, TlsMode::Disable) => vec!["--ssl-mode=DISABLED".into()],
@@ -671,11 +721,11 @@ fn mysql_tls(server: &ServerTarget) -> Result<Vec<String>, String> {
     Ok(args)
 }
 
-fn password(name: &'static str, server: &ServerTarget) -> Option<(&'static str, Secret)> {
+fn password(server: &ServerTarget) -> Option<Secret> {
     server
         .password
         .as_ref()
-        .map(|secret| (name, Secret::new(secret.expose())))
+        .map(|secret| Secret::new(secret.expose()))
 }
 
 fn path_text(path: &Path) -> Result<String, String> {

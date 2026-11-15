@@ -487,7 +487,6 @@ pub mod ffi {
         uses_tool: bool,
     }
     struct BackupRequestDto {
-        driver: String,
         restore: bool,
         file: String,
         tool_folder: String,

@@ -249,7 +249,6 @@ BackupForm EngineAdapter::backupForm(const QString& driver, bool restore) {
 std::optional<quint64> EngineAdapter::startBackup(quint64 connection, const BackupRequest& request,
                                                   QString* error) {
     BackupRequestDto dto;
-    dto.driver = toRust(request.driver);
     dto.restore = request.restore;
     dto.file = toRust(request.file);
     dto.tool_folder = toRust(request.toolFolder);

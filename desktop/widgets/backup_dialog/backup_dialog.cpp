@@ -164,7 +164,7 @@ void BackupDialog::start() {
         return;
     output_->clear();
     output_->show();
-    BackupRequest request{target_.driver, target_.restore, path_->text(), toolFolder_->text(), {}};
+    BackupRequest request{target_.restore, path_->text(), toolFolder_->text(), {}};
     for (const auto& option : options_)
         if (option.second->isChecked())
             request.options.append(option.first);

@@ -66,6 +66,7 @@ pub(crate) enum Command {
         run: crate::ExportId,
         request: Box<crate::BackupRequest>,
         cancellation: choscordb_export::Cancellation,
+        profile: Option<Arc<crate::profiles::ProfileBackup>>,
     },
     Export {
         export: crate::ExportId,
@@ -2076,11 +2077,12 @@ pub(crate) async fn run(
                 run,
                 request,
                 cancellation,
+                profile,
             } => {
                 close_active(active, &events).await;
                 backup::run(
                     connection.as_mut(),
-                    &backup_target,
+                    (&backup_target, profile.as_deref()),
                     run,
                     *request,
                     cancellation,

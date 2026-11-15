@@ -1151,11 +1151,41 @@ fn connection_budget(options: &ConnectionOptions) -> Duration {
     connection + Duration::from_secs(5)
 }
 
+pub(crate) struct ProfileBackup {
+    pub(crate) read_only: bool,
+    target: std::sync::Mutex<Option<crate::BackupTarget>>,
+}
+impl ProfileBackup {
+    fn record(&self, options: &ConnectionOptions) -> Result<(), DriverError> {
+        *self.target.lock().map_err(|_| backup_slot_error())? =
+            Some(crate::BackupTarget::from_options(options));
+        Ok(())
+    }
+    pub(crate) fn target(&self) -> Result<crate::BackupTarget, DriverError> {
+        self.target
+            .lock()
+            .map_err(|_| backup_slot_error())?
+            .clone()
+            .ok_or_else(|| {
+                DriverError::new(
+                    ErrorKind::Disconnected,
+                    "Connect to the database before a backup or restore.",
+                )
+            })
+    }
+}
+fn backup_slot_error() -> DriverError {
+    DriverError::new(
+        ErrorKind::Internal,
+        "The connection details for the backup are not available.",
+    )
+}
 struct ProfileDriver {
     inner: Arc<dyn DatabaseDriver>,
     commands: mpsc::Sender<Command>,
     references: CredentialReferences,
     read_only: bool,
+    backup: Arc<ProfileBackup>,
 }
 #[async_trait::async_trait]
 impl DatabaseDriver for ProfileDriver {
@@ -1197,6 +1227,7 @@ impl ProfileDriver {
         let budget = connection_budget(&options);
         tokio::time::timeout(budget, async {
             resolve_options(&self.commands, self.references.clone(), &mut options).await?;
+            self.backup.record(&options)?;
             let mut connection = self.inner.connect(options).await?;
             if self.read_only {
                 lock_read_only(connection.as_mut()).await?;
@@ -1258,11 +1289,17 @@ impl Engine {
             .get(id)
             .cloned()
             .ok_or(SubmitError::UnknownDriver)?;
+        let read_only = profile.safety == choscordb_storage::SafetyLevel::ReadOnly;
+        let backup = Arc::new(ProfileBackup {
+            read_only,
+            target: std::sync::Mutex::new(None),
+        });
         let driver = Arc::new(ProfileDriver {
             inner,
             commands: self.profiles.clone(),
             references: CredentialReferences::from_profile(&profile),
-            read_only: profile.safety == choscordb_storage::SafetyLevel::ReadOnly,
+            read_only,
+            backup: Arc::clone(&backup),
         });
         let connection = self.connect_driver_with_timeout(
             driver,
@@ -1272,6 +1309,7 @@ impl Engine {
             )),
         )?;
         self.connection_profiles.insert(connection, profile.id);
+        self.profile_backups.insert(connection, backup);
         Ok(connection)
     }
 }

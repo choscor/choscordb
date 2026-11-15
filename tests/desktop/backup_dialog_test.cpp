@@ -94,11 +94,9 @@ class BackupDialogTest : public QObject {
         auto* custom = dialog.findChild<QCheckBox*>("backupOption_custom_format");
         QVERIFY(custom && custom->isChecked());
         QVERIFY(!dialog.findChild<QCheckBox*>("backupOption_schema_only")->isChecked());
-        dialog.findChild<QCheckBox*>("backupOption_schema_only")->setChecked(true);
-        dialog.findChild<QCheckBox*>("backupOption_data_only")->setChecked(true);
-        dialog.findChild<QLineEdit*>("backupPath")->setText("/tmp/shop.dump");
+        dialog.findChild<QLineEdit*>("backupPath")->setText("shop.dump");
         dialog.findChild<QPushButton*>("backupStart")->click();
-        QVERIFY(status(&dialog).contains("Choose schema only or data only, not both."));
+        QVERIFY(status(&dialog).contains("Enter the full path of the file."));
         QCOMPARE(dialog.findChild<QPushButton*>("backupStart")->text(), QString("Retry"));
 
         choscordb::BackupDialog restore(&adapter, {1, "mysql", {}, "shop", true});
