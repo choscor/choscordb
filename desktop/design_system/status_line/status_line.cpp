@@ -321,11 +321,13 @@ void StatusLine::setMessage(const QString& message) {
 void StatusLine::refreshDetailsVisibility() {
     if (fullMessage_.isEmpty()) {
         details_->hide();
+        message_->setMinimumHeight(0);
         return;
     }
     const bool shortened = fullMessage_.size() > 240 || fullMessage_.contains(QLatin1Char('\n'));
-    const bool clipped =
-        message_->heightForWidth(qMax(1, message_->width())) > message_->maximumHeight();
+    const int textHeight = message_->heightForWidth(qMax(1, message_->width()));
+    message_->setMinimumHeight(qMin(textHeight, message_->maximumHeight()));
+    const bool clipped = textHeight > message_->maximumHeight();
     details_->setVisible(shortened || clipped);
 }
 void StatusLine::openDetails() {

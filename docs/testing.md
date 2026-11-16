@@ -18,6 +18,23 @@ Keep C++ tests on UI and bridge behavior.
 The usual test runs skip the live PostgreSQL and MySQL tests.
 These tests have the `#[ignore]` attribute and need a fixture from this page.
 
+## Dialog layout guard
+
+Each native test that links `choscordb-desktop` also links the dialog layout guard.
+The guard is in `tests/desktop/dialog_layout_guard.cpp`.
+It examines each dialog when the dialog shows and after each change to its layout.
+The test fails when the guard finds one of these problems:
+
+- A button or a label is smaller than its size hint. Thus the text is cut.
+- A field is smaller than its minimum size hint.
+- A label with word wrap is shorter than the height of its text.
+- A scroll area cannot show the full first row of its content.
+- A widget extends outside the dialog.
+- The dialog shows more than one primary button.
+
+To see each dialog, set `CHOSCORDB_DIALOG_CAPTURE_DIR` to a folder and run `ctest`.
+The guard writes a PNG file for each dialog to that folder.
+
 ## Rules for fixtures
 
 - Each fixture uses disposable credentials.

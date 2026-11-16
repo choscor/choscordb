@@ -27,13 +27,6 @@
 namespace choscordb {
 namespace {
 using bridge_detail::fromRust;
-QWidget* section(QWidget* parent, QFormLayout** form, design::DialogSections* sections) {
-    auto* widget = new QWidget(parent);
-    auto* layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(0, 0, 0, 0);
-    *form = sections->addForm(layout);
-    return widget;
-}
 }
 TableImportDialog::TableImportDialog(EngineAdapter* adapter, quint64 connection,
                                      TableImportRequest request, const QString& targetName,
@@ -50,7 +43,7 @@ TableImportDialog::TableImportDialog(EngineAdapter* adapter, quint64 connection,
     setObjectName("tableImportDialog");
     setWindowTitle(tr("Import data"));
     setAppModal();
-    resize(design::dialogInitialSize(design::DialogSize::Detail));
+    resize(design::dialogInitialSize(design::DialogSize::Profiles));
     path_->setObjectName("tableImportPath");
     browse_->setObjectName("tableImportBrowse");
     browse_->setVariant(design::ButtonVariant::Outline);
@@ -91,7 +84,16 @@ TableImportDialog::TableImportDialog(EngineAdapter* adapter, quint64 connection,
     scope->setWordWrap(true);
     bodyLayout->addWidget(scope);
 
-    auto* source = sections->addForm();
+    auto* split = new QHBoxLayout();
+    split->setSpacing(design::spacing(design::Spacing::Four));
+    auto* settings = new QVBoxLayout();
+    split->addLayout(settings, 2);
+    auto* review = new QVBoxLayout();
+    review->setSpacing(design::spacing(design::Spacing::Two));
+    split->addLayout(review, 3);
+    bodyLayout->addLayout(split, 1);
+
+    sourceForm_ = sections->addForm(settings);
     auto* pathRow = new QWidget(this);
     auto* pathLayout = new QHBoxLayout(pathRow);
     pathLayout->setContentsMargins(0, 0, 0, 0);
@@ -100,38 +102,33 @@ TableImportDialog::TableImportDialog(EngineAdapter* adapter, quint64 connection,
     pathLayout->addWidget(validation_, 1);
     pathLayout->addWidget(browse_, 0, Qt::AlignTop);
     browse_->setParent(pathRow);
-    sections->addFormRow(source, tr("File"), pathRow);
-    sections->addFormRow(source, tr("Format"), format_);
-    sections->addFormRow(source, tr("Encoding"), encoding_);
-    QFormLayout* csvForm = nullptr;
-    csvFields_ = section(this, &csvForm, sections);
-    sections->addFormRow(csvForm, tr("Delimiter"), delimiter_);
-    sections->addFormRow(csvForm, tr("Quote"), quote_);
-    sections->addFormRow(csvForm, tr("NULL text"), nullText_, design::FieldNeed::Optional);
-    csvForm->addRow(QString(), header_);
-    bodyLayout->addWidget(csvFields_);
-    QFormLayout* tableForm = nullptr;
-    tableNameRow_ = section(this, &tableForm, sections);
-    sections->addFormRow(tableForm, tr("New table"), tableName_);
-    tableNameRow_->setVisible(!base_.existing);
-    bodyLayout->addWidget(tableNameRow_);
-    QFormLayout* conflictForm = nullptr;
-    conflictRow_ = section(this, &conflictForm, sections);
-    sections->addFormRow(conflictForm, tr("On conflict"), conflict_);
-    conflictRow_->setVisible(base_.existing);
-    bodyLayout->addWidget(conflictRow_);
+    sections->addFormRow(sourceForm_, tr("File"), pathRow);
+    sections->addFormRow(sourceForm_, tr("Format"), format_);
+    sections->addFormRow(sourceForm_, tr("Encoding"), encoding_);
+    sections->addFormRow(sourceForm_, tr("Delimiter"), delimiter_);
+    sections->addFormRow(sourceForm_, tr("Quote"), quote_);
+    sections->addFormRow(sourceForm_, tr("NULL text"), nullText_, design::FieldNeed::Optional);
+    sourceForm_->addRow(QString(), header_);
+    sections->addFormRow(sourceForm_, tr("New table"), tableName_);
+    sourceForm_->setRowVisible(tableName_, !base_.existing);
+    sections->addFormRow(sourceForm_, tr("On conflict"), conflict_);
+    sourceForm_->setRowVisible(conflict_, base_.existing);
+    settings->addStretch(1);
 
     previewSummary_ = createDescription(QString(), body);
     previewSummary_->setObjectName("tableImportPreviewSummary");
-    bodyLayout->addWidget(previewSummary_);
+    review->addWidget(previewSummary_);
     preview_->setModel(previewModel_);
     preview_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     preview_->setWordWrap(false);
     preview_->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
     design::configureDataTable(*preview_);
-    bodyLayout->addWidget(preview_, 1);
+    preview_->setMinimumHeight(preview_->horizontalHeader()->sizeHint().height() +
+                               3 * preview_->verticalHeader()->defaultSectionSize() +
+                               2 * preview_->frameWidth());
+    review->addWidget(preview_, 2);
 
-    bodyLayout->addWidget(createDescription(
+    review->addWidget(createDescription(
         base_.existing ? tr("Choose the file column for each table column.")
                        : tr("Choose the file columns and the names of the new columns."),
         body));
@@ -144,9 +141,9 @@ TableImportDialog::TableImportDialog(EngineAdapter* adapter, quint64 connection,
     mappingFields_->setAutoFillBackground(false);
     mappingForm_ = new QFormLayout(mappingFields_);
     design::DialogSections::configureForm(mappingForm_);
-    bodyLayout->addWidget(mappingScroll, 1);
+    review->addWidget(mappingScroll, 1);
 
-    bodyLayout->addWidget(createDescription(tr("SQL to execute for each row"), body));
+    review->addWidget(createDescription(tr("SQL to execute for each row"), body));
     sqlPreview_->setObjectName("tableImportSql");
     sqlPreview_->setAccessibleName(tr("SQL preview"));
     sqlPreview_->setReadOnly(true);
@@ -154,7 +151,7 @@ TableImportDialog::TableImportDialog(EngineAdapter* adapter, quint64 connection,
     sqlPreview_->setFont(
         design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
     sqlPreview_->setFrameShape(QFrame::NoFrame);
-    bodyLayout->addWidget(sqlPreview_);
+    review->addWidget(sqlPreview_, 1);
 
     statusLine_ = sections->addStatusLine();
     statusLine_->setObjectName("tableImportStatusLine");
@@ -304,10 +301,16 @@ void TableImportDialog::updateReview() {
 }
 void TableImportDialog::updateActions() {
     const bool running = isRunning();
-    csvFields_->setVisible(format_->currentData(CsvOptionsRole).toBool());
-    for (QWidget* field : {static_cast<QWidget*>(path_), static_cast<QWidget*>(browse_),
-                           static_cast<QWidget*>(format_), static_cast<QWidget*>(encoding_),
-                           csvFields_, tableNameRow_, conflictRow_, mappingFields_})
+    const bool csv = format_->currentData(CsvOptionsRole).toBool();
+    for (QWidget* field : {static_cast<QWidget*>(delimiter_), static_cast<QWidget*>(quote_),
+                           static_cast<QWidget*>(nullText_), static_cast<QWidget*>(header_)})
+        sourceForm_->setRowVisible(field, csv);
+    for (QWidget* field :
+         {static_cast<QWidget*>(path_), static_cast<QWidget*>(browse_),
+          static_cast<QWidget*>(format_), static_cast<QWidget*>(encoding_),
+          static_cast<QWidget*>(delimiter_), static_cast<QWidget*>(quote_),
+          static_cast<QWidget*>(nullText_), static_cast<QWidget*>(header_),
+          static_cast<QWidget*>(tableName_), static_cast<QWidget*>(conflict_), mappingFields_})
         field->setEnabled(!running);
     const bool targetReady = !base_.existing || !tableColumns_.isEmpty();
     start_->setEnabled(adapter_ && !running && targetReady && !fileColumns_.isEmpty());

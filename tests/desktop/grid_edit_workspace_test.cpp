@@ -10,6 +10,7 @@
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/table/table_style.h"
 #include "design_system/toast_region/toast_region.h"
+#include "dialog_layout_guard.h"
 #include "dialog_sections_checks.h"
 #include "models/result_table_model.h"
 #include "widgets/export_dialog/export_dialog.h"
@@ -816,6 +817,17 @@ class GridEditWorkspaceTest : public QObject {
             auto* dialog =
                 qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
             QVERIFY(dialog);
+            QStringList labels;
+            for (auto* button : dialog->buttons())
+                if (button->isVisible())
+                    labels << button->text();
+            labels.sort();
+            QCOMPARE(labels, QStringList({"Apply changes…", "Cancel", "Discard changes"}));
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+            for (auto* button : dialog->buttons())
+                QCOMPARE(button->y(), dialog->buttons().constFirst()->y());
+            const auto problems = choscordb::test::dialogLayoutProblems(*dialog);
+            QVERIFY2(problems.isEmpty(), qPrintable(problems.join('\n')));
             for (auto* button : dialog->buttons())
                 if (button->text() == "Discard changes") {
                     button->click();

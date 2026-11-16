@@ -23,4 +23,5 @@ QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabl
 
 QLabel[designRole="fieldError"] {
   font-size: @font-callout;
+  color: @text-kumo-danger;
 }

@@ -32,6 +32,7 @@ class DialogShell : public QDialog {
 
   protected:
     [[nodiscard]] bool confirmDiscardDraft();
+    bool event(QEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void hideEvent(QHideEvent* event) override;

@@ -262,6 +262,22 @@ void QuickSearchDialog::updateStatus() {
         messages << statusMessage_;
     status_->setText(messages.join(QStringLiteral("  ")));
     status_->setAccessibleDescription(status_->text());
+    if (isVisible()) {
+        status_->parentWidget()->layout()->activate();
+        fitHeight(width());
+    }
+}
+
+bool QuickSearchDialog::event(QEvent* event) {
+    const bool handled = QDialog::event(event);
+    if (event->type() == QEvent::LayoutRequest && isVisible())
+        fitHeight(width());
+    return handled;
+}
+
+void QuickSearchDialog::fitHeight(int width) {
+    const int height = hasHeightForWidth() ? heightForWidth(width) : -1;
+    resize(width, height > 0 ? height : sizeHint().height());
 }
 
 void QuickSearchDialog::openSearch() {
@@ -352,7 +368,7 @@ void QuickSearchDialog::showEvent(QShowEvent* event) {
                           ? qMin(dimension(Dimension::QuickSearchWidth),
                                  qMax(1, parentWidget()->width() - spacing(Spacing::Eight)))
                           : dimension(Dimension::QuickSearchWidth);
-    resize(width, sizeHint().height());
+    fitHeight(width);
     refreshSearchIcon();
     QDialog::showEvent(event);
     presentation_.shown();

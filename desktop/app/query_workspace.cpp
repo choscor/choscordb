@@ -350,7 +350,7 @@ bool QueryWorkspace::resolvePendingEdits() {
         return true;
     ConfirmationDialog box(QMessageBox::Warning, tr("Pending grid changes"),
                            tr("Apply or discard the staged grid changes before continuing."),
-                           QMessageBox::NoButton, widgets_.dialogParent);
+                           QMessageBox::Cancel, widgets_.dialogParent);
     auto* discard =
         box.addActionButton(tr("Discard changes"), ConfirmationDialog::Consequence::Destructive);
     auto* apply = box.addActionButton(tr("Apply changes…"), ConfirmationDialog::Consequence::Safe);

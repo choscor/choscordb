@@ -144,10 +144,20 @@ void DialogShell::paintEvent(QPaintEvent*) {
     design::paintDialogSurface(*this, property("embeddedModal").toBool() || isModal());
 }
 
+bool DialogShell::event(QEvent* event) {
+    const bool handled = QDialog::event(event);
+    if (event->type() == QEvent::LayoutRequest)
+        ensureContentHeight();
+    return handled;
+}
+
 void DialogShell::ensureContentHeight() {
-    if (auto* root = layout(); root && root->hasHeightForWidth()) {
-        setMinimumHeight(root->totalMinimumHeightForWidth(width()));
-    }
+    auto* root = layout();
+    if (!root)
+        return;
+    const int contentHeight = root->hasHeightForWidth() ? root->totalMinimumHeightForWidth(width())
+                                                        : root->totalMinimumSize().height();
+    setMinimumHeight(qMin(contentHeight, maximumHeight()));
 }
 
 }

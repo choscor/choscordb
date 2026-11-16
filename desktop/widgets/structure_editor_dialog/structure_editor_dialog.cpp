@@ -32,7 +32,7 @@ StructureEditorDialog::StructureEditorDialog(EngineAdapter* adapter, quint64 con
     const auto title = base_.existing ? tr("Edit structure") : tr("Design new table");
     setWindowTitle(title);
     setAppModal();
-    resize(design::dialogInitialSize(design::DialogSize::Detail));
+    resize(design::dialogInitialSize(design::DialogSize::Profiles));
 
     auto* sections = createSections();
     auto* heading = new design::Text(title, sections->headerLayout()->parentWidget());
@@ -50,7 +50,10 @@ StructureEditorDialog::StructureEditorDialog(EngineAdapter* adapter, quint64 con
         body);
     scope->setObjectName("structureEditorScope");
     scope->setWordWrap(true);
-    bodyLayout->addWidget(scope);
+    auto* scopeRow = new QHBoxLayout();
+    scopeRow->setSpacing(design::spacing(design::Spacing::Four));
+    scopeRow->addWidget(scope, 1);
+    bodyLayout->addLayout(scopeRow);
     if (!base_.existing) {
         auto* form = sections->addForm();
         tableName_ = new QLineEdit(this);
@@ -73,7 +76,7 @@ StructureEditorDialog::StructureEditorDialog(EngineAdapter* adapter, quint64 con
         action->setToolTip(kind.unavailable);
         connect(action, &QAction::triggered, this, [this, kind] { addChange(kind); });
     }
-    bodyLayout->addWidget(add_, 0, Qt::AlignLeft);
+    scopeRow->addWidget(add_, 0, Qt::AlignTop);
 
     changeList_ = new QWidget(this);
     changeList_->setObjectName("structureEditorChanges");
@@ -91,7 +94,13 @@ StructureEditorDialog::StructureEditorDialog(EngineAdapter* adapter, quint64 con
     scroll->setWidgetResizable(true);
     scroll->viewport()->setAutoFillBackground(false);
     scroll->setWidget(changeList_);
-    bodyLayout->addWidget(scroll, 1);
+    auto* split = new QHBoxLayout();
+    split->setSpacing(design::spacing(design::Spacing::Four));
+    split->addWidget(scroll, 3);
+    auto* sqlColumn = new QVBoxLayout();
+    sqlColumn->setSpacing(design::spacing(design::Spacing::Two));
+    split->addLayout(sqlColumn, 2);
+    bodyLayout->addLayout(split, 1);
 
     error_ = new QLabel(body);
     error_->setObjectName("structureEditorError");
@@ -99,7 +108,7 @@ StructureEditorDialog::StructureEditorDialog(EngineAdapter* adapter, quint64 con
     error_->setWordWrap(true);
     error_->hide();
     bodyLayout->addWidget(error_);
-    bodyLayout->addWidget(createDescription(tr("SQL to execute"), body));
+    sqlColumn->addWidget(createDescription(tr("SQL to execute"), body));
     sqlPreview_ = new QPlainTextEdit(body);
     sqlPreview_->setObjectName("structureEditorSql");
     sqlPreview_->setAccessibleName(tr("SQL preview"));
@@ -108,7 +117,7 @@ StructureEditorDialog::StructureEditorDialog(EngineAdapter* adapter, quint64 con
     sqlPreview_->setFont(
         design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
     sqlPreview_->setFrameShape(QFrame::NoFrame);
-    bodyLayout->addWidget(sqlPreview_);
+    sqlColumn->addWidget(sqlPreview_, 1);
 
     statusLine_ = sections->addStatusLine();
     statusLine_->setObjectName("structureEditorStatusLine");

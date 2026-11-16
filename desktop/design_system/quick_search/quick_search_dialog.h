@@ -67,6 +67,7 @@ class QuickSearchDialog final : public QDialog {
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void showEvent(QShowEvent* event) override;
@@ -77,6 +78,7 @@ class QuickSearchDialog final : public QDialog {
     void updateSelectedAccessibility();
     void updateStatus();
     void refreshSearchIcon();
+    void fitHeight(int width);
 
     DialogPresentation presentation_;
     QLabel* searchIcon_ = nullptr;

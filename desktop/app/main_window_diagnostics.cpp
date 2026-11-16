@@ -406,7 +406,7 @@ void MainWindow::showDiagnosticsExport() {
                         });
                 });
         });
-    dialog->resize(design::dialogInitialSize(design::DialogSize::Form));
+    dialog->resize(design::dialogInitialSize(design::DialogSize::Preferences));
     dialog->open();
     if (diagnostics_) {
         auto* task = new BackgroundTask<DiagnosticSummary>(this);

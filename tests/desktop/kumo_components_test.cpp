@@ -437,6 +437,20 @@ class KumoComponentsTest final : public QObject {
         QCOMPARE(badges[1]->palette().color(QPalette::WindowText), colors.textBadgeNeutralSubtle);
         QCOMPARE(badges[3]->palette().color(QPalette::WindowText), colors.textDanger);
     }
+    void fieldErrorRoleUsesTheDangerTextColor() {
+        using namespace choscordb::design;
+        QWidget owner;
+        ThemeManager theme;
+        theme.applyTo(owner);
+        auto* layout = new QVBoxLayout(&owner);
+        auto* error = new QLabel("Enter a value for Name.", &owner);
+        error->setProperty("designRole", "fieldError");
+        layout->addWidget(error);
+        owner.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&owner));
+        const auto colors = resolvedThemeForWidget(owner).colors;
+        QCOMPARE(error->palette().color(QPalette::WindowText), colors.textDanger);
+    }
     void keyHintsUseTheKumoInlineCode() {
         using namespace choscordb::design;
         QWidget owner;

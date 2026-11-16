@@ -2,6 +2,7 @@
 #include "design_system/button/button.h"
 #include "design_system/dialog_sections/dialog_sections.h"
 #include "design_system/field/field.h"
+#include "design_system/metrics/metrics.h"
 #include "design_system/text/text.h"
 #include <QFutureWatcher>
 #include <QLabel>
@@ -17,6 +18,7 @@ TextPromptDialog::TextPromptDialog(const TextPrompt& prompt, Work work, QWidget*
     setObjectName(prompt.objectName);
     setWindowTitle(prompt.title);
     setAppModal();
+    resize(design::dialogInitialSize(design::DialogSize::Short));
     auto* sections = createSections();
     auto* heading = new design::Text(prompt.title, sections->headerLayout()->parentWidget());
     heading->setTextStyle(design::TextStyle::Headline);

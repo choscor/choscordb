@@ -184,10 +184,6 @@ void ConfirmationDialog::prepareContent() {
         button->style()->unpolish(button);
         button->style()->polish(button);
     }
-    const int referenceWidth = design::dialogInitialSize(design::DialogSize::Short).width();
-    const int width = parentWidget()
-                          ? qMin(referenceWidth, qMax(1, parentWidget()->window()->width() - 32))
-                          : referenceWidth;
     const int screenHeight = screen()->availableGeometry().height() - 32;
     const int availableHeight =
         parentWidget() ? qMin(screenHeight, parentWidget()->window()->height() - 32) : screenHeight;
@@ -203,11 +199,28 @@ void ConfirmationDialog::prepareContent() {
             }
             row->invalidate();
         }
-        if (buttonBox->sizeHint().width() > width - 2 * padding) {
-            buttonBox->setOrientation(Qt::Vertical);
-        }
     }
+    const int maximumWidth = parentWidget() ? qMax(1, parentWidget()->window()->width() - 32)
+                                            : screen()->availableGeometry().width() - 32;
+    int width = qMin(design::dialogInitialSize(design::DialogSize::Short).width(), maximumWidth);
     setFixedWidth(width);
+    if (auto* buttonBox = findChild<QDialogButtonBox*>()) {
+        buttonBox->setOrientation(Qt::Horizontal);
+        int buttonsWidth = 0;
+        for (auto* button : buttons()) {
+            if (button->isVisibleTo(this))
+                buttonsWidth += button->sizeHint().width() +
+                                (buttonsWidth ? design::spacing(design::Spacing::Two) : 0);
+        }
+        layout()->activate();
+        const int neededWidth = width - buttonBox->width() + buttonsWidth;
+        if (neededWidth > width) {
+            width = qMin(neededWidth, maximumWidth);
+            setFixedWidth(width);
+        }
+        if (neededWidth > width)
+            buttonBox->setOrientation(Qt::Vertical);
+    }
     if (bodyScroll_) {
         layout()->invalidate();
         layout()->activate();
