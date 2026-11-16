@@ -1,5 +1,8 @@
 #include "app/main_window.h"
 #include "app/workspace_recovery.h"
+#include "bridge/completion_service.h"
+#include "bridge/rust_text.h"
+#include "choscordb-bridge/src/lib.rs.h"
 #include "design_system/confirmation_dialog/confirmation_dialog.h"
 #include "design_system/menu/embedded_popup.h"
 #include "design_system/status_line/status_line.h"
@@ -355,13 +358,34 @@ void NavigatorSqlWorkspaceTest::savedQueryFoldersSortAndKeywordSnippets() {
     QVERIFY(completion);
     auto* popup = completion->findChild<QCompleter*>()->popup();
     completion->requestCompletion();
-    QTRY_VERIFY2(popup->isVisible(),
-                 qPrintable(QString("focus=%1 cursor=%2 anchor=%3 rows=%4 text=%5")
-                                .arg(editor->hasFocus())
-                                .arg(editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS))
-                                .arg(editor->SendScintilla(QsciScintilla::SCI_GETANCHOR))
-                                .arg(popup->model()->rowCount())
-                                .arg(editor->text())));
+    const auto completionState = [&] {
+        const auto root = storage.filePath("sql").toUtf8();
+        const auto listing = choscordb::saved_sql_list_directory(
+            choscordb::bridge_detail::utf8View(root), choscordb::bridge_detail::utf8View("name"));
+        QList<choscordb::CompletionCandidate> snippets;
+        QStringList labels;
+        for (const auto& snippet : listing.snippets) {
+            snippets.append({choscordb::bridge_detail::fromRust(snippet.label),
+                             choscordb::bridge_detail::fromRust(snippet.insert_text),
+                             choscordb::bridge_detail::fromRust(snippet.kind)});
+            labels << snippets.constLast().label + "/" + snippets.constLast().kind;
+        }
+        const auto page = choscordb::CompletionService(snippets).complete("pick", 4, true);
+        QStringList items;
+        for (const auto& item : page.items)
+            items << item.label;
+        return QString("focus=%1 cursor=%2 anchor=%3 rows=%4 text=%5 error=%6 snippets=[%7] "
+                       "valid=%8 items=[%9]")
+            .arg(editor->hasFocus())
+            .arg(editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS))
+            .arg(editor->SendScintilla(QsciScintilla::SCI_GETANCHOR))
+            .arg(popup->model()->rowCount())
+            .arg(editor->text(), choscordb::bridge_detail::fromRust(listing.error),
+                 labels.join(','))
+            .arg(page.valid)
+            .arg(items.join(','));
+    };
+    QTRY_VERIFY2(popup->isVisible(), qPrintable(completionState()));
     QVERIFY2(popup->model()->index(0, 0).data().toString().startsWith("pick_a"),
              qPrintable(popup->model()->index(0, 0).data().toString()));
     QTest::keyClick(popup, Qt::Key_Return);
