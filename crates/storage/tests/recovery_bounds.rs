@@ -56,9 +56,16 @@ fn mixed_workspace_round_trips_order_active_pane_and_legacy_sql() {
     };
     store.save_workspace_tabs(&distinct).unwrap();
     assert_eq!(store.restore_workspace_tabs().unwrap(), distinct);
+    let mut triggers_pane = distinct.clone();
+    if let WorkspaceTab::Object(object) = &mut triggers_pane.tabs[1] {
+        object.pane = 6;
+    }
+    store.save_workspace_tabs(&triggers_pane).unwrap();
+    assert_eq!(store.restore_workspace_tabs().unwrap(), triggers_pane);
+    store.save_workspace_tabs(&distinct).unwrap();
     let mut invalid_pane = distinct.clone();
     if let WorkspaceTab::Object(object) = &mut invalid_pane.tabs[1] {
-        object.pane = 6;
+        object.pane = 7;
     }
     assert!(store.save_workspace_tabs(&invalid_pane).is_err());
     assert_eq!(store.restore_workspace_tabs().unwrap(), distinct);
