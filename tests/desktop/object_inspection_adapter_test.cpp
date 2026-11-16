@@ -94,8 +94,44 @@ class ObjectInspectionAdapterTest final : public QObject {
         adapter.loadObjectInspection(*connection, R"(["main","missing"])",
                                      ObjectInspectionPane::Columns, 16);
         adapter.loadObjectInspection(*connection, object, ObjectInspectionPane::Columns, 17);
-        QTRY_COMPARE(ready.count(), 1);
-        QCOMPARE(ready.at(0).at(2).toULongLong(), quint64(17));
+        QTRY_COMPARE(ready.count() + failed.count(), 2);
+        QCOMPARE(ready.takeFirst().at(2).toULongLong(), quint64(17));
+        QCOMPARE(failed.takeFirst().at(2).toULongLong(), quint64(16));
+    }
+    void eachInspectionRequestGetsItsOwnReply() {
+        EngineAdapter adapter;
+        bool connected = false;
+        int finished = 0;
+        connect(&adapter, &EngineAdapter::eventReady, this, [&](const BridgeEvent& event) {
+            if (event.kind == "connected")
+                connected = true;
+            if (event.kind == "query_finished")
+                ++finished;
+        });
+        const auto connection = adapter.connectSqlite(":memory:");
+        QVERIFY(connection);
+        QTRY_VERIFY(connected);
+        for (const char* sql :
+             {"CREATE TABLE first (id INTEGER)", "CREATE TABLE second (id INTEGER)"}) {
+            const auto create = adapter.execute(*connection, sql);
+            QVERIFY(create);
+            adapter.fetchPage(*create);
+        }
+        QTRY_COMPARE(finished, 2);
+        QSignalSpy ready(&adapter, &EngineAdapter::objectInspectionReady);
+        QSignalSpy failed(&adapter, &EngineAdapter::objectInspectionFailed);
+        const QString first = R"(["main","first"])";
+        adapter.loadObjectInspection(*connection, first, ObjectInspectionPane::Indexes, 21);
+        adapter.loadObjectInspection(*connection, R"(["main","second"])",
+                                     ObjectInspectionPane::Indexes, 22);
+        adapter.loadObjectInspection(*connection, first, ObjectInspectionPane::Keys, 23);
+        adapter.loadObjectInspection(*connection, first, ObjectInspectionPane::Keys, 24);
+        QTRY_COMPARE(ready.count(), 4);
+        QList<quint64> tokens;
+        for (const auto& reply : ready)
+            tokens.append(reply.at(2).toULongLong());
+        std::sort(tokens.begin(), tokens.end());
+        QCOMPARE(tokens, (QList<quint64>{21, 22, 23, 24}));
         QCOMPARE(failed.count(), 0);
     }
 };

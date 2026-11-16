@@ -328,17 +328,31 @@ The panel shows the keyword errors of the listing.
 
 ### Structure editor
 
-The navigator "Edit structure…" item on a table and "Design new table…" on a connection, database or schema open the structure editor.
+The navigator "Edit structure…" item on a table opens the object tab of the table and starts the structure edit mode.
+The "Edit structure" button on the object tab starts the same mode.
+The mode shows the structure editor below the Columns, Indexes and Keys panes. It does not open a dialog.
+"Design new table…" on a connection, database or schema opens the structure editor in a dialog, because a new table has no object tab.
+`StructureEditor` in `desktop/widgets/structure_editor/` is the one editor for the mode and the dialog.
 `structure_edit_unavailable` in `core` permits only plain tables.
 `StructureChangeKind` in `driver-api` gives the changes and the fields of each change.
 The changes add, change or drop a column, add or drop an index, set the primary key, add a foreign key or drop a key.
+`StructureChangeKind::pane` gives the pane of each change: Columns, Indexes or Keys. The "Add change" menu of the mode shows only the changes of the current pane.
 `StructureChangeKind::unavailable` gives the reason when a driver cannot do a change. SQLite needs a table rebuild for a primary key, a foreign key or a dropped key. A new table permits only the changes that create columns, indexes and keys.
-The dialog makes one form for each change from the field descriptors. It does not know the SQL rules.
+The editor makes one form for each change from the field descriptors. It does not know the SQL rules.
 `plan_structure` makes the SQL for each driver. A new table gets one `CREATE TABLE` with its columns and constraints, then the comments and the indexes.
-The dialog shows the SQL before Apply. The SQL comes from `structure_plan` in the bridge, and `apply_structure` makes the same plan again in Rust.
+The editor shows the SQL before Apply. The SQL comes from `structure_plan` in the bridge, and `apply_structure` makes the same plan again in Rust.
+In the mode, "Apply…" makes the plan again and shows the SQL in the review dialog of `desktop/widgets/sql_review_dialog/`. Grid edits use the same review dialog. "Apply changes" in the review dialog applies the changes.
+Apply runs only when the plan is equal to the reviewed SQL. If the plan changed, the editor shows an error and you must review the SQL again.
+The mode uses the shortcuts of the grid commands `grid_apply_edits` and `grid_discard_edits`. A change of these shortcuts in the preferences also changes the shortcuts of the mode.
+"Discard" stops the mode. If the mode has staged changes, a confirmation asks before it discards them.
+When you close the tab or the window, the same confirmation asks before it discards staged structure changes. During Apply, the tab and the window stay open until Apply completes.
+If the connection closes, the mode keeps the staged changes and shows the error. Apply is not available. If Apply was in progress, the error tells you that the outcome is unknown.
+The editor shows each error in its error label. The status line of the "Design new table" dialog shows only progress.
+If Apply fails, the editor shows the error and loads the table structure again, because MySQL and MariaDB keep the statements before the failure. The object tab and the navigator load again.
+`EngineAdapter::loadObjectInspection` sends a reply for each request token. A new request does not cancel an older request.
 `Engine::apply_ddl` sends one `ApplyDdl` command. The actor runs the statements in order and stops at the first failure.
 The error message starts with `Statement N:`. MySQL and MariaDB commit each DDL statement, so the statements before the failure stay applied.
-After Apply, the navigator loads the children of the table or the parent again.
+After Apply, the navigator loads the children of the table or the parent again. The object tab loads the current pane again and stops the mode.
 
 ### Result tabs for each statement
 

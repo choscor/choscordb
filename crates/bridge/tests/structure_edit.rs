@@ -80,6 +80,20 @@ fn change_kinds_describe_their_fields_and_the_driver_limits() {
             .unavailable
             .is_empty()
     );
+    let panes: Vec<_> = kinds.iter().map(|kind| kind.pane).collect();
+    assert_eq!(
+        panes,
+        [
+            ffi::StructurePaneDto::Columns,
+            ffi::StructurePaneDto::Columns,
+            ffi::StructurePaneDto::Columns,
+            ffi::StructurePaneDto::Indexes,
+            ffi::StructurePaneDto::Indexes,
+            ffi::StructurePaneDto::Keys,
+            ffi::StructurePaneDto::Keys,
+            ffi::StructurePaneDto::Keys
+        ]
+    );
     assert!(structure_types("mariadb").contains(&"VARCHAR(255)".to_string()));
     assert!(structure_types("oracle").is_empty());
     assert_eq!(

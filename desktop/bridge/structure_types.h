@@ -5,6 +5,7 @@
 #include <utility>
 
 namespace choscordb {
+enum class ObjectInspectionPane { Columns = 0, Indexes = 1, Keys = 2, Ddl = 3, Triggers = 6 };
 struct CodeLabel {
     QString code;
     QString label;
@@ -16,6 +17,7 @@ struct StructureField {
 };
 struct StructureChangeKindInfo {
     QString code, label, unavailable;
+    ObjectInspectionPane pane = ObjectInspectionPane::Columns;
     QList<StructureField> fields;
 };
 struct StructureColumn {

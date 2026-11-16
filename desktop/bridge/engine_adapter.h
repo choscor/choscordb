@@ -580,7 +580,6 @@ struct SqlGate {
     SqlGateDecision decision = SqlGateDecision::Reject;
     QString title, message, accept;
 };
-enum class ObjectInspectionPane { Columns = 0, Indexes = 1, Keys = 2, Ddl = 3, Triggers = 6 };
 enum class MetadataAvailability { Available, Unsupported, Unavailable };
 struct ObjectProperty {
     QString name, value;

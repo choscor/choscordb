@@ -3,8 +3,8 @@ use crate::{BridgeEngine, ffi, submit, unpack};
 use choscordb_core::structure_edit_unavailable;
 use choscordb_driver_api::GridEditDriver;
 use choscordb_driver_api::{
-    StructureChange, StructureChangeKind, StructureColumn, StructureKey, StructureTable,
-    plan_structure, structure_change_summary,
+    StructureChange, StructureChangeKind, StructureColumn, StructureKey, StructurePane,
+    StructureTable, plan_structure, structure_change_summary,
 };
 use std::collections::BTreeMap;
 
@@ -26,6 +26,11 @@ pub fn structure_change_kinds(driver: &str, new_table: bool) -> Vec<ffi::Structu
         .map(|kind| ffi::StructureChangeKindDto {
             code: kind.code().into(),
             label: kind.label().into(),
+            pane: match kind.pane() {
+                StructurePane::Columns => ffi::StructurePaneDto::Columns,
+                StructurePane::Indexes => ffi::StructurePaneDto::Indexes,
+                StructurePane::Keys => ffi::StructurePaneDto::Keys,
+            },
             unavailable: match &driver {
                 Ok(driver) => kind
                     .unavailable(*driver, new_table)

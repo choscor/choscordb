@@ -159,12 +159,14 @@ class QueryWorkspace final : public QObject {
     bool navigationAllowed() const { return !workInFlight() && !stopping_; }
     QueryState executionState() const { return executionState_; }
     void setGridShortcut(const QString& id, const QKeySequence& primary);
+    QList<QKeySequence> gridShortcutKeys(GridCommand command) const;
     void formatSql(bool minify, quint8 indent, bool uppercaseKeywords);
     void toggleSqlComment(bool block);
     void setColumnContext(const QString& context);
   signals:
     void connectionReady(quint64 connection);
     void databaseSwitched(quint64 connection);
+    void gridShortcutsChanged();
     void connectionNotice(const QString& notice);
     void documentTargetChanged();
     void openQueryRequested(quint64 connection);

@@ -1,6 +1,6 @@
 use choscordb_driver_api::{
     GridEditDriver, StructureChange, StructureChangeKind, StructureColumn, StructureKey,
-    StructureTable, plan_structure, structure_change_summary,
+    StructurePane, StructureTable, plan_structure, structure_change_summary,
 };
 use std::collections::BTreeMap;
 
@@ -367,4 +367,25 @@ fn each_field_names_its_input_and_the_table_names_it_offers() {
     );
     assert_eq!(inputs(K::AddColumn)[1], ("type", "editable_choice", ""));
     assert_eq!(inputs(K::ChangeColumn)[3], ("nullability", "choice", ""));
+}
+
+#[test]
+fn each_change_kind_belongs_to_one_structure_pane() {
+    let panes: Vec<_> = StructureChangeKind::ALL
+        .into_iter()
+        .map(|kind| (kind.code(), kind.pane()))
+        .collect();
+    assert_eq!(
+        panes,
+        [
+            ("add_column", StructurePane::Columns),
+            ("change_column", StructurePane::Columns),
+            ("drop_column", StructurePane::Columns),
+            ("add_index", StructurePane::Indexes),
+            ("drop_index", StructurePane::Indexes),
+            ("primary_key", StructurePane::Keys),
+            ("add_foreign_key", StructurePane::Keys),
+            ("drop_key", StructurePane::Keys),
+        ]
+    );
 }

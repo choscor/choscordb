@@ -1475,9 +1475,16 @@ pub mod ffi {
         required: bool,
         choices: Vec<CodeLabelDto>,
     }
+    #[derive(Debug)]
+    enum StructurePaneDto {
+        Columns,
+        Indexes,
+        Keys,
+    }
     struct StructureChangeKindDto {
         code: String,
         label: String,
+        pane: StructurePaneDto,
         unavailable: String,
         fields: Vec<StructureFieldDto>,
     }

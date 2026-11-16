@@ -815,12 +815,6 @@ bool EngineAdapter::inspectResultCells(quint64 connection, const QString& object
 }
 void EngineAdapter::loadObjectInspection(quint64 connection, const QString& object,
                                          ObjectInspectionPane pane, quint64 requestToken) {
-    for (auto it = d_->inspections.begin(); it != d_->inspections.end();) {
-        if (it->connection == connection && it->pane == pane)
-            it = d_->inspections.erase(it);
-        else
-            ++it;
-    }
     const auto token = d_->nextInspectionToken++;
     const auto bytes = object.toUtf8();
     d_->inspections.insert(token, {connection, requestToken, object, pane});

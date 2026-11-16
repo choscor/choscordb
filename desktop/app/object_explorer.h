@@ -23,6 +23,7 @@ class StatusLine;
 }
 class EngineAdapter;
 class ObjectErdWidget;
+class ObjectStructureMode;
 struct ObjectGraph;
 struct ObjectInspection;
 class ObjectExplorer final : public QWidget {
@@ -48,6 +49,9 @@ class ObjectExplorer final : public QWidget {
     void showNotice(const QString& message, bool busy = false);
     PanelState panelState() const { return panelState_; }
     void showError(const QString& message);
+    ObjectStructureMode* structureMode() const { return structure_; }
+    void beginStructureEdit();
+    [[nodiscard]] bool resolvePendingChanges();
   signals:
     void dataRequested(quint64 connection, const QString& object, const QString& label,
                        const QString& relationSubtype);
@@ -57,6 +61,7 @@ class ObjectExplorer final : public QWidget {
     void reconnectRequested();
     void paneChanged(int index);
     void relatedTableActivated(quint64 connection, const QString& objectId, const QString& label);
+    void structureChanged(quint64 connection, const QString& objectId);
 
   private:
     void requestPane();
@@ -79,6 +84,12 @@ class ObjectExplorer final : public QWidget {
     QStackedWidget* pages_;
     QPlainTextEdit* ddl_;
     ObjectErdWidget* erd_;
+    ObjectStructureMode* structure_;
+    struct {
+        QString text;
+        Tone tone = Tone::Neutral;
+        bool busy = false;
+    } paneStatus_;
     design::Text* status_;
     design::Text* placeholder_;
     QAction* refreshAction_;

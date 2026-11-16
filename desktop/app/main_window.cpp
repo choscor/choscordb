@@ -6,6 +6,7 @@
 #include "app/object_data_workspace.h"
 #include "app/object_explorer.h"
 #include "app/object_kind_icon.h"
+#include "app/object_structure_mode.h"
 #include "app/object_tab_title.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
@@ -106,13 +107,11 @@ void MainWindow::finishClose(QCloseEvent* event) {
 }
 void MainWindow::closeEvent(QCloseEvent* event) {
     for (int i = 0; i < editors_->count(); ++i) {
-        if (auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(i))) {
-            if (auto* objectData = object->findChild<ObjectDataWorkspace*>();
-                objectData && !objectData->resolvePendingEdits()) {
-                updateInstall_ = {};
-                event->ignore();
-                return;
-            }
+        auto* object = qobject_cast<ObjectExplorer*>(editors_->widget(i));
+        if (object && !object->resolvePendingChanges()) {
+            updateInstall_ = {};
+            event->ignore();
+            return;
         }
     }
     if (appearance_ && !appearanceCloseApproved_ && !appearance_->flush()) {
@@ -260,6 +259,20 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
     connect(explorer, &ObjectExplorer::dataRequested, objectData, &ObjectDataWorkspace::openObject);
     connect(objectData, &ObjectDataWorkspace::foreignKeyRequested, this,
             &MainWindow::openReferencedRow);
+    auto* structure = explorer->structureMode();
+    structure->setDriverResolver(
+        [this](quint64 connection) { return workspace_->driverForConnection(connection); });
+    const auto syncStructureShortcuts = [structure, grid = objectData->results()] {
+        structure->setShortcuts(grid->gridShortcutKeys(QueryWorkspace::GridCommand::ApplyEdits),
+                                grid->gridShortcutKeys(QueryWorkspace::GridCommand::DiscardEdits));
+    };
+    syncStructureShortcuts();
+    connect(objectData->results(), &QueryWorkspace::gridShortcutsChanged, structure,
+            syncStructureShortcuts);
+    connect(explorer, &ObjectExplorer::structureChanged, this,
+            [this](quint64 connection, const QString& objectId) {
+                refreshNavigatorAfterChange(connection, objectId, tr("Structure changed"));
+            });
     connect(explorer, &ObjectExplorer::relatedTableActivated, this,
             [this](quint64 connection, const QString& objectId, const QString& label) {
                 openObjectTab(connection, objectId, label, QStringLiteral("table"), {});
@@ -356,10 +369,11 @@ ObjectExplorer* MainWindow::makeObjectExplorer() {
     });
     return explorer;
 }
-void MainWindow::openObjectTab(quint64 connection, const QString& objectId, const QString& label,
-                               const QString& kind, const QVariantList& properties, int pane) {
+ObjectExplorer* MainWindow::openObjectTab(quint64 connection, const QString& objectId,
+                                          const QString& label, const QString& kind,
+                                          const QVariantList& properties, int pane) {
     if (!allowDocumentChange() || objectId.isEmpty())
-        return;
+        return nullptr;
     const auto profileId = workspace_->profileIdForConnection(connection);
     const auto context = EngineAdapter::objectTabContext(profileId, connection);
     for (int i = 0; i < editors_->count(); ++i) {
@@ -381,7 +395,7 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
         if (recovery_)
             recovery_->changed();
         recordQuickObjectVisit(connection, objectId);
-        return;
+        return explorer;
     }
     auto* explorer = initialObjectExplorer_;
     initialObjectExplorer_ = nullptr;
@@ -404,6 +418,7 @@ void MainWindow::openObjectTab(quint64 connection, const QString& objectId, cons
     if (recovery_)
         recovery_->changed();
     recordQuickObjectVisit(connection, objectId);
+    return explorer;
 }
 void MainWindow::openReferencedRow(quint64 connection, const QString& objectId,
                                    const QString& label, const QString& filter) {

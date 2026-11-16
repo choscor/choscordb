@@ -114,6 +114,8 @@ choscordb_add_library(choscordb-widgets
   desktop/widgets/backup_dialog/backup_dialog.cpp
   desktop/widgets/sql_file_dialog/sql_file_dialog.cpp
   desktop/widgets/text_prompt_dialog/text_prompt_dialog.cpp
+  desktop/widgets/sql_review_dialog/sql_review_dialog.cpp
+  desktop/widgets/structure_editor/structure_editor.cpp
   desktop/widgets/structure_editor_dialog/structure_editor_dialog.cpp
   desktop/widgets/database_action_dialog/database_action_dialog.cpp
   desktop/widgets/value_preview_dialog/value_preview_dialog.cpp
@@ -178,6 +180,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/result_pane_tabs.cpp
   desktop/app/object_data_workspace.cpp
   desktop/app/object_explorer.cpp
+  desktop/app/object_structure_mode.cpp
   desktop/app/object_action_sql.cpp
   desktop/app/navigator_controller.cpp
   desktop/app/navigator_controller_search.cpp

@@ -2,6 +2,7 @@
 #include "app/main_window.h"
 #include "app/object_data_workspace.h"
 #include "app/object_kind_icon.h"
+#include "app/object_structure_mode.h"
 #include "bridge/engine_adapter.h"
 #include "bridge/request_token.h"
 #include "bridge/rust_text.h"
@@ -266,6 +267,8 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
     placeholder_->setObjectName("objectPlaceholder");
     layout->addWidget(placeholder_);
     layout->addWidget(pages_, 1);
+    structure_ = new ObjectStructureMode(adapter_, tabs_, this);
+    layout->addWidget(structure_, 1);
     auto* headerBody = new QWidget(this);
     headerBody->setObjectName("objectHeader");
     auto* header = new QHBoxLayout(headerBody);
@@ -347,7 +350,21 @@ ObjectExplorer::ObjectExplorer(EngineAdapter* adapter, QWidget* parent)
             [this, triggerMenu] { fillTriggerMenu(*triggerMenu, table_->currentIndex().row()); });
     triggers_->hide();
     header->addWidget(triggers_);
+    header->addWidget(structure_->headerActions());
     header->addStretch(1);
+    connect(structure_, &ObjectStructureMode::statusChanged, this,
+            [this](const QString& message, bool error, bool busy) {
+                if (message.isEmpty())
+                    showStatus(paneStatus_.text, paneStatus_.tone, paneStatus_.busy);
+                else
+                    showStatus(message, error ? Tone::Error : Tone::Neutral, busy);
+            });
+    connect(structure_, &ObjectStructureMode::structureChanged, this, [this](quint64 connection) {
+        graphLoaded_ = false;
+        requestPane();
+        emit objectChanged();
+        emit structureChanged(connection, object_);
+    });
     for (auto* button : {refresh_, open_, generate_, triggers_}) {
         button->setAccessibleName(button->text());
         button->setToolTip(button->text());
@@ -650,7 +667,8 @@ void ObjectExplorer::setStatus(PanelState state, const QString& detail) {
     const auto kind = tabs_->currentIndex() == 4 ? PanelKind::Diagram : PanelKind::ObjectDetails;
     const auto shown = EngineAdapter::panelPresentation(kind, state, detail);
     const bool placeholderShown = panelStateKind(shown.body) != design::PanelStateKind::Hidden;
-    showStatus(placeholderShown ? label_ : shown.message, shown.tone, shown.busy);
+    paneStatus_ = {placeholderShown ? label_ : shown.message, shown.tone, shown.busy};
+    showStatus(paneStatus_.text, paneStatus_.tone, paneStatus_.busy);
     showPanelState(placeholder_, shown);
     showPresentationToast(this, shown);
     reconnectButton_->setVisible(state == PanelState::Disconnected);
@@ -877,6 +895,7 @@ void ObjectExplorer::setOperationBusy(bool busy) {
                   tr("%1 · %2").arg(label_, tabs_->tabText(tabs_->currentIndex())));
 }
 void ObjectExplorer::updateActions() {
+    structure_->setObject(connection_, object_, kind_, properties_, operationBusy_);
     const bool ready = connection_.has_value() && !operationBusy_ && !basicObject(kind_);
     const auto unavailable =
         !connection_     ? tr("Reconnect this object's connection to use SQL actions.")
@@ -945,5 +964,16 @@ void ObjectExplorer::fillTriggerMenu(QMenu& menu, int row) {
 }
 void ObjectExplorer::showError(const QString& message) {
     showStatus(message, Tone::Error, false);
+}
+void ObjectExplorer::beginStructureEdit() {
+    activateRestoredObject();
+    if (const auto reason = structure_->begin(); !reason.isEmpty())
+        showError(reason);
+}
+bool ObjectExplorer::resolvePendingChanges() {
+    if (auto* objectData = findChild<ObjectDataWorkspace*>();
+        objectData && !objectData->resolvePendingEdits())
+        return false;
+    return structure_->resolvePendingChanges();
 }
 }

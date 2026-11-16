@@ -6,7 +6,6 @@
 #include "app/editor_preferences.h"
 #include "app/main_window_ui.h"
 #include "app/navigator_controller.h"
-#include "app/object_data_workspace.h"
 #include "app/object_explorer.h"
 #include "app/query_workspace.h"
 #include "app/workspace_recovery.h"
@@ -138,11 +137,9 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
         if (!allowDocumentChange())
             return;
         auto* closing = editors_->widget(index);
-        if (auto* object = qobject_cast<ObjectExplorer*>(closing)) {
-            if (auto* objectData = object->findChild<ObjectDataWorkspace*>();
-                objectData && !objectData->resolvePendingEdits())
-                return;
-        }
+        if (auto* object = qobject_cast<ObjectExplorer*>(closing);
+            object && !object->resolvePendingChanges())
+            return;
         auto* editor = qobject_cast<SqlEditor*>(closing);
         if (editor && editor->isModified() &&
             !ConfirmationDialog::confirm(

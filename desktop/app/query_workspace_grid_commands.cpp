@@ -89,6 +89,10 @@ void QueryWorkspace::setGridShortcut(const QString& id, const QKeySequence& prim
         gridActions_[i]->setShortcuts(keys);
     }
     updateApplyToolTip();
+    emit gridShortcutsChanged();
+}
+QList<QKeySequence> QueryWorkspace::gridShortcutKeys(GridCommand command) const {
+    return gridAction(command)->shortcuts();
 }
 void QueryWorkspace::setupGridCommands() {
     const std::array<QPushButton*, 10> buttons = {

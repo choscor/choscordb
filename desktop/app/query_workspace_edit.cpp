@@ -2,19 +2,9 @@
 #include "app/query_workspace_p.h"
 #include "bridge/engine_adapter.h"
 #include "choscordb-bridge/src/lib.rs.h"
-#include "design_system/button/button.h"
-#include "design_system/dialog_sections/dialog_sections.h"
-#include "design_system/fonts/fonts.h"
-#include "design_system/metrics/metrics.h"
-#include "design_system/modal_panel/modal_panel.h"
-#include "design_system/text/text.h"
+#include "widgets/sql_review_dialog/sql_review_dialog.h"
 #include <QEventLoop>
 #include <QFutureWatcher>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QPlainTextEdit>
-#include <QPushButton>
-#include <QVBoxLayout>
 #include <QtConcurrentRun>
 
 namespace choscordb {
@@ -168,39 +158,12 @@ bool QueryWorkspace::applyStagedEdits() {
     const EditHistoryRecord history{plan->history, connectionProfiles_.value(connectionId)};
     if (batch.empty())
         return false;
-    design::ModalDialog box(widgets_.dialogParent);
-    box.setWindowTitle(tr("Review grid changes"));
-    auto* sections = box.createSections();
-    auto* heading = new design::Text(box.windowTitle(), sections);
-    heading->setTextStyle(design::TextStyle::Headline);
-    sections->headerLayout()->addWidget(heading);
-    auto* dismiss = sections->addDismissButton(tr("Close grid change review"));
-    dismiss->setObjectName("gridEditDismiss");
-    connect(dismiss, &QPushButton::clicked, &box, &QDialog::reject);
-    auto* layout = sections->bodyLayout();
-    auto* description = new QLabel(
-        tr("Each statement runs with the values below it. $1 binds to its first placeholder, "
-           "$2 to the second, and so on."),
-        sections);
-    description->setProperty("designRole", "description");
-    description->setTextFormat(Qt::PlainText);
-    description->setWordWrap(true);
-    layout->addWidget(description);
-    auto* preview = new QPlainTextEdit(review, sections);
-    preview->setObjectName("gridEditReview");
-    preview->setReadOnly(true);
-    preview->setProperty("designRole", "codePreview");
-    preview->setFont(
-        design::resolveTypography(design::TextStyle::Body, design::FontDesign::Monospaced));
-    layout->addWidget(preview);
-    auto* cancel = sections->addAction(design::DialogActionRole::Dismiss, tr("Cancel"));
-    cancel->setObjectName("gridEditCancel");
-    auto* apply = sections->addAction(design::DialogActionRole::Primary, tr("Apply changes"));
-    apply->setObjectName("gridEditApply");
-    connect(cancel, &QPushButton::clicked, &box, &QDialog::reject);
-    connect(apply, &QPushButton::clicked, &box, &QDialog::accept);
-    box.resize(design::dialogInitialSize(design::DialogSize::Detail));
-    const auto accepted = box.exec() == QDialog::Accepted;
+    const auto accepted = confirmSqlReview(
+        widgets_.dialogParent,
+        {QStringLiteral("gridEdit"), tr("Review grid changes"), tr("Close grid change review"),
+         tr("Each statement runs with the values below it. $1 binds to its first placeholder, "
+            "$2 to the second, and so on."),
+         review, tr("Apply changes")});
     if (!self)
         return false;
     if (!accepted || generation != editPolicyGeneration_ || queryConnection_ != connectionId ||

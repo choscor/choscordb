@@ -164,19 +164,26 @@ void MainWindow::connectNavigator(const Ui& ui) {
                             });
                 dialog->open();
             });
-    connect(navigatorController, &NavigatorController::structureEditRequested, this,
-            [this](quint64 connection, StructureTable table, const QString& objectId,
-                   const QString& targetName, const QString& refreshObjectId) {
+    connect(navigatorController, &NavigatorController::tableDesignRequested, this,
+            [this](quint64 connection, StructureTable table, const QString& targetName,
+                   const QString& refreshObjectId) {
                 table.driver = workspace_->driverForConnection(connection);
                 auto* dialog = new StructureEditorDialog(workspace_->adapter(), connection, table,
-                                                         objectId, targetName, this);
+                                                         targetName, this);
                 dialog->setAttribute(Qt::WA_DeleteOnClose);
                 connect(dialog, &StructureEditorDialog::applied, this,
                         [this, refreshObjectId](quint64 changed) {
                             refreshNavigatorAfterChange(changed, refreshObjectId,
-                                                        tr("Structure changed"));
+                                                        tr("Table created"));
                         });
                 dialog->open();
+            });
+    connect(navigatorController, &NavigatorController::structureEditRequested, this,
+            [this](quint64 connection, const QString& objectId, const QString& label,
+                   const QString& kind, const QVariantList& properties) {
+                if (auto* explorer = openObjectTab(connection, objectId, label, kind, properties,
+                                                   int(ObjectInspectionPane::Columns)))
+                    explorer->beginStructureEdit();
             });
     connect(workspace_->adapter(), &EngineAdapter::eventReady, this,
             &MainWindow::handleObjectActionEvent, Qt::DirectConnection);

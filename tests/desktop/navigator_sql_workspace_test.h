@@ -28,7 +28,6 @@ class NavigatorSqlWorkspaceTest : public QObject {
     void savedQueryFoldersSortAndKeywordSnippets();
     void exportTablesFromTheNavigator();
     void importCsvIntoTablesFromTheNavigator();
-    void editTableStructureFromTheNavigator();
     void statusLineShowsTheTargetOfEachDocument();
     void changeConnectionMenuRebindsOnlyIdleSqlTabs();
     void tabContextMenuFollowsCursor();

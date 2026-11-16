@@ -113,6 +113,13 @@ const ADD_FOREIGN_KEY: &[StructureField] = &[
 const DROP_KEY: &[StructureField] = &[field("key", "Key", F::Key, true)];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StructurePane {
+    Columns,
+    Indexes,
+    Keys,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StructureChangeKind {
     AddColumn,
     ChangeColumn,
@@ -159,6 +166,14 @@ impl StructureChangeKind {
             Self::PrimaryKey => "Set primary key",
             Self::AddForeignKey => "Add foreign key",
             Self::DropKey => "Drop key",
+        }
+    }
+
+    pub fn pane(self) -> StructurePane {
+        match self {
+            Self::AddColumn | Self::ChangeColumn | Self::DropColumn => StructurePane::Columns,
+            Self::AddIndex | Self::DropIndex => StructurePane::Indexes,
+            Self::PrimaryKey | Self::AddForeignKey | Self::DropKey => StructurePane::Keys,
         }
     }
 

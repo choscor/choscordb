@@ -269,8 +269,11 @@ QList<StructureChangeKindInfo> EngineAdapter::structureChangeKinds(const QString
                                                                    bool newTable) {
     QList<StructureChangeKindInfo> result;
     for (const auto& kind : structure_change_kinds(toRust(driver), newTable)) {
-        StructureChangeKindInfo info{
-            fromRust(kind.code), fromRust(kind.label), fromRust(kind.unavailable), {}};
+        StructureChangeKindInfo info{fromRust(kind.code),
+                                     fromRust(kind.label),
+                                     fromRust(kind.unavailable),
+                                     static_cast<ObjectInspectionPane>(kind.pane),
+                                     {}};
         for (const auto& field : kind.fields)
             info.fields.push_back({fromRust(field.key), fromRust(field.label),
                                    fromRust(field.input), fromRust(field.names), field.required,

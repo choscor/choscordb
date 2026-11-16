@@ -206,8 +206,9 @@ class MainWindow final : public QMainWindow {
     void activateQuickSearch(const QString& id);
     SqlEditor* addEditor();
     ObjectExplorer* makeObjectExplorer();
-    void openObjectTab(quint64 connection, const QString& objectId, const QString& label,
-                       const QString& kind, const QVariantList& properties, int pane = -1);
+    ObjectExplorer* openObjectTab(quint64 connection, const QString& objectId, const QString& label,
+                                  const QString& kind, const QVariantList& properties,
+                                  int pane = -1);
     void openReferencedRow(quint64 connection, const QString& objectId, const QString& label,
                            const QString& filter);
     bool allowDocumentChange();

@@ -658,8 +658,8 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
             table.parentKind = index.data(NavigatorModel::KindRole).toString();
             table.parentQualified = index.data(NavigatorModel::QualifiedNameRole).toString();
             const auto parent = index.data(NavigatorModel::ObjectIdRole).toString();
-            emit structureEditRequested(index.data(NavigatorModel::ConnectionRole).toULongLong(),
-                                        table, {}, index.data(Qt::DisplayRole).toString(), parent);
+            emit tableDesignRequested(index.data(NavigatorModel::ConnectionRole).toULongLong(),
+                                      table, index.data(Qt::DisplayRole).toString(), parent);
         });
     }
     if (SqlTemplateService::createParent(objectKind))
@@ -755,13 +755,12 @@ void NavigatorController::populateContextMenu(QMenu* menu, const QModelIndex& so
         disableWithReason(structure,
                           EngineAdapter::structureUnavailableReason(objectKind, subtype));
         connect(structure, &QAction::triggered, this,
-                [this, requestStillMatches, connection, objectId, qualifiedName] {
+                [this, requestStillMatches, connection, objectId, shortName, objectKind,
+                 properties = index.data(NavigatorModel::PropertiesRole).toList()] {
                     if (!requestStillMatches())
                         return;
-                    StructureTable table;
-                    table.qualifiedName = qualifiedName;
-                    emit structureEditRequested(connection, table, objectId, qualifiedName,
-                                                objectId);
+                    emit structureEditRequested(connection, objectId, shortName, objectKind,
+                                                properties);
                 });
     }
     menu->addSeparator();
