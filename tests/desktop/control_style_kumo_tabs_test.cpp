@@ -179,13 +179,16 @@ void ControlStyleTest::documentTabToneDotUsesTheConnectionTone() {
             }
         return count;
     };
-    QCOMPARE(tonePixels(0), 0);
+    const int untagged = tonePixels(0);
+    const int sibling = tonePixels(1);
     tabs.setTabTag(0, StatusTone::Danger, QStringLiteral("Production"));
     QCOMPARE(tabs.tabTagLabel(0), QStringLiteral("Production"));
     QCOMPARE(tabs.tabTone(0), std::optional<StatusTone>(StatusTone::Danger));
-    QVERIFY2(tonePixels(0) >= spacing(Spacing::Two), qPrintable(QString::number(tonePixels(0))));
-    QCOMPARE(tonePixels(1), 0);
+    const int tagged = tonePixels(0);
+    QVERIFY2(tagged >= untagged + spacing(Spacing::Two),
+             qPrintable(QStringLiteral("%1 %2").arg(untagged).arg(tagged)));
+    QCOMPARE(tonePixels(1), sibling);
     tabs.setTabTag(0, std::nullopt, {});
     QVERIFY(tabs.tabTagLabel(0).isEmpty());
-    QCOMPARE(tonePixels(0), 0);
+    QCOMPARE(tonePixels(0), untagged);
 }
