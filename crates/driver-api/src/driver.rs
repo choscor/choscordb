@@ -145,8 +145,67 @@ impl EditProgress {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct EditBatch {
     pub statements: Vec<EditStatement>,
-    #[serde(skip)]
+}
+#[derive(Debug)]
+pub enum EditChunk {
+    Rows(Vec<EditStatement>),
+    End,
+}
+#[derive(Clone, Debug, Default)]
+pub struct EditCancel(std::sync::Arc<std::sync::atomic::AtomicBool>);
+impl EditCancel {
+    pub fn cancel(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+#[derive(Debug)]
+pub struct EditStream {
+    pub chunks: tokio::sync::mpsc::Receiver<Result<EditChunk>>,
     pub progress: EditProgress,
+    pub cancel: EditCancel,
+}
+fn edit_stream_step(
+    cancel: &EditCancel,
+    chunk: Option<Result<EditChunk>>,
+) -> Result<Option<Vec<EditStatement>>> {
+    if cancel.is_cancelled() {
+        return Err(DriverError::new(ErrorKind::Cancelled, "Edit cancelled"));
+    }
+    match chunk {
+        Some(Ok(EditChunk::Rows(statements))) => Ok(Some(statements)),
+        Some(Ok(EditChunk::End)) => Ok(None),
+        Some(Err(error)) => Err(error),
+        None => Err(DriverError::new(
+            ErrorKind::Internal,
+            "The edit stream closed before its end",
+        )),
+    }
+}
+impl EditStream {
+    pub async fn next_rows(&mut self) -> Result<Option<Vec<EditStatement>>> {
+        edit_stream_step(&self.cancel, self.chunks.recv().await)
+    }
+    pub fn blocking_next_rows(&mut self) -> Result<Option<Vec<EditStatement>>> {
+        edit_stream_step(&self.cancel, self.chunks.blocking_recv())
+    }
+}
+impl From<EditBatch> for EditStream {
+    fn from(batch: EditBatch) -> Self {
+        let (sender, chunks) = tokio::sync::mpsc::channel(2);
+        for chunk in [EditChunk::Rows(batch.statements), EditChunk::End] {
+            if sender.try_send(Ok(chunk)).is_err() {
+                unreachable!("a new channel with capacity two accepts two chunks");
+            }
+        }
+        Self {
+            chunks,
+            progress: EditProgress::default(),
+            cancel: EditCancel::default(),
+        }
+    }
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditBatchSummary {
@@ -334,7 +393,10 @@ pub trait Connection: Send {
     ) -> Result<Vec<ResultCellMetadata>> {
         Ok(vec![ResultCellMetadata::default(); result_columns.len()])
     }
-    async fn apply_edit_batch(&mut self, _batch: EditBatch) -> Result<EditBatchSummary> {
+    async fn apply_edit_batch(&mut self, batch: EditBatch) -> Result<EditBatchSummary> {
+        self.apply_edit_stream(batch.into()).await
+    }
+    async fn apply_edit_stream(&mut self, _stream: EditStream) -> Result<EditBatchSummary> {
         Err(DriverError::new(
             ErrorKind::Unsupported,
             "Editable results are unavailable",

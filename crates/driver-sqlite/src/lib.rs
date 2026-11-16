@@ -28,7 +28,7 @@ enum Command {
     Metadata(Option<ObjectId>, Reply<Vec<SchemaObject>>),
     ObjectGraph(ObjectId, Reply<ObjectGraph>),
     Ddl(ObjectId, Reply<String>),
-    Edit(EditBatch, Reply<EditBatchSummary>),
+    Edit(EditStream, Reply<EditBatchSummary>),
     EditTarget(ObjectId, Reply<EditTarget>),
     EditQuery(String, Vec<String>, Reply<EditQueryTarget>),
     ResultCells(
@@ -207,8 +207,8 @@ impl Connection for SqliteConnection {
             .request(|r| Command::EditTarget(object.clone(), r))
             .await
     }
-    async fn apply_edit_batch(&mut self, batch: EditBatch) -> Result<EditBatchSummary> {
-        self.client.request(|r| Command::Edit(batch, r)).await
+    async fn apply_edit_stream(&mut self, stream: EditStream) -> Result<EditBatchSummary> {
+        self.client.request(|r| Command::Edit(stream, r)).await
     }
     fn cancellation_handle(&self) -> Arc<dyn CancelHandle> {
         Arc::new(QueryCancellation {

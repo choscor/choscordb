@@ -147,9 +147,11 @@ async fn reviewed_edits_bind_values_and_roll_back_conflicts() {
     };
     let progress = EditProgress::default();
     let summary = conn
-        .apply_edit_batch(EditBatch {
-            statements: vec![update.clone()],
+        .apply_edit_stream(EditStream {
             progress: progress.clone(),
+            ..EditStream::from(EditBatch {
+                statements: vec![update.clone()],
+            })
         })
         .await
         .unwrap();
@@ -182,7 +184,6 @@ async fn reviewed_edits_bind_values_and_roll_back_conflicts() {
     assert_eq!(
         conn.apply_edit_batch(EditBatch {
             statements: vec![unchanged],
-            ..Default::default()
         })
         .await
         .unwrap()
@@ -197,7 +198,6 @@ async fn reviewed_edits_bind_values_and_roll_back_conflicts() {
     assert!(
         conn.apply_edit_batch(EditBatch {
             statements: vec![insert, update],
-            ..Default::default()
         })
         .await
         .is_err()

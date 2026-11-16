@@ -618,8 +618,8 @@ impl Connection for MysqlConnection {
         let flavor = self.flavor;
         editing::inspect_query(self.connection().await?, flavor, sql, result_columns).await
     }
-    async fn apply_edit_batch(&mut self, batch: EditBatch) -> Result<EditBatchSummary> {
-        editing::apply_batch(self.connection().await?, batch).await
+    async fn apply_edit_stream(&mut self, stream: EditStream) -> Result<EditBatchSummary> {
+        editing::apply_stream(self.connection().await?, stream).await
     }
     async fn list_databases(&mut self) -> Result<choscordb_driver_api::DatabaseList> {
         let limit = u64::try_from(choscordb_driver_api::MAX_DATABASE_CHOICES + 1)

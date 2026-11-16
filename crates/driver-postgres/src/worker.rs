@@ -870,29 +870,32 @@ impl tokio_postgres::types::ToSql for EditParam {
     }
     tokio_postgres::types::to_sql_checked!();
 }
-async fn apply_edit_batch(
+async fn apply_edit_stream(
     client: &mut tokio_postgres::Client,
-    batch: EditBatch,
+    mut stream: EditStream,
 ) -> Result<EditBatchSummary> {
     let tx = client.transaction().await.map_err(normalize)?;
-    let mut affected_rows = Vec::with_capacity(batch.statements.len());
-    for (index, edit) in batch.statements.into_iter().enumerate() {
-        let params: Vec<EditParam> = edit.params.into_iter().map(EditParam).collect();
-        let bound: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-            params.iter().map(|p| p as _).collect();
-        let count = tx
-            .execute(&edit.sql, &bound)
-            .await
-            .map_err(|error| normalize(error).at_statement(index))?;
-        if edit.expected_rows.is_some_and(|expected| expected != count) {
-            return Err(DriverError::new(
-                ErrorKind::Query,
-                "Edit conflict: the original row has changed",
-            )
-            .at_statement(index));
+    let mut affected_rows = Vec::new();
+    while let Some(statements) = stream.next_rows().await? {
+        for edit in statements {
+            let index = affected_rows.len();
+            let params: Vec<EditParam> = edit.params.into_iter().map(EditParam).collect();
+            let bound: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+                params.iter().map(|p| p as _).collect();
+            let count = tx
+                .execute(&edit.sql, &bound)
+                .await
+                .map_err(|error| normalize(error).at_statement(index))?;
+            if edit.expected_rows.is_some_and(|expected| expected != count) {
+                return Err(DriverError::new(
+                    ErrorKind::Query,
+                    "Edit conflict: the original row has changed",
+                )
+                .at_statement(index));
+            }
+            affected_rows.push(count);
+            stream.progress.advance();
         }
-        affected_rows.push(count);
-        batch.progress.advance();
     }
     tx.commit().await.map_err(normalize)?;
     Ok(EditBatchSummary { affected_rows })
@@ -991,10 +994,10 @@ pub(super) async fn run(
                         clear_notices(&notices);
                         let _ = reply.send(result);
                     }
-                    Command::Edit(batch, reply) => {
+                    Command::Edit(stream, reply) => {
                         let result = cancel
                             .closing
-                            .auxiliary(&pump, apply_edit_batch(&mut client, batch))
+                            .auxiliary(&pump, apply_edit_stream(&mut client, stream))
                             .await;
                         let _ = reply.send(result);
                     }

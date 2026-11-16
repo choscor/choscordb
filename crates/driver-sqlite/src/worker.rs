@@ -181,8 +181,8 @@ pub(super) fn run(
             Command::Ddl(id, r) => {
                 let _ = r.send(metadata::ddl(&db, id));
             }
-            Command::Edit(batch, r) => {
-                let _ = r.send(apply_edit_batch(&db, batch));
+            Command::Edit(stream, r) => {
+                let _ = r.send(apply_edit_stream(&db, stream));
             }
             Command::EditTarget(object, r) => {
                 let _ = r.send(metadata::edit_target(&db, &object));
@@ -218,7 +218,7 @@ pub(super) fn run(
         }
     }
 }
-fn apply_edit_batch(db: &Db, batch: EditBatch) -> Result<EditBatchSummary> {
+fn apply_edit_stream(db: &Db, mut stream: EditStream) -> Result<EditBatchSummary> {
     use rusqlite::types::Value as SqlValue;
     if !db.is_autocommit() {
         return Err(DriverError::new(
@@ -226,7 +226,7 @@ fn apply_edit_batch(db: &Db, batch: EditBatch) -> Result<EditBatchSummary> {
             choscordb_driver_api::EDITS_NEED_NO_TRANSACTION,
         ));
     }
-    let mut affected_rows = Vec::with_capacity(batch.statements.len());
+    let mut affected_rows = Vec::new();
     db.execute_batch("BEGIN IMMEDIATE").map_err(normalize)?;
     let run = |edit: EditStatement| -> Result<u64> {
         let values: Result<Vec<SqlValue>> = edit
@@ -275,17 +275,24 @@ fn apply_edit_batch(db: &Db, batch: EditBatch) -> Result<EditBatchSummary> {
         }
         Ok(count)
     };
-    let progress = batch.progress;
-    let outcome: Result<()> =
-        batch
-            .statements
-            .into_iter()
-            .enumerate()
-            .try_for_each(|(index, edit)| {
-                affected_rows.push(run(edit).map_err(|error| error.at_statement(index))?);
-                progress.advance();
-                Ok(())
-            });
+    let mut outcome: Result<()> = Ok(());
+    loop {
+        match stream.blocking_next_rows() {
+            Ok(Some(statements)) => {
+                outcome = statements.into_iter().try_for_each(|edit| {
+                    let index = affected_rows.len();
+                    affected_rows.push(run(edit).map_err(|error| error.at_statement(index))?);
+                    stream.progress.advance();
+                    Ok(())
+                });
+            }
+            Ok(None) => break,
+            Err(error) => outcome = Err(error),
+        }
+        if outcome.is_err() {
+            break;
+        }
+    }
     if let Err(error) = outcome {
         let _ = db.execute_batch("ROLLBACK");
         return Err(error);

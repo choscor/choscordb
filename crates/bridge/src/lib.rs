@@ -4016,10 +4016,7 @@ pub fn apply_edit_batch(
         });
         e.apply_edit_batch(
             unpack(connection),
-            EditBatch {
-                statements,
-                ..Default::default()
-            },
+            EditBatch { statements },
             history,
             request_token,
         )

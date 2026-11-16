@@ -119,6 +119,28 @@ fn preview_stops_at_one_hundred_rows_and_import_reads_every_row() {
 }
 
 #[test]
+fn preview_reads_only_the_rows_it_shows() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut body = String::from("[");
+    for row in 0..150 {
+        body.push_str(&format!("{{\"n\": {row}}},"));
+    }
+    body.push_str("not json");
+    let path = write(dir.path(), "broken.json", body.as_bytes());
+    let file = json(path);
+    assert_eq!(
+        read_import_file(&file, ImportRead::Preview)
+            .unwrap()
+            .rows
+            .len(),
+        100
+    );
+    let error = read_import_file(&file, ImportRead::All).err().unwrap();
+    assert_eq!(error.failed_statement, Some(150));
+    assert!(error.message.starts_with("The JSON file is not valid"));
+}
+
+#[test]
 fn encoding_choice_decodes_latin1_and_rejects_invalid_utf8() {
     let dir = tempfile::tempdir().unwrap();
     let path = write(dir.path(), "latin.csv", b"name\ncaf\xe9\n");
@@ -228,6 +250,14 @@ fn existing() -> TableImportTarget {
     }
 }
 
+fn statements(plan: &choscordb_core::PlannedImport) -> Vec<choscordb_driver_api::EditStatement> {
+    data()
+        .rows
+        .iter()
+        .map(|row| plan.statement(row).unwrap())
+        .collect()
+}
+
 fn data() -> ImportData {
     ImportData {
         columns: vec!["full_name".into(), "number".into()],
@@ -240,17 +270,18 @@ fn plan_maps_file_columns_to_table_columns_in_mapping_order() {
     let plan = plan_table_import(
         &request(existing(), &[("id", 1), ("name", 0)]),
         Some(&target()),
-        data(),
+        &data().columns,
     )
     .unwrap();
     assert_eq!(plan.create, None);
-    assert_eq!(plan.batch.statements.len(), 2);
+    let statements = statements(&plan);
+    assert_eq!(statements.len(), 2);
     assert_eq!(
-        plan.batch.statements[0].sql,
+        statements[0].sql,
         "INSERT INTO \"main\".\"people\" (\"id\", \"name\") VALUES (?, ?)"
     );
     assert!(matches!(
-        plan.batch.statements[1].params.as_slice(),
+        statements[1].params.as_slice(),
         [Value::Text(id), Value::Null] if id == "8"
     ));
 }
@@ -258,10 +289,14 @@ fn plan_maps_file_columns_to_table_columns_in_mapping_order() {
 #[test]
 fn plan_rejects_bad_mappings_with_a_reason() {
     let message = |mapping: &[(&str, usize)]| {
-        plan_table_import(&request(existing(), mapping), Some(&target()), data())
-            .err()
-            .unwrap()
-            .message
+        plan_table_import(
+            &request(existing(), mapping),
+            Some(&target()),
+            &data().columns,
+        )
+        .err()
+        .unwrap()
+        .message
     };
     assert_eq!(message(&[]), "Choose one or more columns to import.");
     assert_eq!(
@@ -277,10 +312,14 @@ fn plan_rejects_bad_mappings_with_a_reason() {
     let mut locked = target();
     locked.reason = "Only transactional InnoDB base tables can be edited".into();
     assert_eq!(
-        plan_table_import(&request(existing(), &[("id", 0)]), Some(&locked), data())
-            .err()
-            .unwrap()
-            .message,
+        plan_table_import(
+            &request(existing(), &[("id", 0)]),
+            Some(&locked),
+            &data().columns
+        )
+        .err()
+        .unwrap()
+        .message,
         "Only transactional InnoDB base tables can be edited"
     );
 }
@@ -295,7 +334,7 @@ fn new_table_plan_creates_text_columns_and_a_drop_for_failures() {
             &[("full name", 0)],
         ),
         None,
-        data(),
+        &data().columns,
     )
     .unwrap();
     assert_eq!(
@@ -306,7 +345,7 @@ fn new_table_plan_creates_text_columns_and_a_drop_for_failures() {
         plan.drop.as_deref(),
         Some("DROP TABLE \"main\".\"imported\"")
     );
-    assert_eq!(plan.batch.statements.len(), 2);
+    assert_eq!(statements(&plan).len(), 2);
     assert_eq!(
         plan_table_import(
             &request(
@@ -316,7 +355,7 @@ fn new_table_plan_creates_text_columns_and_a_drop_for_failures() {
                 &[(" ", 0)]
             ),
             None,
-            data()
+            &data().columns
         )
         .err()
         .map(|error| (error.kind, error.message)),
@@ -395,16 +434,11 @@ mod engine {
             request.file = csv(path, CsvReadOptions::default());
             request.conflict = conflict;
             let import = self.engine.import_table(self.connection, request).unwrap();
-            let progress = wait(&mut self.engine, |event| {
-                matches!(event, Event::TableImportProgress { .. })
-            });
-            assert!(
-                matches!(progress, Event::TableImportProgress { import: id, .. } if id == import)
-            );
             wait(&mut self.engine, |event| {
                 matches!(
                     event,
-                    Event::TableImportFinished { .. } | Event::TableImportFailed { .. }
+                    Event::TableImportFinished { import: id, .. }
+                        | Event::TableImportFailed { import: id, .. } if *id == import
                 )
             })
         }
@@ -476,6 +510,119 @@ mod engine {
         assert_eq!(progress.last(), Some(&(3, 3)));
     }
 
+    fn numbered_rows(count: usize, bad: Option<(usize, &str)>) -> String {
+        let mut body = String::from("id,name\n");
+        for row in 1..=count {
+            match bad {
+                Some((at, line)) if at == row => body.push_str(line),
+                _ => body.push_str(&format!("{},n{row}", row + 1)),
+            }
+            body.push('\n');
+        }
+        body
+    }
+
+    #[test]
+    fn an_import_larger_than_one_chunk_writes_every_row() {
+        let mut fixture = Fixture::new();
+        let event = fixture.import(
+            &numbered_rows(1_250, None),
+            existing(),
+            ImportConflict::Stop,
+        );
+        assert!(
+            matches!(event, Event::TableImportFinished { rows: 1_250, .. }),
+            "{event:?}"
+        );
+        let people = fixture.people();
+        assert_eq!(people.len(), 1_251);
+        assert_eq!(people.last(), Some(&(1_251, "n1250".into())));
+    }
+
+    #[test]
+    fn a_failed_row_in_a_later_chunk_rolls_back_the_earlier_chunks() {
+        let mut fixture = Fixture::new();
+        let event = fixture.import(
+            &numbered_rows(1_250, Some((1_100, "9999,"))),
+            existing(),
+            ImportConflict::Stop,
+        );
+        assert!(
+            matches!(&event, Event::TableImportFailed { row: Some(1_100), error, .. } if error.message.contains("NOT NULL")),
+            "{event:?}"
+        );
+        assert_eq!(fixture.people(), vec![(1, "Old".into())]);
+    }
+
+    #[test]
+    fn a_bad_file_row_in_a_later_chunk_rolls_back_the_earlier_chunks() {
+        let mut fixture = Fixture::new();
+        let event = fixture.import(
+            &numbered_rows(1_250, Some((1_100, "9999"))),
+            existing(),
+            ImportConflict::Stop,
+        );
+        assert!(
+            matches!(&event, Event::TableImportFailed { row: Some(1_100), error, .. } if error.message.starts_with("Row 1100 has 1 fields")),
+            "{event:?}"
+        );
+        assert_eq!(fixture.people(), vec![(1, "Old".into())]);
+    }
+
+    #[test]
+    fn a_new_table_is_removed_when_a_later_chunk_fails() {
+        let mut fixture = Fixture::new();
+        let event = fixture.import(
+            &numbered_rows(1_250, Some((1_100, "9999"))),
+            TableImportTarget::New {
+                qualified_name: "\"main\".\"later\"".into(),
+            },
+            ImportConflict::Stop,
+        );
+        assert!(
+            matches!(
+                event,
+                Event::TableImportFailed {
+                    row: Some(1_100),
+                    ..
+                }
+            ),
+            "{event:?}"
+        );
+        assert_eq!(
+            fixture.rows("SELECT count(*), '' FROM sqlite_master WHERE name = 'later'"),
+            vec![(0, String::new())]
+        );
+    }
+
+    #[test]
+    fn json_lines_larger_than_one_chunk_write_every_row() {
+        let mut fixture = Fixture::new();
+        let mut body = String::new();
+        for row in 1..=1_250 {
+            body.push_str(&format!("{{\"id\": {}, \"name\": \"n{row}\"}}\n", row + 1));
+        }
+        let path = write(fixture.dir.path(), "rows.jsonl", body.as_bytes());
+        let mut request = request(existing(), &[("id", 0), ("name", 1)]);
+        request.file = json(path);
+        let import = fixture
+            .engine
+            .import_table(fixture.connection, request)
+            .unwrap();
+        let event = wait(&mut fixture.engine, |event| {
+            matches!(
+                event,
+                Event::TableImportFinished { import: id, .. }
+                    | Event::TableImportFailed { import: id, .. } if *id == import
+            )
+        });
+        assert!(
+            matches!(event, Event::TableImportFinished { rows: 1_250, .. }),
+            "{event:?}"
+        );
+        assert_eq!(fixture.people().len(), 1_251);
+    }
+
     #[test]
     fn a_failed_row_rolls_back_the_import_and_reports_its_row_number() {
         let mut fixture = Fixture::new();
@@ -543,5 +690,247 @@ mod engine {
             )
             .unwrap();
         assert_eq!(tables, 0);
+    }
+
+    #[derive(Clone)]
+    enum Gate {
+        HoldSecondChunk(Arc<tokio::sync::Notify>),
+        ConsumeInlineWithAFullChannel,
+    }
+
+    struct GatedSqlite {
+        gate: Gate,
+    }
+
+    struct GatedConnection {
+        inner: Box<dyn choscordb_driver_api::Connection>,
+        gate: Gate,
+    }
+
+    #[async_trait::async_trait]
+    impl choscordb_driver_api::DatabaseDriver for GatedSqlite {
+        fn id(&self) -> &'static str {
+            "sqlite"
+        }
+        fn capabilities(&self) -> choscordb_driver_api::DriverCapabilities {
+            SqliteDriver.capabilities()
+        }
+        async fn connect(
+            &self,
+            options: ConnectionOptions,
+        ) -> choscordb_driver_api::Result<Box<dyn choscordb_driver_api::Connection>> {
+            Ok(Box::new(GatedConnection {
+                inner: SqliteDriver.connect(options).await?,
+                gate: self.gate.clone(),
+            }))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl choscordb_driver_api::Connection for GatedConnection {
+        async fn transaction_state(&mut self) -> choscordb_driver_api::Result<Option<bool>> {
+            self.inner.transaction_state().await
+        }
+        async fn idle_transaction_state(
+            &mut self,
+        ) -> choscordb_driver_api::Result<Option<choscordb_driver_api::IdleTransactionState>>
+        {
+            self.inner.idle_transaction_state().await
+        }
+        fn cancellation_handle(&self) -> Arc<dyn choscordb_driver_api::CancelHandle> {
+            self.inner.cancellation_handle()
+        }
+        async fn inspect_edit_target(
+            &mut self,
+            object: &ObjectId,
+        ) -> choscordb_driver_api::Result<EditTarget> {
+            self.inner.inspect_edit_target(object).await
+        }
+        async fn apply_edit_stream(
+            &mut self,
+            mut stream: choscordb_driver_api::EditStream,
+        ) -> choscordb_driver_api::Result<choscordb_driver_api::EditBatchSummary> {
+            let release = match &self.gate {
+                Gate::HoldSecondChunk(release) => release.clone(),
+                Gate::ConsumeInlineWithAFullChannel => {
+                    let mut rows = stream.next_rows().await?.map_or(0, |rows| rows.len());
+                    while stream.chunks.len() < 2 {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    while let Some(chunk) = stream.next_rows().await? {
+                        rows += chunk.len();
+                    }
+                    return Ok(choscordb_driver_api::EditBatchSummary {
+                        affected_rows: vec![1; rows],
+                    });
+                }
+            };
+            let (sender, chunks) = tokio::sync::mpsc::channel(1);
+            let mut source = stream.chunks;
+            tokio::spawn(async move {
+                let mut forwarded = 0;
+                while let Some(chunk) = source.recv().await {
+                    if forwarded == 1 {
+                        release.notified().await;
+                    }
+                    forwarded += 1;
+                    if sender.send(chunk).await.is_err() {
+                        break;
+                    }
+                }
+            });
+            self.inner
+                .apply_edit_stream(choscordb_driver_api::EditStream {
+                    chunks,
+                    progress: stream.progress,
+                    cancel: stream.cancel,
+                })
+                .await
+        }
+        async fn execute_bounded(
+            &mut self,
+            sql: &str,
+            options: choscordb_driver_api::QueryOptions,
+            max_schema_bytes: usize,
+        ) -> choscordb_driver_api::Result<Box<dyn choscordb_driver_api::ResultCursor>> {
+            self.inner
+                .execute_bounded(sql, options, max_schema_bytes)
+                .await
+        }
+        async fn load_metadata(
+            &mut self,
+            parent: Option<ObjectId>,
+        ) -> choscordb_driver_api::Result<Vec<choscordb_driver_api::SchemaObject>> {
+            self.inner.load_metadata(parent).await
+        }
+        async fn commit(&mut self) -> choscordb_driver_api::Result<()> {
+            self.inner.commit().await
+        }
+        async fn rollback(&mut self) -> choscordb_driver_api::Result<()> {
+            self.inner.rollback().await
+        }
+        async fn close(&mut self) -> choscordb_driver_api::Result<()> {
+            self.inner.close().await
+        }
+    }
+
+    fn gated() -> (
+        Fixture,
+        Engine,
+        choscordb_driver_api::Handle,
+        Arc<tokio::sync::Notify>,
+    ) {
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (fixture, engine, connection) = gated_by(Gate::HoldSecondChunk(release.clone()));
+        (fixture, engine, connection, release)
+    }
+
+    fn gated_by(gate: Gate) -> (Fixture, Engine, choscordb_driver_api::Handle) {
+        let fixture = Fixture::new();
+        let mut engine =
+            Engine::new(Default::default(), vec![Arc::new(GatedSqlite { gate })]).unwrap();
+        let connection = engine
+            .connect(
+                "sqlite",
+                ConnectionOptions::Sqlite {
+                    path: fixture.dir.path().join("db.sqlite"),
+                    read_only: false,
+                },
+            )
+            .unwrap();
+        wait(&mut engine, |event| {
+            matches!(event, Event::Connected { .. })
+        });
+        (fixture, engine, connection)
+    }
+
+    fn start(
+        fixture: &Fixture,
+        engine: &mut Engine,
+        connection: choscordb_driver_api::Handle,
+    ) -> choscordb_core::ExportId {
+        let path = write(
+            fixture.dir.path(),
+            "rows.csv",
+            numbered_rows(600, None).as_bytes(),
+        );
+        let mut request = request(existing(), &[("id", 0), ("name", 1)]);
+        request.file = csv(path, CsvReadOptions::default());
+        let import = engine.import_table(connection, request).unwrap();
+        let event = wait(engine, |event| {
+            matches!(
+                event,
+                Event::TableImportProgress { rows: 500, .. }
+                    | Event::TableImportFinished { .. }
+                    | Event::TableImportFailed { .. }
+            )
+        });
+        assert!(
+            matches!(
+                event,
+                Event::TableImportProgress {
+                    rows: 500,
+                    total: 600,
+                    ..
+                }
+            ),
+            "{event:?}"
+        );
+        import
+    }
+
+    fn outcome(engine: &mut Engine) -> Event {
+        wait(engine, |event| {
+            matches!(
+                event,
+                Event::TableImportFinished { .. } | Event::TableImportFailed { .. }
+            )
+        })
+    }
+
+    #[test]
+    fn progress_is_reported_while_the_rows_are_still_being_written() {
+        let (fixture, mut engine, connection, release) = gated();
+        start(&fixture, &mut engine, connection);
+        release.notify_one();
+        let event = outcome(&mut engine);
+        assert!(
+            matches!(event, Event::TableImportFinished { rows: 600, .. }),
+            "{event:?}"
+        );
+        assert_eq!(fixture.people().len(), 601);
+    }
+
+    #[test]
+    fn cancel_during_the_write_rolls_back_the_written_chunks() {
+        let (fixture, mut engine, connection, release) = gated();
+        let import = start(&fixture, &mut engine, connection);
+        engine.cancel_export(import).unwrap();
+        release.notify_one();
+        let event = outcome(&mut engine);
+        assert!(
+            matches!(&event, Event::TableImportFailed { error, .. } if error.kind == ErrorKind::Cancelled),
+            "{event:?}"
+        );
+        assert_eq!(fixture.people(), vec![(1, "Old".into())]);
+    }
+
+    #[test]
+    fn a_driver_that_consumes_inline_finishes_when_the_channel_is_full() {
+        let (fixture, mut engine, connection) = gated_by(Gate::ConsumeInlineWithAFullChannel);
+        let path = write(
+            fixture.dir.path(),
+            "rows.csv",
+            numbered_rows(1_250, None).as_bytes(),
+        );
+        let mut request = request(existing(), &[("id", 0), ("name", 1)]);
+        request.file = csv(path, CsvReadOptions::default());
+        engine.import_table(connection, request).unwrap();
+        let event = outcome(&mut engine);
+        assert!(
+            matches!(event, Event::TableImportFinished { rows: 1_250, .. }),
+            "{event:?}"
+        );
     }
 }

@@ -117,7 +117,6 @@ async fn reviewed_batch_binds_values_and_rolls_back_on_conflict() {
     assert!(
         c.apply_edit_batch(EditBatch {
             statements: vec![insert.clone(), stale],
-            ..Default::default()
         })
         .await
         .is_err()
@@ -134,7 +133,6 @@ async fn reviewed_batch_binds_values_and_rolls_back_on_conflict() {
     assert_eq!(
         c.apply_edit_batch(EditBatch {
             statements: vec![insert],
-            ..Default::default()
         })
         .await
         .unwrap()
@@ -314,7 +312,6 @@ async fn reviewed_batch_refuses_manual_transaction_and_rolls_back_constraint_fai
     assert_eq!(
         c.apply_edit_batch(EditBatch {
             statements: vec![insert.clone()],
-            ..Default::default()
         })
         .await
         .unwrap_err()
@@ -330,7 +327,6 @@ async fn reviewed_batch_refuses_manual_transaction_and_rolls_back_constraint_fai
     assert!(
         c.apply_edit_batch(EditBatch {
             statements: vec![insert, duplicate],
-            ..Default::default()
         })
         .await
         .is_err()
@@ -1681,21 +1677,58 @@ async fn reviewed_batch_counts_each_applied_statement() {
         expected_rows: None,
     };
     let progress = EditProgress::default();
-    c.apply_edit_batch(EditBatch {
-        statements: vec![insert(1), insert(2), insert(3)],
+    c.apply_edit_stream(EditStream {
         progress: progress.clone(),
+        ..EditStream::from(EditBatch {
+            statements: vec![insert(1), insert(2), insert(3)],
+        })
     })
     .await
     .unwrap();
     assert_eq!(progress.statements(), 3);
     let failed = EditProgress::default();
     assert!(
-        c.apply_edit_batch(EditBatch {
-            statements: vec![insert(4), insert(1), insert(5)],
+        c.apply_edit_stream(EditStream {
             progress: failed.clone(),
+            ..EditStream::from(EditBatch {
+                statements: vec![insert(4), insert(1), insert(5)],
+            })
         })
         .await
         .is_err()
     );
     assert_eq!(failed.statements(), 1);
+}
+#[tokio::test]
+async fn a_stream_that_closes_before_its_end_rolls_back_every_chunk() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE p(id INTEGER PRIMARY KEY)", false).await;
+    let (sender, chunks) = tokio::sync::mpsc::channel(2);
+    sender
+        .send(Ok(EditChunk::Rows(vec![EditStatement {
+            sql: "INSERT INTO p(id) VALUES(1)".into(),
+            params: Vec::new(),
+            expected_rows: None,
+        }])))
+        .await
+        .unwrap();
+    drop(sender);
+    let error = c
+        .apply_edit_stream(EditStream {
+            chunks,
+            progress: EditProgress::default(),
+            cancel: EditCancel::default(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(error.message, "The edit stream closed before its end");
+    let mut result = c
+        .execute("SELECT count(*) FROM p", QueryOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        result.fetch_page(PageSize::default()).await.unwrap().rows[0][0],
+        Value::Integer(0)
+    );
+    result.close().await.unwrap();
 }

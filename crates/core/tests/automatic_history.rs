@@ -306,7 +306,6 @@ fn applied_grid_edits_record_their_history_text_and_outcome() {
             params: vec![Value::Text("old".into())],
             expected_rows: None,
         }],
-        ..Default::default()
     };
     let history = |sql: &str| EditHistory {
         sql: format!("-- Original rows before the change:\n-- v = text \"old\"\n\n{sql}"),
@@ -321,7 +320,6 @@ fn applied_grid_edits_record_their_history_text_and_outcome() {
                     params: vec![],
                     expected_rows: None,
                 }],
-                ..Default::default()
             },
             None,
             1,

@@ -1,14 +1,7 @@
 use crate::{ExportFormat, format};
 use async_trait::async_trait;
 use choscordb_driver_api::*;
-use std::{
-    io::Write,
-    path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::{io::Write, path::PathBuf, sync::Arc};
 use tokio::sync::{Notify, mpsc, oneshot};
 #[derive(Clone, Default)]
 pub struct Cancellation {
@@ -16,16 +9,19 @@ pub struct Cancellation {
 }
 #[derive(Default)]
 struct CancelState {
-    cancelled: AtomicBool,
+    cancelled: EditCancel,
     notify: Notify,
 }
 impl Cancellation {
     pub fn cancel(&self) {
-        self.inner.cancelled.store(true, Ordering::Release);
+        self.inner.cancelled.cancel();
         self.inner.notify.notify_waiters();
     }
     pub fn is_cancelled(&self) -> bool {
-        self.inner.cancelled.load(Ordering::Acquire)
+        self.inner.cancelled.is_cancelled()
+    }
+    pub fn edit_cancel(&self) -> EditCancel {
+        self.inner.cancelled.clone()
     }
     pub async fn cancelled(&self) {
         loop {

@@ -570,7 +570,6 @@ async fn reviewed_batch_is_atomic_and_binds_values() {
     assert!(
         c.apply_edit_batch(EditBatch {
             statements: vec![insert.clone(), stale],
-            ..Default::default()
         })
         .await
         .is_err()
@@ -582,9 +581,11 @@ async fn reviewed_batch_is_atomic_and_binds_values() {
     );
     let progress = EditProgress::default();
     assert_eq!(
-        c.apply_edit_batch(EditBatch {
-            statements: vec![insert],
+        c.apply_edit_stream(EditStream {
             progress: progress.clone(),
+            ..EditStream::from(EditBatch {
+                statements: vec![insert],
+            })
         })
         .await
         .unwrap()

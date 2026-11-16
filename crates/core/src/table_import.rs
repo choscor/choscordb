@@ -1,10 +1,13 @@
 use choscordb_driver_api::{
-    DriverError, EditBatch, EditTarget, ErrorKind, GridEditDriver, ImportColumn, ImportConflict,
-    ObjectId, RowImportError, create_import_table_sql, drop_import_table_sql, inserts_allowed,
-    row_import_sql, row_import_statement,
+    DriverError, EditStatement, EditTarget, ErrorKind, GridEditDriver, ImportColumn,
+    ImportConflict, ObjectId, RowImportError, create_import_table_sql, drop_import_table_sql,
+    inserts_allowed, row_import_sql, row_import_statement,
 };
-use serde::de::{Deserialize, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::de::{
+    Deserialize, DeserializeSeed, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor,
+};
 use std::collections::HashSet;
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 
 pub const MAX_IMPORT_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -91,21 +94,75 @@ fn invalid(message: impl Into<String>) -> DriverError {
     DriverError::new(ErrorKind::InvalidInput, message)
 }
 
-fn decode(bytes: Vec<u8>, encoding: ImportEncoding) -> Result<String, DriverError> {
-    let text = match encoding {
-        ImportEncoding::Utf8 => String::from_utf8(bytes).map_err(|_| {
-            invalid("The file is not valid UTF-8. Choose the encoding of the file.")
-        })?,
-        ImportEncoding::Latin1 => bytes.into_iter().map(char::from).collect(),
-    };
-    Ok(text
-        .strip_prefix('\u{feff}')
-        .map(str::to_owned)
-        .unwrap_or(text))
+fn row_error(index: usize, message: String) -> DriverError {
+    invalid(message).at_statement(index)
 }
 
-fn read_text(file: &ImportFile) -> Result<String, DriverError> {
-    let io = |error: std::io::Error| DriverError::new(ErrorKind::Io, error.to_string());
+const UTF8_ERROR: &str = "The file is not valid UTF-8. Choose the encoding of the file.";
+
+fn io(error: std::io::Error) -> DriverError {
+    DriverError::new(ErrorKind::Io, error.to_string())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImportFlow {
+    Continue,
+    Stop,
+}
+
+pub type ImportRowSink<'a> = dyn FnMut(Vec<Option<String>>) -> Result<ImportFlow, DriverError> + 'a;
+
+struct Latin1Reader<R> {
+    source: R,
+    pending: std::collections::VecDeque<u8>,
+}
+
+impl<R: Read> Read for Latin1Reader<R> {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        if self.pending.is_empty() {
+            let mut bytes = [0_u8; 8192];
+            let count = self.source.read(&mut bytes)?;
+            let mut encoded = [0_u8; 2];
+            for byte in &bytes[..count] {
+                self.pending
+                    .extend(char::from(*byte).encode_utf8(&mut encoded).as_bytes());
+            }
+        }
+        let count = out.len().min(self.pending.len());
+        for (slot, byte) in out.iter_mut().zip(self.pending.drain(..count)) {
+            *slot = byte;
+        }
+        Ok(count)
+    }
+}
+
+fn check_utf8(path: &std::path::Path) -> Result<(), DriverError> {
+    let mut reader = BufReader::new(std::fs::File::open(path).map_err(io)?);
+    let mut carry = Vec::new();
+    loop {
+        let buffer = reader.fill_buf().map_err(io)?;
+        if buffer.is_empty() {
+            break;
+        }
+        carry.extend_from_slice(buffer);
+        let consumed = buffer.len();
+        reader.consume(consumed);
+        match std::str::from_utf8(&carry) {
+            Ok(_) => carry.clear(),
+            Err(error) if error.error_len().is_none() => {
+                carry.drain(..error.valid_up_to());
+            }
+            Err(_) => return Err(invalid(UTF8_ERROR)),
+        }
+    }
+    if carry.is_empty() {
+        Ok(())
+    } else {
+        Err(invalid(UTF8_ERROR))
+    }
+}
+
+fn open_text(file: &ImportFile) -> Result<Box<dyn BufRead>, DriverError> {
     let size = std::fs::metadata(&file.path).map_err(io)?.len();
     if size > MAX_IMPORT_FILE_BYTES {
         return Err(DriverError::new(
@@ -113,7 +170,21 @@ fn read_text(file: &ImportFile) -> Result<String, DriverError> {
             "The file is larger than 64 MiB. Split the file and import each part.",
         ));
     }
-    decode(std::fs::read(&file.path).map_err(io)?, file.encoding)
+    let source = std::fs::File::open(&file.path).map_err(io)?;
+    match file.encoding {
+        ImportEncoding::Utf8 => {
+            check_utf8(&file.path)?;
+            let mut reader = BufReader::new(source);
+            if reader.fill_buf().map_err(io)?.starts_with(b"\xEF\xBB\xBF") {
+                reader.consume(3);
+            }
+            Ok(Box::new(reader))
+        }
+        ImportEncoding::Latin1 => Ok(Box::new(BufReader::new(Latin1Reader {
+            source: BufReader::new(source),
+            pending: std::collections::VecDeque::new(),
+        }))),
+    }
 }
 
 fn row_limit(rows: usize, read: ImportRead) -> Result<bool, DriverError> {
@@ -138,10 +209,10 @@ fn column_limit(columns: usize) -> Result<(), DriverError> {
 }
 
 fn read_csv(
-    text: &str,
+    reader: Box<dyn BufRead>,
     options: &CsvReadOptions,
-    read: ImportRead,
-) -> Result<ImportData, DriverError> {
+    sink: &mut ImportRowSink<'_>,
+) -> Result<Vec<String>, DriverError> {
     if options.delimiter == options.quote {
         return Err(invalid("The delimiter and the quote must be different."));
     }
@@ -150,8 +221,8 @@ fn read_csv(
         .quote(options.quote)
         .has_headers(false)
         .flexible(true)
-        .from_reader(text.as_bytes());
-    let mut data = ImportData::default();
+        .from_reader(reader);
+    let mut columns = Vec::new();
     let mut width = None;
     for (index, record) in reader.records().enumerate() {
         let record =
@@ -160,32 +231,32 @@ fn read_csv(
         let Some(expected) = width else {
             column_limit(fields.len())?;
             width = Some(fields.len());
-            data.columns = (1..=fields.len())
+            columns = (1..=fields.len())
                 .map(|position| match fields[position - 1].trim() {
                     name if options.header && !name.is_empty() => name.to_owned(),
                     _ => format!("column_{position}"),
                 })
                 .collect();
-            if options.header {
-                continue;
+            if !options.header && sink(csv_row(&fields, options))? == ImportFlow::Stop {
+                break;
             }
-            data.rows.push(csv_row(&fields, options));
             continue;
         };
         let row = if options.header { index } else { index + 1 };
         if fields.len() != expected {
-            return Err(invalid(format!(
-                "Row {row} has {} fields. The first row has {expected} fields.",
-                fields.len()
-            )));
+            return Err(row_error(
+                row - 1,
+                format!(
+                    "Row {row} has {} fields. The first row has {expected} fields.",
+                    fields.len()
+                ),
+            ));
         }
-        if row_limit(data.rows.len(), read)? {
+        if sink(csv_row(&fields, options))? == ImportFlow::Stop {
             break;
         }
-        data.rows.push(csv_row(&fields, options));
     }
-    row_limit(data.rows.len(), read)?;
-    Ok(data)
+    Ok(columns)
 }
 
 fn csv_row(fields: &[&str], options: &CsvReadOptions) -> Vec<Option<String>> {
@@ -250,60 +321,174 @@ fn json_text(value: serde_json::Value) -> Option<String> {
     }
 }
 
-fn read_json(text: &str, read: ImportRead) -> Result<ImportData, DriverError> {
-    let rows: Vec<JsonRow> = if text.trim_start().starts_with('[') {
-        serde_json::from_str(text)
-            .map_err(|error| invalid(format!("The JSON file is not valid: {error}")))?
-    } else {
-        text.lines()
-            .filter(|line| !line.trim().is_empty())
-            .enumerate()
-            .map(|(index, line)| {
-                serde_json::from_str(line).map_err(|error| {
-                    invalid(format!("Row {} is not valid JSON: {error}", index + 1))
-                })
-            })
-            .collect::<Result<_, _>>()?
-    };
-    let mut data = ImportData::default();
-    let mut positions = std::collections::HashMap::new();
-    let mut entries = Vec::new();
-    for (index, row) in rows.into_iter().enumerate() {
-        if row_limit(entries.len(), read)? {
-            break;
-        }
+#[derive(Default)]
+struct JsonColumns {
+    names: Vec<String>,
+    positions: std::collections::HashMap<String, usize>,
+}
+
+impl JsonColumns {
+    fn row(&mut self, index: usize, row: JsonRow) -> Result<Vec<Option<String>>, DriverError> {
         let JsonRow::Object(fields) = row else {
-            return Err(invalid(format!("Row {} is not a JSON object.", index + 1)));
+            return Err(row_error(
+                index,
+                format!("Row {} is not a JSON object.", index + 1),
+            ));
         };
         for (name, _) in &fields {
-            if !positions.contains_key(name) {
-                positions.insert(name.clone(), data.columns.len());
-                data.columns.push(name.clone());
-                column_limit(data.columns.len())?;
+            if !self.positions.contains_key(name) {
+                self.positions.insert(name.clone(), self.names.len());
+                self.names.push(name.clone());
+                column_limit(self.names.len())?;
             }
         }
-        entries.push(fields);
+        let mut values = vec![None; self.names.len()];
+        for (name, value) in fields {
+            values[self.positions[&name]] = json_text(value);
+        }
+        Ok(values)
     }
-    row_limit(entries.len(), read)?;
-    data.rows = entries
-        .into_iter()
-        .map(|fields| {
-            let mut row = vec![None; data.columns.len()];
-            for (name, value) in fields {
-                row[positions[&name]] = json_text(value);
+}
+
+struct JsonArrayRows<'s, 'a> {
+    columns: &'s mut JsonColumns,
+    sink: &'s mut ImportRowSink<'a>,
+    outcome: &'s mut Option<Result<(), DriverError>>,
+    read: &'s mut usize,
+}
+
+impl<'de> DeserializeSeed<'de> for JsonArrayRows<'_, '_> {
+    type Value = ();
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_seq(self)
+    }
+}
+
+impl<'de> Visitor<'de> for JsonArrayRows<'_, '_> {
+    type Value = ();
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a JSON array")
+    }
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        let mut index = 0;
+        while let Some(row) = seq.next_element::<JsonRow>()? {
+            let flow = self
+                .columns
+                .row(index, row)
+                .and_then(|values| (self.sink)(values));
+            index += 1;
+            *self.read = index;
+            match flow {
+                Ok(ImportFlow::Continue) => {}
+                Ok(ImportFlow::Stop) => {
+                    *self.outcome = Some(Ok(()));
+                    return Err(serde::de::Error::custom("stopped"));
+                }
+                Err(error) => {
+                    *self.outcome = Some(Err(error));
+                    return Err(serde::de::Error::custom("stopped"));
+                }
             }
-            row
-        })
-        .collect();
-    Ok(data)
+        }
+        Ok(())
+    }
+}
+
+fn read_json(
+    mut reader: Box<dyn BufRead>,
+    sink: &mut ImportRowSink<'_>,
+) -> Result<Vec<String>, DriverError> {
+    let mut columns = JsonColumns::default();
+    let array = loop {
+        let buffer = reader.fill_buf().map_err(io)?;
+        let Some(&first) = buffer.first() else {
+            break false;
+        };
+        if first.is_ascii_whitespace() {
+            reader.consume(1);
+            continue;
+        }
+        break first == b'[';
+    };
+    if array {
+        let mut outcome = None;
+        let mut read = 0;
+        let mut deserializer = serde_json::Deserializer::from_reader(reader);
+        let parsed = JsonArrayRows {
+            columns: &mut columns,
+            sink,
+            outcome: &mut outcome,
+            read: &mut read,
+        }
+        .deserialize(&mut deserializer)
+        .and_then(|()| deserializer.end());
+        match (outcome, parsed) {
+            (Some(stopped), _) => stopped?,
+            (None, parsed) => parsed
+                .map_err(|error| row_error(read, format!("The JSON file is not valid: {error}")))?,
+        }
+        return Ok(columns.names);
+    }
+    let mut line = String::new();
+    let mut index = 0;
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).map_err(io)? == 0 {
+            break;
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: JsonRow = serde_json::from_str(&line).map_err(|error| {
+            row_error(
+                index,
+                format!("Row {} is not valid JSON: {error}", index + 1),
+            )
+        })?;
+        let values = columns.row(index, row)?;
+        index += 1;
+        if sink(values)? == ImportFlow::Stop {
+            break;
+        }
+    }
+    Ok(columns.names)
+}
+
+pub fn read_import_rows(
+    file: &ImportFile,
+    sink: &mut ImportRowSink<'_>,
+) -> Result<Vec<String>, DriverError> {
+    let reader = open_text(file)?;
+    match &file.format {
+        ImportFileFormat::Csv(options) => read_csv(reader, options, sink),
+        ImportFileFormat::Json => read_json(reader, sink),
+    }
 }
 
 pub fn read_import_file(file: &ImportFile, read: ImportRead) -> Result<ImportData, DriverError> {
-    let text = read_text(file)?;
-    match &file.format {
-        ImportFileFormat::Csv(options) => read_csv(&text, options, read),
-        ImportFileFormat::Json => read_json(&text, read),
+    let mut rows = Vec::new();
+    let columns = read_import_rows(file, &mut |row| {
+        if row_limit(rows.len(), read)? {
+            return Ok(ImportFlow::Stop);
+        }
+        rows.push(row);
+        Ok(ImportFlow::Continue)
+    })?;
+    row_limit(rows.len(), read)?;
+    for row in &mut rows {
+        row.resize(columns.len(), None);
     }
+    Ok(ImportData { columns, rows })
+}
+
+pub fn count_import_rows(file: &ImportFile) -> Result<u64, DriverError> {
+    let mut rows = 0_usize;
+    read_import_rows(file, &mut |_| {
+        rows += 1;
+        row_limit(rows, ImportRead::All)?;
+        Ok(ImportFlow::Continue)
+    })?;
+    Ok(rows as u64)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -332,7 +517,19 @@ pub struct PlannedImport {
     pub insert: String,
     pub create: Option<String>,
     pub drop: Option<String>,
-    pub batch: EditBatch,
+    columns: Vec<ImportColumn>,
+    sources: Vec<usize>,
+}
+
+impl PlannedImport {
+    pub fn statement(&self, row: &[Option<String>]) -> Result<EditStatement, DriverError> {
+        let values = self
+            .sources
+            .iter()
+            .map(|source| row.get(*source).cloned().flatten())
+            .collect();
+        row_import_statement(&self.insert, &self.columns, values).map_err(rule)
+    }
 }
 
 fn rule(error: RowImportError) -> DriverError {
@@ -391,7 +588,7 @@ fn existing_columns(
 pub fn plan_table_import(
     request: &TableImportRequest,
     target: Option<&EditTarget>,
-    data: ImportData,
+    file_columns: &[String],
 ) -> Result<PlannedImport, DriverError> {
     if let Some(message) = table_import_mapping_error(&request.mapping) {
         return Err(invalid(message));
@@ -399,7 +596,7 @@ pub fn plan_table_import(
     if let Some(entry) = request
         .mapping
         .iter()
-        .find(|entry| entry.source >= data.columns.len())
+        .find(|entry| entry.source >= file_columns.len())
     {
         return Err(invalid(format!(
             "The file has no column {}.",
@@ -445,19 +642,9 @@ pub fn plan_table_import(
         request.conflict,
     )
     .map_err(rule)?;
-    planned.insert = sql.clone();
-    planned.batch.statements = data
-        .rows
-        .into_iter()
-        .map(|row| {
-            let values = request
-                .mapping
-                .iter()
-                .map(|entry| row[entry.source].clone())
-                .collect();
-            row_import_statement(&sql, &columns, values).map_err(rule)
-        })
-        .collect::<Result<_, _>>()?;
+    planned.insert = sql;
+    planned.columns = columns;
+    planned.sources = request.mapping.iter().map(|entry| entry.source).collect();
     Ok(planned)
 }
 

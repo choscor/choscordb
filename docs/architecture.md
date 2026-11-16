@@ -226,11 +226,12 @@ A failed or cancelled file is not written. Files of earlier tables stay.
 ### Table import
 
 The navigator "Import…" item on a table and "Import into new table…" on a connection, database or schema open the import dialog.
-`read_import_file` in `core` reads a CSV, JSON array or JSON Lines file in UTF-8 or Latin-1. The preview has the first 100 rows.
+`read_import_rows` in `core` reads a CSV, JSON array or JSON Lines file in UTF-8 or Latin-1. It gives each row to a sink and does not keep the file in memory.
+`read_import_file` uses it for the preview. The preview reads only the first 100 rows. `count_import_rows` counts the rows for the progress.
 CSV options are the delimiter, the quote, the NULL text and the header row. A JSON row is an object. The keys become the columns in the order of the file.
 Limits: 64 MiB, 100,000 rows and 1,000 columns for each file.
 `table_import_default_mapping` in the bridge maps the table columns to the file columns with the same name.
-`plan_table_import` makes one `INSERT` for each row. `row_import_sql` in `driver-api` gives the conflict policy for each driver:
+`plan_table_import` uses the file columns and makes a `PlannedImport`. `PlannedImport::statement` makes one `INSERT` for each row. `row_import_sql` in `driver-api` gives the conflict policy for each driver:
 
 | Policy | SQLite and PostgreSQL | MySQL and MariaDB |
 | --- | --- | --- |
@@ -242,11 +243,15 @@ Limits: 64 MiB, 100,000 rows and 1,000 columns for each file.
 `Update` needs all primary key columns in the mapping. PostgreSQL does not show `Replace`.
 Before the import, the dialog shows the SQL for each row from `table_import_review`. It uses the same plan as the import.
 `Engine::import_table` sends one `ImportTable` command to the connection actor.
-The actor reads the file on a blocking thread, inspects the table with `Connection::inspect_edit_target` and applies all rows with one `apply_edit_batch` call in one transaction.
+The actor inspects the table with `Connection::inspect_edit_target`. Then it reads the file again on a blocking thread.
+The reader sends the statements in chunks of 500 rows through a channel with two chunks in flight.
+`Connection::apply_edit_stream` applies all chunks in one transaction. The actor sends `EditChunk::End` after the reader stops without an error.
+The driver commits only after `End`. A reader error, a closed channel or a cancel rolls back all chunks.
 Each driver puts the index of the failed statement in `DriverError::failed_statement`. The bridge adds `Row N:` to the error message.
-Each driver advances the `EditProgress` of the batch after each applied statement. Every 250 ms, the actor sends `TableImportProgress` with the written rows and the rows in the file. The dialog shows the two numbers.
+Each driver advances the `EditProgress` of the stream after each applied statement. Every 250 ms, the actor sends `TableImportProgress` with the written rows and the rows in the file. The dialog shows the two numbers.
 A new table gets `TEXT` columns. The actor creates the table first and drops it again when the rows fail.
-Cancel stops the import before the write. During the write, it asks the driver to cancel the statement.
+Cancel stops the reader after the current row. The driver checks the `EditCancel` of the stream before each chunk.
+During the write, the actor also asks the driver to cancel the statement.
 
 ### Workspace shortcuts
 

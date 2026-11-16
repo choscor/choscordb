@@ -58,11 +58,15 @@ impl Connection for Conn {
         }
         Ok(Box::new(Cursor))
     }
-    async fn apply_edit_batch(&mut self, batch: EditBatch) -> Result<EditBatchSummary> {
+    async fn apply_edit_stream(&mut self, mut stream: EditStream) -> Result<EditBatchSummary> {
+        let mut statements = 0;
+        while let Some(rows) = stream.next_rows().await? {
+            statements += rows.len();
+        }
         self.log
             .lock()
             .unwrap()
-            .push(format!("batch of {}", batch.statements.len()));
+            .push(format!("batch of {statements}"));
         Err(DriverError::new(ErrorKind::Query, "value too long").at_statement(1))
     }
     async fn load_metadata(&mut self, parent: Option<ObjectId>) -> Result<Vec<SchemaObject>> {

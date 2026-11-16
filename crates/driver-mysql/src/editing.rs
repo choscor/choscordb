@@ -356,7 +356,29 @@ fn bound_value(value: Value) -> Result<mysql_async::Value> {
     })
 }
 
-pub(crate) async fn apply_batch(conn: &mut Conn, batch: EditBatch) -> Result<EditBatchSummary> {
+fn edit_statement(edit: EditStatement) -> Result<(String, Vec<mysql_async::Value>, Option<u64>)> {
+    if !edit.sql.split_whitespace().next().is_some_and(|word| {
+        ["INSERT", "REPLACE", "UPDATE", "DELETE"]
+            .iter()
+            .any(|allowed| word.eq_ignore_ascii_case(allowed))
+    }) {
+        return Err(error(
+            ErrorKind::InvalidInput,
+            "Edit batches accept only INSERT, REPLACE, UPDATE, and DELETE",
+        ));
+    }
+    let params = edit
+        .params
+        .into_iter()
+        .map(bound_value)
+        .collect::<Result<Vec<_>>>()?;
+    Ok((edit.sql, params, edit.expected_rows))
+}
+
+pub(crate) async fn apply_stream(
+    conn: &mut Conn,
+    mut stream: EditStream,
+) -> Result<EditBatchSummary> {
     let autocommit: Option<u8> = conn
         .query_first("SELECT @@session.autocommit")
         .await
@@ -367,45 +389,31 @@ pub(crate) async fn apply_batch(conn: &mut Conn, batch: EditBatch) -> Result<Edi
             choscordb_driver_api::EDITS_NEED_NO_TRANSACTION,
         ));
     }
-    let mut statements = Vec::with_capacity(batch.statements.len());
-    for edit in batch.statements {
-        if !edit.sql.split_whitespace().next().is_some_and(|word| {
-            ["INSERT", "REPLACE", "UPDATE", "DELETE"]
-                .iter()
-                .any(|allowed| word.eq_ignore_ascii_case(allowed))
-        }) {
-            return Err(error(
-                ErrorKind::InvalidInput,
-                "Edit batches accept only INSERT, REPLACE, UPDATE, and DELETE",
-            ));
-        }
-        let params = edit
-            .params
-            .into_iter()
-            .map(bound_value)
-            .collect::<Result<Vec<_>>>()?;
-        statements.push((edit.sql, params, edit.expected_rows));
-    }
     let mut tx = conn
         .start_transaction(mysql_async::TxOpts::default())
         .await
         .map_err(normalize)?;
     let result = async {
-        let mut affected_rows = Vec::with_capacity(statements.len());
-        for (index, (sql, params, expected)) in statements.into_iter().enumerate() {
-            tx.exec_drop(sql, mysql_async::Params::Positional(params))
-                .await
-                .map_err(|failure| normalize(failure).at_statement(index))?;
-            let count = tx.affected_rows();
-            if expected.is_some_and(|expected| expected != count) {
-                return Err(error(
-                    ErrorKind::Query,
-                    "Edit conflict: the original row has changed",
-                )
-                .at_statement(index));
+        let mut affected_rows = Vec::new();
+        while let Some(statements) = stream.next_rows().await? {
+            for edit in statements {
+                let index = affected_rows.len();
+                let (sql, params, expected) =
+                    edit_statement(edit).map_err(|failure| failure.at_statement(index))?;
+                tx.exec_drop(sql, mysql_async::Params::Positional(params))
+                    .await
+                    .map_err(|failure| normalize(failure).at_statement(index))?;
+                let count = tx.affected_rows();
+                if expected.is_some_and(|expected| expected != count) {
+                    return Err(error(
+                        ErrorKind::Query,
+                        "Edit conflict: the original row has changed",
+                    )
+                    .at_statement(index));
+                }
+                affected_rows.push(count);
+                stream.progress.advance();
             }
-            affected_rows.push(count);
-            batch.progress.advance();
         }
         Ok(EditBatchSummary { affected_rows })
     }

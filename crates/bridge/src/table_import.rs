@@ -1,7 +1,7 @@
 use crate::{BridgeEngine, code_label, ffi, pack, submit, unpack};
 use choscordb_core::{
-    CsvReadOptions, ImportData, ImportEncoding, ImportFile, ImportFileFormat, ImportMapping,
-    ImportRead, TableImportRequest, TableImportTarget, plan_table_import, read_import_file,
+    CsvReadOptions, ImportEncoding, ImportFile, ImportFileFormat, ImportMapping, ImportRead,
+    TableImportRequest, TableImportTarget, plan_table_import, read_import_file,
     table_import_mapping_error, table_import_unavailable,
 };
 use choscordb_driver_api::{
@@ -223,12 +223,8 @@ pub fn table_import_review(
         key_columns,
         ..Default::default()
     };
-    let data = ImportData {
-        columns: file_columns,
-        rows: Vec::new(),
-    };
     let reviewed = request(dto).and_then(|request| {
-        plan_table_import(&request, Some(&target), data).map_err(|error| error.message)
+        plan_table_import(&request, Some(&target), &file_columns).map_err(|error| error.message)
     });
     match reviewed {
         Ok(plan) => ffi::TableImportReviewDto {
