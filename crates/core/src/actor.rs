@@ -1009,12 +1009,20 @@ pub(crate) async fn run(
                 catalog_read(&mut *connection, id, read, &mut shutdown, &events).await;
             }
             Command::Explain {
-                driver,
+                driver: dialect,
                 sql,
                 request_token,
             } => {
                 close_active(active, &events).await;
-                let event = match explain_plan(connection.as_mut(), driver, &sql).await {
+                let plan = if driver.capabilities().explain_plans {
+                    explain_plan(connection.as_mut(), dialect, &sql).await
+                } else {
+                    Err(DriverError::new(
+                        ErrorKind::Unsupported,
+                        "This database driver cannot show query plans.",
+                    ))
+                };
+                let event = match plan {
                     Ok(nodes) => Event::ExplainReady {
                         connection: id,
                         request_token,

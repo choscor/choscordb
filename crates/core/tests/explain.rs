@@ -242,3 +242,62 @@ fn the_engine_explains_a_statement_without_running_it() {
         Err("Place the cursor in a statement to explain.".into())
     );
 }
+
+struct PlanlessSqlite;
+
+#[async_trait::async_trait]
+impl choscordb_driver_api::DatabaseDriver for PlanlessSqlite {
+    fn id(&self) -> &'static str {
+        "sqlite"
+    }
+    fn capabilities(&self) -> choscordb_driver_api::DriverCapabilities {
+        choscordb_driver_api::DriverCapabilities {
+            explain_plans: false,
+            ..choscordb_driver_sqlite::SqliteDriver.capabilities()
+        }
+    }
+    async fn connect(
+        &self,
+        options: choscordb_driver_api::ConnectionOptions,
+    ) -> choscordb_driver_api::Result<Box<dyn choscordb_driver_api::Connection>> {
+        choscordb_driver_sqlite::SqliteDriver.connect(options).await
+    }
+}
+
+#[test]
+fn a_driver_without_query_plans_reports_a_typed_unsupported_error() {
+    use choscordb_core::{Engine, Event};
+    let mut engine = Engine::new(
+        Default::default(),
+        vec![std::sync::Arc::new(PlanlessSqlite)],
+    )
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let connection = engine
+        .connect(
+            "sqlite",
+            choscordb_driver_api::ConnectionOptions::Sqlite {
+                path: dir.path().join("db.sqlite"),
+                read_only: false,
+            },
+        )
+        .unwrap();
+    wait(&mut engine, |event| {
+        matches!(event, Event::Connected { .. })
+    });
+    engine
+        .explain(connection, GridEditDriver::Sqlite, "SELECT 1", 7)
+        .unwrap();
+    let event = wait(&mut engine, |event| {
+        matches!(
+            event,
+            Event::ExplainReady { .. } | Event::ExplainFailed { .. }
+        )
+    });
+    assert!(
+        matches!(&event, Event::ExplainFailed { request_token: 7, error, .. }
+            if error.kind == choscordb_driver_api::ErrorKind::Unsupported
+                && error.message == "This database driver cannot show query plans."),
+        "{event:?}"
+    );
+}
