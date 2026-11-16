@@ -24,6 +24,7 @@ class QTreeView;
 class QModelIndex;
 namespace choscordb {
 namespace design {
+class Button;
 class PlatformAccessibilityMonitor;
 class ThemeManager;
 class QuickSearchDialog;
@@ -78,7 +79,7 @@ class MainWindow final : public QMainWindow {
     struct Ui;
     struct PendingObjectAction;
     Ui buildUi();
-    void addSqlTextActions(QMenu* editMenu);
+    void addSqlTextActions(QMenu* editMenu, design::Button* switchDatabaseButton);
     void addRunSqlFileAction(QMenu* fileMenu);
     void addNavigationShortcuts(QMenu* viewMenu);
     static QKeySequence replaceShortcut();
@@ -189,6 +190,7 @@ class MainWindow final : public QMainWindow {
     void finishClose(QCloseEvent* event);
     void showQuickSearch();
     void switchDatabase();
+    void syncDocumentTabTones();
     void manageDatabases();
     void requestDatabases(bool forActions);
     void openDatabaseActions(const DatabaseList& list);
@@ -223,6 +225,7 @@ class MainWindow final : public QMainWindow {
     bool sidebarHistoryOpen_ = false;
     std::function<void()> refreshSavedFiles_;
     std::function<void()> rebuildCompletion_;
+    std::function<void()> scheduleTabTags_;
     QList<CompletionCandidate> savedSnippets_;
     EditorPreferencesController* preferences_ = nullptr;
     AppearanceController* appearance_ = nullptr;

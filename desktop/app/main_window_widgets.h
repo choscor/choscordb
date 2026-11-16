@@ -256,8 +256,13 @@ class DocumentTabGestures final : public QObject {
         if (event->type() == QEvent::ToolTip) {
             const auto* help = static_cast<QHelpEvent*>(event);
             const int index = bar->tabAt(help->pos());
-            if (index >= 0 && bar->tabToolTip(index) != bar->tabText(index)) {
-                bar->setTabToolTip(index, bar->tabText(index));
+            const auto* document = dynamic_cast<const design::DocumentTabBar*>(bar);
+            const auto tag = document && index >= 0 ? document->tabTagLabel(index) : QString();
+            const auto tip = index < 0       ? QString()
+                             : tag.isEmpty() ? bar->tabText(index)
+                                             : bar->tabText(index) + QStringLiteral(" · ") + tag;
+            if (index >= 0 && bar->tabToolTip(index) != tip) {
+                bar->setTabToolTip(index, tip);
                 return QCoreApplication::sendEvent(bar, event);
             }
         } else if (event->type() == QEvent::MouseButtonRelease) {

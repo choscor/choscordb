@@ -144,6 +144,12 @@ class QueryWorkspace final : public QObject {
     }
     const QList<LiveConnection>& liveConnections() const { return liveConnections_; }
     std::optional<QString> liveConnectionLabel(quint64 connection) const;
+    QString connectionToneCode(quint64 connection) const {
+        return connectionTags_.value(connection).tone;
+    }
+    QString connectionTagLabel(quint64 connection) const {
+        return connectionTags_.value(connection).label;
+    }
     std::optional<LiveConnection> liveConnectionForProfile(const QString& profileId) const;
     bool changeDocumentConnection(SqlEditor* editor, quint64 connection);
     void refreshEditActions() { updateActions(); }

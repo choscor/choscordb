@@ -14,8 +14,29 @@ DocumentTabBar::DocumentTabBar(QWidget* parent) : QTabBar(parent) {
     setFont(font);
 }
 
+void DocumentTabBar::setTabTag(int index, std::optional<StatusTone> tone, const QString& label) {
+    const QVariant value =
+        tone ? QVariant(QVariantMap{{"tone", static_cast<int>(*tone)}, {"label", label}})
+             : QVariant();
+    if (tabData(index) == value)
+        return;
+    setTabData(index, value);
+    update(tabRect(index));
+}
+
+std::optional<StatusTone> DocumentTabBar::tabTone(int index) const {
+    const auto tone = tabData(index).toMap().value("tone");
+    if (!tone.isValid())
+        return std::nullopt;
+    return static_cast<StatusTone>(tone.toInt());
+}
+
+QString DocumentTabBar::tabTagLabel(int index) const {
+    return tabData(index).toMap().value("label").toString();
+}
+
 namespace {
-void drawDocumentTabLabel(const QStyleOptionTab& tab, QPainter* painter, const QTabBar& bar,
+void drawDocumentTabLabel(const QStyleOptionTab& tab, QPainter* painter, const DocumentTabBar& bar,
                           int index) {
     painter->save();
     const auto colors = resolvedThemeForWidget(bar).colors;
@@ -34,6 +55,16 @@ void drawDocumentTabLabel(const QStyleOptionTab& tab, QPainter* painter, const Q
                        tab.state.testFlag(QStyle::State_Enabled) ? QIcon::Normal : QIcon::Disabled,
                        tab.state.testFlag(QStyle::State_Selected) ? QIcon::On : QIcon::Off);
         left += iconSize + spacing(Spacing::One);
+    }
+    if (const auto tone = bar.tabTone(index)) {
+        const int marker = spacing(Spacing::Two);
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(statusToneColor(colors, *tone));
+        painter->drawEllipse(QRect(left, tab.rect.center().y() - marker / 2, marker, marker));
+        painter->restore();
+        left += marker + spacing(Spacing::One);
     }
     const auto* close = bar.tabButton(index, QTabBar::RightSide);
     const int rightInset =

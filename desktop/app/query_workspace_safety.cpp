@@ -11,7 +11,7 @@ void QueryWorkspace::rememberProfile(quint64 connection, const SavedProfile& pro
     connectionSources_.insert(connection, profile);
     connectionDrivers_.insert(connection, profile.driver);
     connectionTags_.insert(connection,
-                           {profile.safety, profile.safety, profile.tagLabel, profile.tone});
+                           {profile.safety, profile.safety, profile.chipLabel, profile.tone});
 }
 
 std::optional<SavedProfile> QueryWorkspace::connectionSource(quint64 connection) const {

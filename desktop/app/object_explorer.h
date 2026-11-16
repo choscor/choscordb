@@ -37,6 +37,7 @@ class ObjectExplorer final : public QWidget {
     void activateRestoredObject();
     int paneIndex() const { return activePane_; }
     bool needsConnection() const { return !connection_.has_value(); }
+    std::optional<quint64> connection() const { return connection_; }
     bool operationInFlight() const { return requestToken_ != 0 || operationBusy_; }
     void selectPane(int index);
     void stepPane(int delta);

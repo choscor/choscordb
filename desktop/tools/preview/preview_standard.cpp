@@ -282,6 +282,9 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
                          : i == 3 ? "order_items"
                                   : QString("History query %1 · 日本語").arg(i));
         }
+        auto* documentBar = static_cast<DocumentTabBar*>(tabs->tabBar());
+        documentBar->setTabTag(0, StatusTone::Danger, "Production");
+        documentBar->setTabTag(4, StatusTone::Success, "Development");
         QObject::connect(tabs, &QTabWidget::tabCloseRequested, tabs, [tabs](int index) {
             auto* page = tabs->widget(index);
             tabs->removeTab(index);

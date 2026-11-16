@@ -244,6 +244,7 @@ Before the import, the dialog shows the SQL for each row from `table_import_revi
 `Engine::import_table` sends one `ImportTable` command to the connection actor.
 The actor reads the file on a blocking thread, inspects the table with `Connection::inspect_edit_target` and applies all rows with one `apply_edit_batch` call in one transaction.
 Each driver puts the index of the failed statement in `DriverError::failed_statement`. The bridge adds `Row N:` to the error message.
+Each driver advances the `EditProgress` of the batch after each applied statement. Every 250 ms, the actor sends `TableImportProgress` with the written rows and the rows in the file. The dialog shows the two numbers.
 A new table gets `TEXT` columns. The actor creates the table first and drops it again when the rows fail.
 Cancel stops the import before the write. During the write, it asks the driver to cancel the statement.
 

@@ -18,7 +18,7 @@ fn profiles_from_v020_load_with_default_tag_color_and_safety() {
     assert_eq!(profile.environment_label, None);
     assert_eq!(profile.color, ConnectionColor::Automatic);
     assert_eq!(profile.safety, SafetyLevel::ConfirmWrites);
-    assert_eq!(profile.tone(), None);
+    assert_eq!(profile.tags().tone(), None);
     assert_eq!(serde_json::to_value(&profile).unwrap(), saved_v020());
 }
 
@@ -31,10 +31,10 @@ fn tags_round_trip_and_resolve_a_semantic_tone() {
     storage.save_profile(&profile).unwrap();
     let loaded = storage.profiles().unwrap().remove(0);
     assert_eq!(loaded, profile);
-    assert_eq!(loaded.tone(), Some(ConnectionTone::Danger));
-    assert_eq!(loaded.tag_label().as_deref(), Some("Production"));
+    assert_eq!(loaded.tags().tone(), Some(ConnectionTone::Danger));
+    assert_eq!(loaded.tags().tag_label().as_deref(), Some("Production"));
     profile.color = ConnectionColor::Blue;
-    assert_eq!(profile.tone(), Some(ConnectionTone::Brand));
+    assert_eq!(profile.tags().tone(), Some(ConnectionTone::Brand));
     for (environment, tone) in [
         (ConnectionEnvironment::Local, ConnectionTone::Neutral),
         (ConnectionEnvironment::Development, ConnectionTone::Success),
@@ -43,12 +43,17 @@ fn tags_round_trip_and_resolve_a_semantic_tone() {
     ] {
         profile.environment = environment;
         profile.color = ConnectionColor::Automatic;
-        assert_eq!(profile.tone(), Some(tone), "{environment:?}");
+        assert_eq!(profile.tags().tone(), Some(tone), "{environment:?}");
     }
     profile.environment = ConnectionEnvironment::None;
     profile.color = ConnectionColor::Green;
-    assert_eq!(profile.tone(), Some(ConnectionTone::Success));
-    assert_eq!(profile.tag_label(), None);
+    assert_eq!(profile.tags().tone(), Some(ConnectionTone::Success));
+    assert_eq!(profile.tags().tag_label(), None);
+    assert_eq!(profile.tags().chip_label(), Some(profile.name.clone()));
+    profile.color = ConnectionColor::Automatic;
+    assert_eq!(profile.tags().chip_label(), None);
+    profile.environment = ConnectionEnvironment::Staging;
+    assert_eq!(profile.tags().chip_label().as_deref(), Some("Staging"));
 }
 
 #[test]
@@ -61,8 +66,8 @@ fn a_custom_environment_needs_a_short_label() {
     assert!(storage.save_profile(&profile).is_err());
     profile.environment_label = Some("QA-2".into());
     storage.save_profile(&profile).unwrap();
-    assert_eq!(profile.tag_label().as_deref(), Some("QA-2"));
-    assert_eq!(profile.tone(), Some(ConnectionTone::Brand));
+    assert_eq!(profile.tags().tag_label().as_deref(), Some("QA-2"));
+    assert_eq!(profile.tags().tone(), Some(ConnectionTone::Brand));
     profile.environment = ConnectionEnvironment::Staging;
     assert!(storage.save_profile(&profile).is_err());
 }

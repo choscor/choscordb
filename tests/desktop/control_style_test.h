@@ -35,6 +35,7 @@ class ControlStyleTest final : public QObject {
     void documentTabsFitAnUntitledQueryTitle();
     void documentTabIconsUseTheRegularIconSize();
     void unsavedDocumentTabDotUsesTheBrandColor();
+    void documentTabToneDotUsesTheConnectionTone();
     void darkSwitchUsesTheKumoPaletteTrackAndThumb();
     void checksAndRadiosKeepTheKumoLabelGap();
     void selectShowsTheSubtleKumoUpDownCaret();

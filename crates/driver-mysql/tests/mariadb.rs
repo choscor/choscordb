@@ -280,6 +280,7 @@ async fn system_versioned_tables_edit_current_rows_without_period_columns() {
                 params: vec![Value::Text("changed".into()), Value::Integer(1)],
                 expected_rows: Some(1),
             }],
+            ..Default::default()
         })
         .await
         .unwrap();

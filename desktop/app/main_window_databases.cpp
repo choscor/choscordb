@@ -1,8 +1,11 @@
+#include "app/connection_tone.h"
 #include "app/main_window.h"
+#include "app/object_explorer.h"
 #include "app/query_workspace.h"
 #include "bridge/request_token.h"
 #include "bridge/text_filter.h"
 #include "design_system/quick_search/quick_search_dialog.h"
+#include "design_system/tabs/tabs_style.h"
 #include "widgets/database_action_dialog/database_action_dialog.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QTabWidget>
@@ -11,6 +14,21 @@ namespace choscordb {
 
 void MainWindow::switchDatabase() {
     requestDatabases(false);
+}
+
+void MainWindow::syncDocumentTabTones() {
+    auto& bar = static_cast<design::DocumentTabBar&>(*editors_->tabBar());
+    for (int index = 0; index < editors_->count(); ++index) {
+        auto* page = editors_->widget(index);
+        std::optional<quint64> target;
+        if (const auto* editor = qobject_cast<SqlEditor*>(page))
+            target = editor->connectionTarget();
+        else if (const auto* object = qobject_cast<ObjectExplorer*>(page))
+            target = object->connection();
+        const auto tone =
+            target ? connectionTone(workspace_->connectionToneCode(*target)) : std::nullopt;
+        bar.setTabTag(index, tone, tone ? workspace_->connectionTagLabel(*target) : QString());
+    }
 }
 
 void MainWindow::manageDatabases() {

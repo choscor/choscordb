@@ -28,6 +28,13 @@ QString tr(const char* text) {
 ConnectionToolbar buildConnectionToolbar(QToolBar* toolbar, QMenu* queryMenu) {
     auto* safety = addSelect(toolbar, "safetyLevel", tr("Safety level"),
                              tr("Safety level for this connection"));
+    auto* database = new design::Button({}, toolbar);
+    database->setObjectName("switchDatabaseButton");
+    database->setAccessibleName(tr("Switch database…"));
+    database->setDesignIcon(design::Icon::Database);
+    database->setVariant(design::ButtonVariant::Outline);
+    database->setButtonSize(design::ButtonSize::IconSmall);
+    toolbar->addWidget(database);
     auto* rowLimit =
         addSelect(toolbar, "rowLimit", tr("Row limit for SELECT"), tr("Row limit for SELECT"));
     auto* explain = queryMenu->addAction(tr("Explain"));
@@ -46,7 +53,7 @@ ConnectionToolbar buildConnectionToolbar(QToolBar* toolbar, QMenu* queryMenu) {
         button->setToolTip(tr("Show the query plan of the statement at the cursor") + " · " +
                            explain->shortcut().toString(QKeySequence::NativeText));
     });
-    return {safety, rowLimit, explain};
+    return {safety, database, rowLimit, explain};
 }
 
 ResultFooterRow buildResultFooterRow(design::StatusLine* footer) {

@@ -132,9 +132,21 @@ pub struct EditStatement {
     pub params: Vec<Value>,
     pub expected_rows: Option<u64>,
 }
+#[derive(Clone, Debug, Default)]
+pub struct EditProgress(std::sync::Arc<std::sync::atomic::AtomicU64>);
+impl EditProgress {
+    pub fn advance(&self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    pub fn statements(&self) -> u64 {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct EditBatch {
     pub statements: Vec<EditStatement>,
+    #[serde(skip)]
+    pub progress: EditProgress,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditBatchSummary {

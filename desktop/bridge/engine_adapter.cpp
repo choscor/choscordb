@@ -60,6 +60,7 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.safety = fromRust(dto.safety);
     value.tone = fromRust(dto.tone);
     value.tagLabel = fromRust(dto.tag_label);
+    value.chipLabel = fromRust(dto.chip_label);
     return value;
 }
 void assignAppearance(AppearanceLayout& value, const AppearanceLayoutDto& dto) {

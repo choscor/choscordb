@@ -224,6 +224,7 @@ pub enum Event {
     TableImportProgress {
         import: ExportId,
         rows: u64,
+        total: u64,
     },
     SqlFileProgress {
         run: ExportId,

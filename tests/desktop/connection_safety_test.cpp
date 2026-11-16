@@ -3,9 +3,11 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "confirmation_checks.h"
+#include "design_system/tabs/tabs_style.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QComboBox>
+#include <QHelpEvent>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QTabWidget>
@@ -42,11 +44,14 @@ class ConnectionSafetyTest : public QObject {
         value.tagLabel = environment == "production" ? "Production" : "Development";
         return value;
     }
+    static choscordb::SavedProfile normalized(const choscordb::SavedProfile& value) {
+        return choscordb::EngineAdapter::normalizeProfileDraft(value, value, {});
+    }
 
   private slots:
     void readOnlyRejectsWritesAndShowsTheTag() {
         choscordb::MainWindow window;
-        auto* editor = connect(window, profile("production", "read_only"));
+        auto* editor = connect(window, normalized(profile("production", "read_only")));
         QVERIFY(editor);
         auto* tag = window.findChild<QLabel*>("connectionTag");
         QVERIFY(tag && tag->isVisible());
@@ -64,9 +69,46 @@ class ConnectionSafetyTest : public QObject {
         auto* grid = window.findChild<QTableView*>("queryResults");
         QTRY_COMPARE(grid->model()->rowCount(), 1);
     }
+    void sqlTabsShowTheToneOfTheirConnection() {
+        choscordb::MainWindow window;
+        auto* editor = connect(window, normalized(profile("production", "read_only")));
+        QVERIFY(editor);
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        auto* bar = dynamic_cast<choscordb::design::DocumentTabBar*>(tabs->tabBar());
+        QVERIFY(bar);
+        const int index = tabs->indexOf(editor);
+        QTRY_COMPARE(bar->tabTone(index), std::optional(choscordb::design::StatusTone::Danger));
+        QCOMPARE(bar->tabTagLabel(index), QString("Production"));
+        const auto center = bar->tabRect(index).center();
+        QHelpEvent help(QEvent::ToolTip, center, bar->mapToGlobal(center));
+        QCoreApplication::sendEvent(bar, &help);
+        QCOMPARE(bar->tabToolTip(index), tabs->tabText(index) + " · Production");
+        const auto connection =
+            window.findChild<choscordb::QueryWorkspace*>()->selectedConnection();
+        QVERIFY(connection);
+        emit window.objectContextSelected(*connection, R"(["main","sqlite_schema"])",
+                                          "sqlite_schema", "table");
+        QTRY_COMPARE(tabs->count(), 2);
+        QTRY_COMPARE(bar->tabTone(tabs->currentIndex()),
+                     std::optional(choscordb::design::StatusTone::Danger));
+        editor->setConnectionTarget(std::nullopt);
+        QTRY_VERIFY(!bar->tabTone(tabs->indexOf(editor)));
+        QVERIFY(bar->tabTagLabel(tabs->indexOf(editor)).isEmpty());
+    }
+    void aColorOnlyConnectionShowsItsNameInTheTag() {
+        choscordb::MainWindow window;
+        auto colored = profile("development", "silent");
+        colored.environment.clear();
+        colored.color = "green";
+        QVERIFY(connect(window, normalized(colored)));
+        auto* tag = window.findChild<QLabel*>("connectionTag");
+        QVERIFY(tag && tag->isVisible());
+        QCOMPARE(tag->text(), QString("Tagged"));
+        QCOMPARE(tag->property("variant").toString(), QString("success"));
+    }
     void confirmAllAsksBeforeEachStatementUntilTheSessionIsSilent() {
         choscordb::MainWindow window;
-        auto* editor = connect(window, profile("development", "confirm_all"));
+        auto* editor = connect(window, normalized(profile("development", "confirm_all")));
         QVERIFY(editor);
         QCOMPARE(window.findChild<QLabel*>("connectionTag")->property("variant").toString(),
                  QString("success"));

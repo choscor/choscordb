@@ -145,13 +145,16 @@ async fn reviewed_edits_bind_values_and_roll_back_conflicts() {
         ],
         expected_rows: Some(1),
     };
+    let progress = EditProgress::default();
     let summary = conn
         .apply_edit_batch(EditBatch {
             statements: vec![update.clone()],
+            progress: progress.clone(),
         })
         .await
         .unwrap();
     assert_eq!(summary.affected_rows, [1]);
+    assert_eq!(progress.statements(), 1);
     let mut cursor = conn
         .execute(
             "SELECT label,amount,bytes FROM mysql_edit_batch WHERE id=1",
@@ -178,7 +181,8 @@ async fn reviewed_edits_bind_values_and_roll_back_conflicts() {
     };
     assert_eq!(
         conn.apply_edit_batch(EditBatch {
-            statements: vec![unchanged]
+            statements: vec![unchanged],
+            ..Default::default()
         })
         .await
         .unwrap()
@@ -192,7 +196,8 @@ async fn reviewed_edits_bind_values_and_roll_back_conflicts() {
     };
     assert!(
         conn.apply_edit_batch(EditBatch {
-            statements: vec![insert, update]
+            statements: vec![insert, update],
+            ..Default::default()
         })
         .await
         .is_err()
@@ -221,11 +226,7 @@ async fn reviewed_edits_bind_values_and_roll_back_conflicts() {
     .close()
     .await
     .unwrap();
-    assert!(
-        conn.apply_edit_batch(EditBatch { statements: vec![] })
-            .await
-            .is_err()
-    );
+    assert!(conn.apply_edit_batch(EditBatch::default()).await.is_err());
     conn.rollback().await.unwrap();
     conn.execute("DROP TABLE mysql_edit_batch", QueryOptions::default())
         .await

@@ -150,3 +150,42 @@ void ControlStyleTest::unsavedDocumentTabDotUsesTheBrandColor() {
         }
     QVERIFY2(brandPixels >= 4, qPrintable(QString::number(brandPixels)));
 }
+
+void ControlStyleTest::documentTabToneDotUsesTheConnectionTone() {
+    using namespace choscordb::design;
+    QWidget root;
+    ThemeManager theme;
+    theme.setMode(ThemeMode::Light);
+    theme.applyTo(root);
+    DocumentTabBar tabs(&root);
+    tabs.setProperty("designTabVariant", "document");
+    tabs.addTab(QStringLiteral("orders.sql"));
+    tabs.addTab(QStringLiteral("customers.sql"));
+    root.resize(500, 80);
+    root.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&root));
+    tabs.resize(tabs.sizeHint());
+    const auto danger = statusToneColor(resolvedThemeForWidget(tabs).colors, StatusTone::Danger);
+    const auto tonePixels = [&tabs, &danger](int index) {
+        const auto capture = tabs.grab();
+        const auto image = capture.toImage();
+        const QRect tab = tabs.tabRect(index);
+        int count = 0;
+        for (int y = tab.top(); y < tab.bottom() - 2; ++y)
+            for (int x = tab.left(); x <= tab.right(); ++x) {
+                const auto color = image.pixelColor(QPoint(x, y) * capture.devicePixelRatio());
+                if (qAbs(color.hue() - danger.hue()) <= 12 && color.saturation() > 120)
+                    ++count;
+            }
+        return count;
+    };
+    QCOMPARE(tonePixels(0), 0);
+    tabs.setTabTag(0, StatusTone::Danger, QStringLiteral("Production"));
+    QCOMPARE(tabs.tabTagLabel(0), QStringLiteral("Production"));
+    QCOMPARE(tabs.tabTone(0), std::optional<StatusTone>(StatusTone::Danger));
+    QVERIFY2(tonePixels(0) >= spacing(Spacing::Two), qPrintable(QString::number(tonePixels(0))));
+    QCOMPARE(tonePixels(1), 0);
+    tabs.setTabTag(0, std::nullopt, {});
+    QVERIFY(tabs.tabTagLabel(0).isEmpty());
+    QCOMPARE(tonePixels(0), 0);
+}

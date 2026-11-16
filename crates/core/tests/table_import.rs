@@ -439,6 +439,44 @@ mod engine {
     }
 
     #[test]
+    fn progress_counts_written_rows_against_the_rows_in_the_file() {
+        let mut fixture = Fixture::new();
+        let path = write(
+            fixture.dir.path(),
+            "rows.csv",
+            b"id,name\n2,Ann\n3,Bo\n4,Cy\n",
+        );
+        let mut request = request(existing(), &[("id", 0), ("name", 1)]);
+        request.file = csv(path, CsvReadOptions::default());
+        fixture
+            .engine
+            .import_table(fixture.connection, request)
+            .unwrap();
+        let mut progress = Vec::new();
+        loop {
+            match wait(&mut fixture.engine, |event| {
+                matches!(
+                    event,
+                    Event::TableImportProgress { .. }
+                        | Event::TableImportFinished { .. }
+                        | Event::TableImportFailed { .. }
+                )
+            }) {
+                Event::TableImportProgress { rows, total, .. } => progress.push((rows, total)),
+                event => {
+                    assert!(
+                        matches!(event, Event::TableImportFinished { rows: 3, .. }),
+                        "{event:?}"
+                    );
+                    break;
+                }
+            }
+        }
+        assert_eq!(progress.first(), Some(&(0, 3)));
+        assert_eq!(progress.last(), Some(&(3, 3)));
+    }
+
+    #[test]
     fn a_failed_row_rolls_back_the_import_and_reports_its_row_number() {
         let mut fixture = Fixture::new();
         let event = fixture.import(

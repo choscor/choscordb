@@ -120,7 +120,20 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
                 partialShown = partial;
             });
     connect(newQuery, &QAction::triggered, this, [this] { addEditor(); });
-    connect(addConnection, &QPushButton::clicked, newConnection, &QAction::trigger);
+    connect(addConnection, &QPushButton::clicked, this, [this, addConnection, newConnection] {
+        auto* menu = new QMenu(addConnection);
+        menu->setObjectName("navigatorAddMenu");
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        menu->addAction(newConnection);
+        menu->addSeparator();
+        if (!navigatorController_->addCurrentCreateMenu(menu)) {
+            delete menu;
+            newConnection->trigger();
+            return;
+        }
+        design::popupContextMenu(*menu,
+                                 addConnection->mapToGlobal(addConnection->rect().bottomLeft()));
+    });
     connect(editors_, &QTabWidget::tabCloseRequested, this, [this](int index) {
         if (!allowDocumentChange())
             return;

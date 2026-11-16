@@ -11,6 +11,7 @@
 #include "design_system/right_sheet/right_sheet.h"
 #include "design_system/tabs/segmented_control.h"
 #include "design_system/tabs/tab_add_corner.h"
+#include "design_system/tabs/tabs_style.h"
 #include "design_system/text/text.h"
 #include "design_system/toast_region/toast_region.h"
 #include "design_system/tree/navigation_tree_view.h"
@@ -815,6 +816,11 @@ void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
         QCOMPARE(corner->grab().toImage().pixelColor(1, corner->height() / 2),
                  choscordb::design::resolvedThemeForWidget(*corner).colors.base);
         QCOMPARE(tabs->tabText(0), QString("Untitled query 1"));
+        auto* documentBar = dynamic_cast<choscordb::design::DocumentTabBar*>(tabs->tabBar());
+        QVERIFY(documentBar);
+        QCOMPARE(documentBar->tabTone(0), std::optional(choscordb::design::StatusTone::Danger));
+        QCOMPARE(documentBar->tabTagLabel(0), QString("Production"));
+        QVERIFY(!documentBar->tabTone(1));
         QCOMPARE(tabs->tabText(1), QString("orders"));
         QCOMPARE(tabs->tabText(2), QString("customers"));
         QCOMPARE(tabs->tabText(3), QString("order_items"));

@@ -116,7 +116,8 @@ async fn reviewed_batch_binds_values_and_rolls_back_on_conflict() {
     };
     assert!(
         c.apply_edit_batch(EditBatch {
-            statements: vec![insert.clone(), stale]
+            statements: vec![insert.clone(), stale],
+            ..Default::default()
         })
         .await
         .is_err()
@@ -132,7 +133,8 @@ async fn reviewed_batch_binds_values_and_rolls_back_on_conflict() {
     result.close().await.unwrap();
     assert_eq!(
         c.apply_edit_batch(EditBatch {
-            statements: vec![insert]
+            statements: vec![insert],
+            ..Default::default()
         })
         .await
         .unwrap()
@@ -311,7 +313,8 @@ async fn reviewed_batch_refuses_manual_transaction_and_rolls_back_constraint_fai
     };
     assert_eq!(
         c.apply_edit_batch(EditBatch {
-            statements: vec![insert.clone()]
+            statements: vec![insert.clone()],
+            ..Default::default()
         })
         .await
         .unwrap_err()
@@ -326,7 +329,8 @@ async fn reviewed_batch_refuses_manual_transaction_and_rolls_back_constraint_fai
     };
     assert!(
         c.apply_edit_batch(EditBatch {
-            statements: vec![insert, duplicate]
+            statements: vec![insert, duplicate],
+            ..Default::default()
         })
         .await
         .is_err()
@@ -1666,4 +1670,32 @@ async fn schema_graph_lists_every_table_and_foreign_key() {
     );
     assert!(graph.tables[2].columns[1].foreign_key);
     assert!(graph.tables[0].columns[0].primary_key);
+}
+#[tokio::test]
+async fn reviewed_batch_counts_each_applied_statement() {
+    let mut c = connect().await;
+    run(&mut c, "CREATE TABLE p(id INTEGER PRIMARY KEY)", false).await;
+    let insert = |id: i64| EditStatement {
+        sql: "INSERT INTO p(id) VALUES(?)".into(),
+        params: vec![Value::Integer(id)],
+        expected_rows: None,
+    };
+    let progress = EditProgress::default();
+    c.apply_edit_batch(EditBatch {
+        statements: vec![insert(1), insert(2), insert(3)],
+        progress: progress.clone(),
+    })
+    .await
+    .unwrap();
+    assert_eq!(progress.statements(), 3);
+    let failed = EditProgress::default();
+    assert!(
+        c.apply_edit_batch(EditBatch {
+            statements: vec![insert(4), insert(1), insert(5)],
+            progress: failed.clone(),
+        })
+        .await
+        .is_err()
+    );
+    assert_eq!(failed.statements(), 1);
 }

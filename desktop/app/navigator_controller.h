@@ -91,6 +91,7 @@ class NavigatorController final : public QObject {
     void setPinStateResolver(std::function<std::optional<bool>(const QModelIndex&)> resolver);
     void setShowSystemSchemas(bool show);
     void populateContextMenu(QMenu* menu, const QModelIndex& sourceIndex);
+    bool addCurrentCreateMenu(QMenu* menu);
     static QAction* addRetryAction(QMenu* menu);
     bool revealObject(quint64 connection, const QStringList& ancestryIds, const QString& objectId,
                       const QString& kind, const QString& qualifiedName,
@@ -134,6 +135,7 @@ class NavigatorController final : public QObject {
                                 const QString& refreshObjectId);
 
   private:
+    void addCreateTemplates(QMenu* create, const QModelIndex& index);
     QList<TableExportObject> loadedRelations(const QModelIndex& parent) const;
     NavigatorModel* model_;
     QTreeView* tree_;

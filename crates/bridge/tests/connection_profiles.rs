@@ -432,3 +432,40 @@ fn a_fresh_navigator_page_skips_the_saved_children() {
     assert_eq!(events.expand(&mut engine, connection, true), [false]);
     assert_eq!(events.expand(&mut engine, connection, false), [true, false]);
 }
+
+#[test]
+fn draft_normalization_derives_the_tags_from_the_edited_environment_and_color() {
+    let none = ffi::ProfileSecretDraftsDto::default();
+    let mut original = draft();
+    original.environment = "production".into();
+    let original = profile_draft_normalize(draft(), original, &none);
+    let edited_draft = || {
+        let mut value = draft();
+        value.environment = String::new();
+        value.color = "green".into();
+        value
+    };
+    assert_eq!(
+        (original.tone.as_str(), original.tag_label.as_str()),
+        ("danger", "Production")
+    );
+
+    let mut original_again = draft();
+    original_again.environment = "production".into();
+    let normalized = profile_draft_normalize(original_again, edited_draft(), &none);
+    assert_eq!(normalized.tone, "success");
+    assert_eq!(normalized.tag_label, "");
+    assert_eq!(normalized.chip_label, draft().name);
+
+    let mut edited = edited_draft();
+    edited.color = "automatic".into();
+    let plain = profile_draft_normalize(draft(), edited, &none);
+    assert_eq!(
+        (
+            plain.tone.as_str(),
+            plain.tag_label.as_str(),
+            plain.chip_label.as_str()
+        ),
+        ("", "", "")
+    );
+}

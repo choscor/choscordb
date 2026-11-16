@@ -95,7 +95,9 @@ pub fn profile_draft_normalize(
     drafts: &ffi::ProfileSecretDraftsDto,
 ) -> ffi::ProfileDto {
     let value = profile_draft::normalize(&draft(&original), draft(&edited), &secrets(drafts));
-    apply(edited, value)
+    let mut dto = apply(edited, value);
+    crate::profile_tags::refresh(&mut dto);
+    dto
 }
 
 pub fn profile_draft_validate(

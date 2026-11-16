@@ -6,6 +6,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPersistentModelIndex>
+#include <QSortFilterProxyModel>
 #include <QTreeView>
 #include <QtTest>
 class NavigatorSqlTest : public QObject {
@@ -52,6 +53,45 @@ class NavigatorSqlTest : public QObject {
         table->trigger();
         QCOMPARE(generated.last().at(1).toString(),
                  QString("CREATE TABLE new_table (\n  id INTEGER PRIMARY KEY\n);"));
+    }
+    void theAddMenuOffersTemplatesForTheSelectedSchema() {
+        using namespace choscordb;
+        EngineAdapter engine;
+        QTreeView tree;
+        choscordb::FilterField filter;
+        NavigatorController controller(&engine, &tree, &filter);
+        controller.setDriverResolver([](quint64) { return QStringLiteral("postgres"); });
+        auto* model = controller.model();
+        QObject::disconnect(model, &NavigatorModel::childrenRequested, &engine,
+                            &EngineAdapter::loadMetadata);
+        QSignalSpy requested(model, &NavigatorModel::childrenRequested);
+        QVERIFY(model->addConnection(12, "fixture"));
+        const auto root = model->index(0, 0);
+        model->fetchMore(root);
+        QTRY_COMPARE(requested.count(), 1);
+        QVERIFY(
+            model->applyChildren(12, {}, requested.last().at(2).toULongLong(),
+                                 {{"pg:namespace:5", "sales", "\"sales\"", "schema", true, {}}}));
+        QMenu empty;
+        QVERIFY(!controller.addCurrentCreateMenu(&empty));
+        QVERIFY(empty.actions().isEmpty());
+        controller.setSelectedConnection(12);
+        const auto schema = static_cast<QSortFilterProxyModel*>(tree.model())
+                                ->mapFromSource(model->index(0, 0, root));
+        QVERIFY(schema.isValid());
+        tree.setCurrentIndex(schema);
+        QSignalSpy generated(&controller, &NavigatorController::sqlGenerated);
+        QMenu menu;
+        QVERIFY(controller.addCurrentCreateMenu(&menu));
+        QCOMPARE(menu.actions().size(), 1);
+        QCOMPARE(menu.actions().first()->text(), QString("New in sales"));
+        auto* view = menu.findChild<QAction*>("createObject_view");
+        QVERIFY(view && view->isEnabled());
+        view->trigger();
+        QCOMPARE(generated.count(), 1);
+        QCOMPARE(generated.first().at(0).toULongLong(), quint64(12));
+        QCOMPARE(generated.first().at(1).toString(),
+                 QString("CREATE VIEW \"sales\".new_view AS\nSELECT 1 AS value;"));
     }
     void unsupportedRelationSubtypesExplainWhyActionsAreUnavailable() {
         using namespace choscordb;

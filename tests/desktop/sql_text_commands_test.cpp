@@ -14,6 +14,7 @@
 #include <QTabWidget>
 #include <QTableView>
 #include <QTemporaryDir>
+#include <QToolBar>
 #include <QtTest>
 
 class SqlTextCommandsTest : public QObject {
@@ -69,6 +70,34 @@ class SqlTextCommandsTest : public QObject {
         QTRY_COMPARE(workspace->selectedConnection(), std::optional<quint64>(second));
         QCOMPARE(workspace->connectionSource(second)->path, target);
         QVERIFY(target.endsWith("archive.db"));
+    }
+    void theToolbarDatabaseButtonOpensTheSwitcher() {
+        QTemporaryDir folder;
+        for (const auto* name : {"main.sqlite", "archive.db"}) {
+            QFile file(folder.filePath(name));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+        }
+        choscordb::MainWindow window(nullptr, folder.filePath("settings.store"));
+        QVERIFY(openEditor(window));
+        auto* toolbar = window.findChild<QToolBar*>("queryToolbar");
+        auto* button = toolbar->findChild<QPushButton*>("switchDatabaseButton");
+        QVERIFY(button && button->isVisible());
+        const auto position = [toolbar](const char* name) {
+            return toolbar->findChild<QWidget*>(name)->mapTo(toolbar, QPoint()).x();
+        };
+        QVERIFY(position("safetyLevel") < position("switchDatabaseButton"));
+        QVERIFY(position("switchDatabaseButton") < position("rowLimit"));
+        QVERIFY(button->toolTip().contains(
+            QKeySequence(Qt::CTRL | Qt::Key_K).toString(QKeySequence::NativeText)));
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        QSignalSpy connected(workspace, &choscordb::QueryWorkspace::connectionReady);
+        workspace->connectSqlite(folder.filePath("main.sqlite"));
+        QTRY_COMPARE(connected.count(), 1);
+        button->click();
+        auto* picker = window.findChild<choscordb::design::QuickSearchDialog*>("databasePicker");
+        QVERIFY(picker);
+        QTRY_VERIFY(picker->isVisible());
+        QTRY_COMPARE(picker->results().size(), 2);
     }
     void manageDatabasesShowsTheReasonForSqliteFiles() {
         QTemporaryDir folder;

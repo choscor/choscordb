@@ -450,6 +450,8 @@ SqlEditor* MainWindow::addEditor() {
     connect(editor, &SqlEditor::connectionTargetChanged, this, [this, editor] {
         if (workspace_ && editors_->currentWidget() == editor)
             workspace_->documentChanged();
+        if (scheduleTabTags_)
+            scheduleTabTags_();
     });
     connect(editor, &SqlEditor::textChanged, this, &MainWindow::refreshQuickSearchIfOpen);
     const auto title = tr("Untitled query %1").arg(++nextDocumentNumber_);

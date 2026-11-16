@@ -1085,7 +1085,15 @@ fn validate_server_endpoint(host: &str, tls: &TlsMode, ssh: Option<&SshTunnel>) 
     }
 }
 
-impl ConnectionProfile {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConnectionTags<'a> {
+    pub name: &'a str,
+    pub environment: ConnectionEnvironment,
+    pub environment_label: Option<&'a str>,
+    pub color: ConnectionColor,
+}
+
+impl ConnectionTags<'_> {
     pub fn tone(&self) -> Option<ConnectionTone> {
         Some(match (self.color, self.environment) {
             (ConnectionColor::Neutral, _) => ConnectionTone::Neutral,
@@ -1110,8 +1118,24 @@ impl ConnectionProfile {
     pub fn tag_label(&self) -> Option<String> {
         match self.environment {
             ConnectionEnvironment::None => None,
-            ConnectionEnvironment::Custom => self.environment_label.clone(),
+            ConnectionEnvironment::Custom => self.environment_label.map(str::to_owned),
             environment => Some(environment.label().into()),
+        }
+    }
+
+    pub fn chip_label(&self) -> Option<String> {
+        self.tag_label()
+            .or_else(|| self.tone().map(|_| self.name.to_owned()))
+    }
+}
+
+impl ConnectionProfile {
+    pub fn tags(&self) -> ConnectionTags<'_> {
+        ConnectionTags {
+            name: &self.name,
+            environment: self.environment,
+            environment_label: self.environment_label.as_deref(),
+            color: self.color,
         }
     }
 

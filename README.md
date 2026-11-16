@@ -10,27 +10,27 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Format or minify SQL, and toggle line or block comments.
 - Set a row limit for `SELECT` statements on each connection.
 - Run all statements and see one result tab for each statement. Name a tab with a `-- name:` comment, pin a tab, and stop on the first error.
-- Switch the database of a SQL tab (Ctrl+K). For SQLite, switch to another database file in the same folder.
+- Switch the database of a SQL tab with the Database toolbar button (Ctrl+K). For SQLite, switch to another database file in the same folder.
 - Move a query tab to another open connection (Ctrl+Shift+K). Go to a tab with Ctrl+1 to Ctrl+9.
-- Tag each connection with an environment and a color. The sidebar and the result footer show the tag.
+- Tag each connection with an environment and a color. The sidebar, the SQL tabs and the result footer show the tag.
 - Set a safety level for each connection: run without confirmation, confirm destructive statements, confirm each statement, or read-only.
 - Read large results page by page. Filter, sort and edit table rows.
 - Set a cell to NULL, DEFAULT, an empty value or Now() from the Set value menu. Pick a date and time for date and time cells. Load a binary cell from a file, or save it to a file.
 - Paste a block of cells from a spreadsheet into the grid. Set one value in many selected rows.
 - Explain a statement and see its query plan as a tree with costs and row estimates.
-- Sort by up to four columns with Shift+click. Hide result columns with the column chooser (Ctrl+Alt+F). ChoscorDB keeps the hidden columns for each table.
+- Sort by up to four columns with Shift+click. Hide result columns from the column header menu or the column chooser (Ctrl+Alt+F). ChoscorDB keeps the hidden columns for each table.
 - Copy rows as TSV, CSV, Markdown, HTML, JSON or SQL `INSERT` statements.
 - Create, rename and drop PostgreSQL, MySQL and MariaDB databases with a SQL preview.
 - Export results to CSV, JSON, JSON Lines, Excel or SQL `INSERT` statements.
 - Export tables or views from the navigator to CSV, JSON, JSON Lines, Excel or SQL with structure, DROP and data.
-- Import CSV, JSON or JSON Lines files into a table or a new table with a preview and column mapping.
+- Import CSV, JSON or JSON Lines files into a table or a new table. See a preview, map the columns and watch the progress.
 - Run a SQL file or a dump. Stop at the first error, continue after errors, or run it in one transaction.
 - Back up and restore a database with `pg_dump`, `pg_restore`, `mysqldump` and `mysql`. Back up SQLite into a new file.
 - Edit the columns, indexes and keys of a table or create a table. Review the SQL before you apply it.
 - Set the CSV delimiter, quote, line break, NULL text and header row.
 - Browse schemas, tables, views, indexes and keys. See the DDL and an ERD of each table.
 - See an ER diagram of a full schema with search, zoom and auto layout.
-- Start a new table, view, function, procedure or schema from a SQL template in the navigator.
+- Start a new table, view, function, procedure or schema from a SQL template. Use the navigator + button or the New menu of a database or schema.
 - Rename, clone, truncate or drop a table from the navigator. Each action shows its SQL before it runs. Copy the CREATE, DROP, TRUNCATE or SELECT script of an object.
 - See the triggers of a table. Create, edit or drop a trigger from SQL that opens in a query tab.
 - Pin objects, and find objects, tabs and SQL text with quick search.

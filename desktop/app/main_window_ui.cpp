@@ -860,7 +860,7 @@ MainWindow::Ui MainWindow::buildUi() {
         if (editors_->isEnabled() && editors_->currentWidget() && showScreen(Screen::Sql))
             completion_->requestCompletion();
     });
-    addSqlTextActions(editMenu);
+    addSqlTextActions(editMenu, connectionToolbar.switchDatabase);
     editMenu->addSeparator();
     auto* preferencesAction = editMenu->addAction(tr("Preferences…"));
     preferencesAction->setObjectName("preferences");

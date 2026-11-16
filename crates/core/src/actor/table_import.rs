@@ -18,22 +18,40 @@ fn stopped(cancellation: &Cancellation, shutdown: &watch::Receiver<bool>) -> Res
     Ok(())
 }
 
+const IMPORT_PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
 async fn write_rows(
     connection: &mut dyn Connection,
+    import: ExportId,
     batch: EditBatch,
     cancellation: &Cancellation,
+    events: &EventSink,
 ) -> Result<u64> {
+    let total = batch.statements.len() as u64;
+    let progress = batch.progress.clone();
+    let report = |rows| Event::TableImportProgress {
+        import,
+        rows,
+        total,
+    };
     let handle = connection.cancellation_handle();
     let apply = connection.apply_edit_batch(batch);
     tokio::pin!(apply);
-    let summary = tokio::select! {
-        biased;
-        summary = &mut apply => summary,
-        _ = cancellation.cancelled() => {
-            handle.cancel().await?;
-            apply.await
+    let mut ticks = tokio::time::interval(IMPORT_PROGRESS_INTERVAL);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    ticks.tick().await;
+    let summary = loop {
+        tokio::select! {
+            biased;
+            summary = &mut apply => break summary,
+            _ = cancellation.cancelled() => {
+                handle.cancel().await?;
+                break apply.await;
+            }
+            _ = ticks.tick() => send(events, report(progress.statements())).await,
         }
     }?;
+    send(events, report(progress.statements())).await;
     Ok(summary.affected_rows.iter().sum())
 }
 
@@ -54,7 +72,8 @@ async fn import(
         events,
         Event::TableImportProgress {
             import,
-            rows: data.rows.len() as u64,
+            rows: 0,
+            total: data.rows.len() as u64,
         },
     )
     .await;
@@ -70,7 +89,7 @@ async fn import(
     if let Some(create) = &plan.create {
         execute_ddl(connection, create).await?;
     }
-    let written = write_rows(connection, plan.batch, cancellation).await;
+    let written = write_rows(connection, import, plan.batch, cancellation, events).await;
     match (written, &plan.drop) {
         (Err(error), Some(drop)) => match execute_ddl(connection, drop).await {
             Ok(()) => Err(error),

@@ -405,6 +405,7 @@ pub(crate) async fn apply_batch(conn: &mut Conn, batch: EditBatch) -> Result<Edi
                 .at_statement(index));
             }
             affected_rows.push(count);
+            batch.progress.advance();
         }
         Ok(EditBatchSummary { affected_rows })
     }

@@ -126,7 +126,7 @@ struct SavedProfile {
     QString sshIdentitySource;
     quint16 sshPort = 0;
     QString environment, environmentLabel, color, safety;
-    QString tone, tagLabel;
+    QString tone, tagLabel, chipLabel;
 };
 struct SavedHistoryEntry {
     QString id, profileId, sql;

@@ -341,6 +341,9 @@ void MainWindow::connectNavigator(const Ui& ui) {
     };
     rebuildCompletion_ = rebuildCompletion;
     connect(workspace_, &QueryWorkspace::documentTargetChanged, this, rebuildCompletion);
+    scheduleTabTags_ = coalescedCall(this, [this] { syncDocumentTabTones(); });
+    connect(workspace_, &QueryWorkspace::documentTargetChanged, this, scheduleTabTags_);
+    connect(editors_, &QTabWidget::currentChanged, this, scheduleTabTags_);
     const auto rebuildLoadedCompletion = coalescedCall(this, rebuildCompletion);
     connect(navigatorController->model(), &NavigatorModel::completionChanged, this,
             [completionConnection, catalogSize, rebuildCompletion,

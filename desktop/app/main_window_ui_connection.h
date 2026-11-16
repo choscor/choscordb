@@ -9,11 +9,13 @@ class QWidget;
 
 namespace choscordb {
 namespace design {
+class Button;
 class StatusLine;
 }
 
 struct ConnectionToolbar {
     QComboBox* safetyLevel;
+    design::Button* switchDatabase;
     QComboBox* rowLimit;
     QAction* explain;
 };

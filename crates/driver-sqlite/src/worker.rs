@@ -275,6 +275,7 @@ fn apply_edit_batch(db: &Db, batch: EditBatch) -> Result<EditBatchSummary> {
         }
         Ok(count)
     };
+    let progress = batch.progress;
     let outcome: Result<()> =
         batch
             .statements
@@ -282,6 +283,7 @@ fn apply_edit_batch(db: &Db, batch: EditBatch) -> Result<EditBatchSummary> {
             .enumerate()
             .try_for_each(|(index, edit)| {
                 affected_rows.push(run(edit).map_err(|error| error.at_statement(index))?);
+                progress.advance();
                 Ok(())
             });
     if let Err(error) = outcome {

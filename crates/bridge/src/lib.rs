@@ -594,6 +594,7 @@ pub mod ffi {
         safety: String,
         tone: String,
         tag_label: String,
+        chip_label: String,
     }
     struct ProfileChoiceDto {
         code: String,
@@ -1386,6 +1387,7 @@ pub mod ffi {
         result_view_buffered_rows: u64,
         chunk_offset: u64,
         total_bytes: u64,
+        total_rows: u64,
         chunk_kind: String,
         chunk_bytes: Vec<u8>,
         kind: String,
@@ -4014,7 +4016,10 @@ pub fn apply_edit_batch(
         });
         e.apply_edit_batch(
             unpack(connection),
-            EditBatch { statements },
+            EditBatch {
+                statements,
+                ..Default::default()
+            },
             history,
             request_token,
         )

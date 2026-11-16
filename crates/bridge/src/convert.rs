@@ -634,9 +634,14 @@ pub fn event(
             error(&mut e, err);
             "backup_failed"
         }
-        Event::TableImportProgress { import, rows } => {
+        Event::TableImportProgress {
+            import,
+            rows,
+            total,
+        } => {
             e.id = pack(import);
             e.exported_rows = rows;
+            e.total_rows = total;
             "table_import_progress"
         }
         Event::TableImportFinished { import, rows } => {
@@ -1062,6 +1067,7 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
         safety: tags.safety,
         tone: tags.tone,
         tag_label: tags.tag_label,
+        chip_label: tags.chip_label,
         id: value.id,
         name: value.name,
         group_id: value.group_id.unwrap_or_default(),

@@ -892,6 +892,7 @@ async fn apply_edit_batch(
             .at_statement(index));
         }
         affected_rows.push(count);
+        batch.progress.advance();
     }
     tx.commit().await.map_err(normalize)?;
     Ok(EditBatchSummary { affected_rows })

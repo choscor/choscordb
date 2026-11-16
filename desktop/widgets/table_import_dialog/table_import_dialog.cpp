@@ -371,7 +371,8 @@ void TableImportDialog::handleEvent(const BridgeEvent& value) {
         return;
     if (kind == "table_import_progress") {
         if (state_ == ExportState::Running)
-            showState(tr("Writing %n row(s)…", nullptr, int(value.exported_rows)));
+            showState(tr("Wrote %1 of %n row(s)…", nullptr, int(value.total_rows))
+                          .arg(value.exported_rows));
     } else if (kind == "table_import_finished") {
         emit imported(connection_);
         settle(ExportEvent::Finish, tr("Imported %n row(s).", nullptr, int(value.exported_rows)));

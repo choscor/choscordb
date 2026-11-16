@@ -1,12 +1,13 @@
 #include "app/editor_preferences.h"
 #include "app/main_window.h"
 #include "app/query_workspace.h"
+#include "design_system/button/button.h"
 #include <QAction>
 #include <QMenu>
 #include <QTabWidget>
 
 namespace choscordb {
-void MainWindow::addSqlTextActions(QMenu* editMenu) {
+void MainWindow::addSqlTextActions(QMenu* editMenu, design::Button* switchDatabaseButton) {
     editMenu->addSeparator();
     const auto sqlTextAction = [this, editMenu](const QString& id, const QString& text,
                                                 const QKeySequence& shortcut, auto handler) {
@@ -35,10 +36,19 @@ void MainWindow::addSqlTextActions(QMenu* editMenu) {
                   QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Slash),
                   [this] { workspace_->toggleSqlComment(true); });
     editMenu->addSeparator();
-    sqlTextAction("switch_database", tr("Switch database…"), QKeySequence(Qt::CTRL | Qt::Key_K),
-                  [this] { switchDatabase(); });
+    auto* switchAction =
+        sqlTextAction("switch_database", tr("Switch database…"), QKeySequence(Qt::CTRL | Qt::Key_K),
+                      [this] { switchDatabase(); });
     sqlTextAction("manage_databases", tr("Manage databases…"),
                   QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D), [this] { manageDatabases(); });
+    connect(switchDatabaseButton, &QPushButton::clicked, switchAction, &QAction::trigger);
+    const auto describeSwitch = [switchAction, switchDatabaseButton] {
+        switchDatabaseButton->setToolTip(
+            switchAction->text() + " · " +
+            switchAction->shortcut().toString(QKeySequence::NativeText));
+    };
+    describeSwitch();
+    connect(switchAction, &QAction::changed, switchDatabaseButton, describeSwitch);
 }
 void MainWindow::addRunSqlFileAction(QMenu* fileMenu) {
     auto* action = fileMenu->addAction(tr("Run SQL file…"));

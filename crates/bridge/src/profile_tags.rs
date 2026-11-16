@@ -1,7 +1,7 @@
 use crate::ffi;
 use choscordb_core::{
-    ConnectionColor, ConnectionEnvironment, ConnectionProfile, ConnectionTone, ExecutionGate,
-    MAX_ENVIRONMENT_LABEL_BYTES, SafetyLevel,
+    ConnectionColor, ConnectionEnvironment, ConnectionProfile, ConnectionTags, ConnectionTone,
+    ExecutionGate, MAX_ENVIRONMENT_LABEL_BYTES, SafetyLevel,
 };
 
 fn parsed<T: Default>(text: &str, parse: fn(&str) -> Option<T>, field: &str) -> Result<T, String> {
@@ -41,8 +41,40 @@ pub(crate) fn fill(dto: &mut ffi::ProfileDto, profile: &ConnectionProfile) {
     dto.environment_label = profile.environment_label.clone().unwrap_or_default();
     dto.color = profile.color.code().into();
     dto.safety = profile.safety.code().into();
-    dto.tone = tone_code(profile.tone()).into();
-    dto.tag_label = profile.tag_label().unwrap_or_default();
+    let fields = tag_fields(profile.tags());
+    (dto.tone, dto.tag_label, dto.chip_label) = fields;
+}
+
+pub(crate) fn refresh(dto: &mut ffi::ProfileDto) {
+    let environment = parsed(
+        &dto.environment,
+        ConnectionEnvironment::from_code,
+        "environment",
+    );
+    let color = parsed(&dto.color, ConnectionColor::from_code, "connection color");
+    let (Ok(environment), Ok(color)) = (environment, color) else {
+        dto.tone.clear();
+        dto.tag_label.clear();
+        dto.chip_label.clear();
+        return;
+    };
+    let tags = ConnectionTags {
+        name: &dto.name,
+        environment,
+        environment_label: (!dto.environment_label.is_empty())
+            .then_some(dto.environment_label.as_str()),
+        color,
+    };
+    let fields = tag_fields(tags);
+    (dto.tone, dto.tag_label, dto.chip_label) = fields;
+}
+
+fn tag_fields(tags: ConnectionTags<'_>) -> (String, String, String) {
+    (
+        tone_code(tags.tone()).into(),
+        tags.tag_label().unwrap_or_default(),
+        tags.chip_label().unwrap_or_default(),
+    )
 }
 
 fn choices<T: Copy>(
