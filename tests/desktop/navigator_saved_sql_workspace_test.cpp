@@ -22,6 +22,7 @@
 #include <QMenu>
 #include <QPushButton>
 #include <QSet>
+#include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTabWidget>
 #include <QTemporaryDir>
@@ -357,6 +358,7 @@ void NavigatorSqlWorkspaceTest::savedQueryFoldersSortAndKeywordSnippets() {
     auto* completion = window.findChild<choscordb::EditorCompletionController*>();
     QVERIFY(completion);
     auto* popup = completion->findChild<QCompleter*>()->popup();
+    QSignalSpy catalogChanges(completion, &choscordb::EditorCompletionController::partialCatalog);
     completion->requestCompletion();
     const auto completionState = [&] {
         const auto root = storage.filePath("sql").toUtf8();
@@ -383,9 +385,20 @@ void NavigatorSqlWorkspaceTest::savedQueryFoldersSortAndKeywordSnippets() {
             .arg(editor->text(), choscordb::bridge_detail::fromRust(listing.error),
                  labels.join(','))
             .arg(page.valid)
-            .arg(items.join(','));
+            .arg(items.join(','))
+            .append(QString(" catalogSignals=%1").arg(catalogChanges.count()));
     };
-    QTRY_VERIFY2(popup->isVisible(), qPrintable(completionState()));
+    const bool shown = QTest::qWaitFor([popup] { return popup->isVisible(); });
+    QString retry;
+    if (!shown) {
+        const auto first = completionState();
+        QTest::qWait(2000);
+        completion->requestCompletion();
+        retry =
+            first +
+            QString(" retryShown=%1").arg(QTest::qWaitFor([popup] { return popup->isVisible(); }));
+    }
+    QVERIFY2(shown, qPrintable(retry));
     QVERIFY2(popup->model()->index(0, 0).data().toString().startsWith("pick_a"),
              qPrintable(popup->model()->index(0, 0).data().toString()));
     QTest::keyClick(popup, Qt::Key_Return);
