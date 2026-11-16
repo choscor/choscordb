@@ -755,7 +755,8 @@ class GridEditWorkspaceTest : public QObject {
                 headerHeadline(*dialog) == QStringLiteral("Review grid changes") &&
                 sectionedSpacing(*dialog) == compactSectionedSpacing() &&
                 footerOverrides(*dialog).isEmpty() && body->isAncestorOf(review) && description &&
-                description->text() == QStringLiteral("Statements and bound parameter values") &&
+                description->text().startsWith(
+                    QStringLiteral("Each statement runs with the values below it.")) &&
                 footer->findChild<QPushButton*>("gridEditCancel") && apply && apply->isDefault();
             if (auto* dismiss = headerDismiss(*dialog, "gridEditDismiss"))
                 dismiss->click();

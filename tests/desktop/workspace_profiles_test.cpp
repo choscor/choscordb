@@ -365,7 +365,7 @@ void WorkspaceTest::mysqlGridEditsReviewBoundValuesAndPersistChanges() {
     QVERIFY(review.contains("UPDATE `choscordb_test`.`mysql_workspace_edits` SET `label` = ?"));
     QVERIFY(review.contains("`id` <=> ?"));
     QVERIFY(review.contains("`label` <=> ?"));
-    QVERIFY(review.contains("Parameter 1: text \"after 'quoted' \\\\ value\""));
+    QVERIFY(review.contains("$1 = text \"after 'quoted' \\\\ value\""));
     QTRY_VERIFY(!f.workspace.hasPendingEdits());
     QTRY_VERIFY(f.run.isEnabled());
     f.execute("SELECT label AS persisted FROM mysql_workspace_edits WHERE id=1");

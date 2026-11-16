@@ -541,21 +541,30 @@ fn review_value(value: &Value) -> String {
     }
 }
 
+fn parameter_lines(params: &[Value], prefix: &str) -> String {
+    let width = format!("${}", params.len()).len();
+    params
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let label = format!("${}", index + 1);
+            format!("{prefix}{label:<width$} = {}\n", review_value(value))
+        })
+        .collect()
+}
+
 pub fn review_text(plan: &GridEditPlan) -> String {
-    let mut review = String::new();
-    for planned in &plan.statements {
-        review.push_str(&planned.statement.sql);
-        review.push('\n');
-        for (index, value) in planned.statement.params.iter().enumerate() {
-            review.push_str(&format!(
-                "  Parameter {}: {}\n",
-                index + 1,
-                review_value(value)
-            ));
-        }
-        review.push('\n');
-    }
-    review
+    plan.statements
+        .iter()
+        .map(|planned| {
+            format!(
+                "{}\n{}",
+                planned.statement.sql,
+                parameter_lines(&planned.statement.params, "  ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn grid_edit_history(request: &GridEditRequest, plan: &GridEditPlan) -> String {
@@ -582,13 +591,7 @@ pub fn grid_edit_history(request: &GridEditRequest, plan: &GridEditPlan) -> Stri
     for planned in &plan.statements {
         history.push_str(&planned.statement.sql);
         history.push('\n');
-        for (index, value) in planned.statement.params.iter().enumerate() {
-            history.push_str(&format!(
-                "-- Parameter {}: {}\n",
-                index + 1,
-                review_value(value)
-            ));
-        }
+        history.push_str(&parameter_lines(&planned.statement.params, "-- "));
     }
     history
 }

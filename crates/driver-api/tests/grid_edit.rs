@@ -405,16 +405,15 @@ fn review_text_lists_each_statement_with_its_bound_values() {
     assert_eq!(
         review_text(&plan),
         "UPDATE t SET a = ?, b = ?, c = ? WHERE id = ?\n\
-         \x20 Parameter 1: text \"say \\\"hi\\\"\\\\\\nbye\"\n\
-         \x20 Parameter 2: NULL\n\
-         \x20 Parameter 3: binary 0xab01 (2 bytes)\n\
-         \x20 Parameter 4: 7\n\
+         \x20 $1 = text \"say \\\"hi\\\"\\\\\\nbye\"\n\
+         \x20 $2 = NULL\n\
+         \x20 $3 = binary 0xab01 (2 bytes)\n\
+         \x20 $4 = 7\n\
          \n\
          DELETE FROM t WHERE d = ? AND r = ? AND f = ?\n\
-         \x20 Parameter 1: date \"2024-02-29\"\n\
-         \x20 Parameter 2: 0.1234567891\n\
-         \x20 Parameter 3: false\n\
-         \n"
+         \x20 $1 = date \"2024-02-29\"\n\
+         \x20 $2 = 0.1234567891\n\
+         \x20 $3 = false\n"
     );
 }
 
@@ -536,11 +535,31 @@ fn history_keeps_the_original_rows_before_the_statements() {
     assert!(statements.contains("\nINSERT INTO \"main\".\"items\""));
     assert!(lines.iter().all(|line| !line.is_empty()));
     assert!(lines[0].starts_with("UPDATE \"main\".\"items\" SET"));
-    assert_eq!(lines[1], "-- Parameter 1: text \"new\"");
+    assert_eq!(lines[1], "-- $1 = text \"new\"");
     let inserts_only = GridEditRequest {
         rows: vec![input.rows[2].clone()],
         ..input
     };
     let plan = plan_grid_edits(&inserts_only).unwrap();
     assert!(grid_edit_history(&inserts_only, &plan).starts_with("INSERT INTO"));
+}
+
+#[test]
+fn review_text_aligns_parameter_labels_past_nine_values() {
+    use choscordb_driver_api::{EditStatement, GridEditPlan, PlannedGridEdit, review_text};
+    let plan = GridEditPlan {
+        statements: vec![PlannedGridEdit {
+            statement: EditStatement {
+                sql: "INSERT INTO t VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)".into(),
+                params: (1..=10).map(Value::Integer).collect(),
+                expected_rows: Some(1),
+            },
+            parameter_types: vec![],
+        }],
+    };
+    let review = review_text(&plan);
+    let lines: Vec<&str> = review.lines().collect();
+    assert_eq!(lines[1], "  $1  = 1");
+    assert_eq!(lines[9], "  $9  = 9");
+    assert_eq!(lines[10], "  $10 = 10");
 }

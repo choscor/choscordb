@@ -178,7 +178,10 @@ bool QueryWorkspace::applyStagedEdits() {
     dismiss->setObjectName("gridEditDismiss");
     connect(dismiss, &QPushButton::clicked, &box, &QDialog::reject);
     auto* layout = sections->bodyLayout();
-    auto* description = new QLabel(tr("Statements and bound parameter values"), sections);
+    auto* description = new QLabel(
+        tr("Each statement runs with the values below it. $1 binds to its first placeholder, "
+           "$2 to the second, and so on."),
+        sections);
     description->setProperty("designRole", "description");
     description->setTextFormat(Qt::PlainText);
     description->setWordWrap(true);
