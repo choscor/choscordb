@@ -744,6 +744,23 @@ impl Engine {
             },
         )
     }
+    pub fn save_value_to_file(
+        &self,
+        query: QueryId,
+        handle: Handle,
+        destination: std::path::PathBuf,
+    ) -> std::result::Result<(), SubmitError> {
+        let slot = self.queries.get(query).ok_or(SubmitError::StaleHandle)?;
+        self.submit(
+            slot.connection,
+            actor::Command::SaveValue {
+                query,
+                handle,
+                destination,
+                released: slot.released.subscribe(),
+            },
+        )
+    }
     pub fn object_ddl(
         &self,
         connection: ConnectionId,

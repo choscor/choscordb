@@ -764,6 +764,7 @@ class EngineAdapter final : public QObject {
     static PdfPage pdfPage(const QByteArray& bytes, int number);
     void loadValueChunk(quint64 query, quint64 handle, quint64 offset,
                         quint32 maxBytes = valueChunkBytes());
+    QString saveValueToFile(quint64 query, quint64 handle, const QString& path);
     void loadMetadata(quint64 connection, const QString& parent = {}, quint64 requestToken = 0,
                       bool fresh = false);
     void loadMetadataPage(quint64 connection, const QString& parent, quint64 requestToken,

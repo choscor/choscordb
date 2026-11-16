@@ -87,6 +87,12 @@ pub(crate) enum Command {
         query: QueryId,
         handle: Handle,
     },
+    SaveValue {
+        query: QueryId,
+        handle: Handle,
+        destination: std::path::PathBuf,
+        released: watch::Receiver<bool>,
+    },
     Ddl {
         object: ObjectId,
         request_token: u64,
@@ -899,6 +905,7 @@ pub(crate) async fn run(
             | Command::Export { query, .. }
             | Command::LoadValue { query, .. }
             | Command::LoadValueChunk { query, .. }
+            | Command::SaveValue { query, .. }
             | Command::Release(query) => object_active.as_ref().is_some_and(|a| a.id == *query),
             _ => false,
         };
@@ -1996,6 +2003,49 @@ pub(crate) async fn run(
                         )
                         .await
                     }
+                }
+            }
+            Command::SaveValue {
+                query,
+                handle,
+                destination,
+                released,
+            } => {
+                let event = match readers.get(&query).cloned() {
+                    Some(reader) => {
+                        let events = events.clone();
+                        let max_bytes = MAX_VALUE_CHUNK_BYTES.min(memory.raw_limit());
+                        let closing = shutdown.clone();
+                        let stopped = move || *released.borrow() || *closing.borrow();
+                        tokio::spawn(async move {
+                            let event =
+                                match reader.save(handle, destination, max_bytes, stopped).await {
+                                    Ok(bytes) => Event::ValueSaved {
+                                        query,
+                                        handle,
+                                        bytes,
+                                    },
+                                    Err(error) => Event::ValueSaveFailed {
+                                        query,
+                                        handle,
+                                        error,
+                                    },
+                                };
+                            send(&events, event).await;
+                        });
+                        None
+                    }
+                    None => Some(Event::ValueSaveFailed {
+                        query,
+                        handle,
+                        error: DriverError::new(
+                            ErrorKind::StaleHandle,
+                            "Original value reader is unavailable",
+                        ),
+                    }),
+                };
+                if let Some(event) = event {
+                    send(&events, event).await;
                 }
             }
             Command::LoadValue { query, handle } => {

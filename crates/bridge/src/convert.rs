@@ -736,6 +736,26 @@ pub fn event(
             e.cells = vec![cell(value)];
             "value"
         }
+        Event::ValueSaved {
+            query,
+            handle,
+            bytes,
+        } => {
+            e.id = pack(query);
+            e.value_handle = pack(handle);
+            e.total_bytes = bytes;
+            "value_saved"
+        }
+        Event::ValueSaveFailed {
+            query,
+            handle,
+            error: err,
+        } => {
+            e.id = pack(query);
+            e.value_handle = pack(handle);
+            error(&mut e, err);
+            "value_save_failed"
+        }
         Event::Ddl {
             connection,
             object,

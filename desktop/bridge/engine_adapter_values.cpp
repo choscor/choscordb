@@ -860,4 +860,9 @@ PdfPage EngineAdapter::pdfPage(const QByteArray& bytes, int number) {
                        static_cast<qsizetype>(page.png.size())),
             fromRust(page.error)};
 }
+QString EngineAdapter::saveValueToFile(quint64 query, quint64 handle, const QString& path) {
+    const auto bytes = path.toUtf8();
+    auto reply = save_value_to_file(*d_->engine, query, handle, utf8View(bytes));
+    return reply.accepted ? QString() : fromRust(reply.error);
+}
 }

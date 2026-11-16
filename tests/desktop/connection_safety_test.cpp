@@ -6,13 +6,17 @@
 #include "design_system/tabs/tabs_style.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
+#include <QDialog>
+#include <QFile>
 #include <QHelpEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QTableView>
+#include <QTemporaryDir>
 #include <QtTest>
 
 class ConnectionSafetyTest : public QObject {
@@ -69,6 +73,22 @@ class ConnectionSafetyTest : public QObject {
         window.findChild<QAction*>("runStatement")->trigger();
         auto* grid = window.findChild<QTableView*>("queryResults");
         QTRY_COMPARE(grid->model()->rowCount(), 1);
+        QTemporaryDir files;
+        QFile script(files.filePath("load.sql"));
+        QVERIFY(script.open(QIODevice::WriteOnly));
+        script.write("CREATE TABLE t (a INTEGER);\n");
+        script.close();
+        window.findChild<QAction*>("runSqlFile")->trigger();
+        auto* dialog = window.findChild<QDialog*>("sqlFileDialog");
+        QVERIFY(dialog);
+        QTRY_VERIFY(dialog->isVisible());
+        dialog->findChild<QLineEdit*>("sqlFilePath")->setText(script.fileName());
+        dialog->findChild<QPushButton*>("sqlFileStart")->click();
+        QString fieldError;
+        for (auto* label : dialog->findChildren<QLabel*>())
+            if (label->property("designRole").toString() == "fieldError" && label->isVisible())
+                fieldError = label->text();
+        QVERIFY2(fieldError.contains("read-only"), qPrintable(fieldError));
     }
     void sqlTabsShowTheToneOfTheirConnection() {
         choscordb::MainWindow window;
@@ -146,6 +166,10 @@ class ConnectionSafetyTest : public QObject {
         auto* menu = window.findChild<QMenu*>("safetyLevelMenu");
         safety->click();
         QTRY_VERIFY(menu->isVisible());
+        for (auto* level : menu->actions())
+            if (level->data() == "read_only")
+                QVERIFY2(!level->isEnabled(),
+                         "Read-only needs a read-only session from the connection profile");
         for (auto* level : menu->actions())
             if (level->data() == "silent")
                 level->trigger();

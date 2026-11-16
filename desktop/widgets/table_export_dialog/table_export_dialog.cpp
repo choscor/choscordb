@@ -13,6 +13,7 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -31,7 +32,7 @@ TableExportDialog::TableExportDialog(EngineAdapter* adapter, quint64 connection,
       drop_(new QCheckBox(tr("DROP statement"), this)), data_(new QCheckBox(tr("Data"), this)),
       target_(new QComboBox(this)), path_(new QLineEdit(this)),
       browse_(new design::Button(tr("Browse…"), this)), patternRow_(new QWidget(this)),
-      pattern_(new QLineEdit(this)), validation_(nullptr) {
+      pattern_(new QLineEdit(this)), tables_(new QListWidget(this)), validation_(nullptr) {
     setObjectName("tableExportDialog");
     setWindowTitle(tr("Export tables"));
     setAppModal();
@@ -75,16 +76,17 @@ TableExportDialog::TableExportDialog(EngineAdapter* adapter, quint64 connection,
     auto* body = bodyLayout->parentWidget();
     body->setProperty("designSurface", "panel");
     body->setAttribute(Qt::WA_StyledBackground);
-    QStringList names;
-    for (const auto& object : base_.objects)
-        names << object.qualifiedName;
-    auto* scope = createDescription(
-        tr("%n table(s): %1", nullptr, int(base_.objects.size())).arg(names.join(", ")), body);
-    scope->setObjectName("tableExportScope");
-    scope->setWordWrap(true);
-    bodyLayout->addWidget(scope);
+    tables_->setObjectName("tableExportTables");
+    tables_->setAccessibleName(tr("Tables to export"));
+    for (const auto& object : base_.objects) {
+        auto* item = new QListWidgetItem(object.qualifiedName, tables_);
+        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+        item->setCheckState(Qt::Checked);
+    }
+    connect(tables_, &QListWidget::itemChanged, this, [this] { validation_->setError({}); });
 
     auto* form = sections->addForm();
+    sections->addFormRow(form, tr("Tables"), tables_);
     sections->addFormRow(form, tr("Format"), format_);
     auto* csvLayout = new QVBoxLayout(csvFields_);
     csvLayout->setContentsMargins(0, 0, 0, 0);
@@ -157,6 +159,10 @@ bool TableExportDialog::isRunning() const {
 }
 TableExportRequest TableExportDialog::request() const {
     auto request = base_;
+    request.objects.clear();
+    for (int row = 0; row < tables_->count(); ++row)
+        if (tables_->item(row)->checkState() == Qt::Checked)
+            request.objects.push_back(base_.objects[row]);
     request.format = format_->currentData().toString();
     request.delimiter = delimiter_->text();
     request.quote = quote_->text();
@@ -177,8 +183,9 @@ void TableExportDialog::updateActions() {
     sqlFields_->setVisible(format_->currentData(SqlOptionsRole).toBool());
     patternRow_->setVisible(target_->currentData().toBool());
     for (QWidget* field :
-         {static_cast<QWidget*>(format_), csvFields_, sqlFields_, static_cast<QWidget*>(target_),
-          static_cast<QWidget*>(path_), static_cast<QWidget*>(browse_), patternRow_})
+         {static_cast<QWidget*>(tables_), static_cast<QWidget*>(format_), csvFields_, sqlFields_,
+          static_cast<QWidget*>(target_), static_cast<QWidget*>(path_),
+          static_cast<QWidget*>(browse_), patternRow_})
         field->setEnabled(!running);
     start_->setEnabled(adapter_ && !running);
     cancel_->setEnabled(state_ != ExportState::Cancelling);

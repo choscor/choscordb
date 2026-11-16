@@ -157,6 +157,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleExplainEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleDatabaseSwitchEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleCopyEvent);
+    connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleValueSaveEvent);
     connect(adapter_, &EngineAdapter::valueChunkSubmissionFailed, this,
             [this](quint64 query, quint64 handle, quint64 offset, const QString& error) {
                 if (rowJsonQuery_ == query && rowJsonLoadingColumn_ >= 0 &&

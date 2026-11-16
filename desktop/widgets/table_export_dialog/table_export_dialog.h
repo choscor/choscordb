@@ -7,6 +7,7 @@
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
+class QListWidget;
 class QWidget;
 namespace choscordb {
 namespace design {
@@ -58,6 +59,7 @@ class TableExportDialog final : public DialogShell {
     design::Button* browse_;
     QWidget* patternRow_;
     QLineEdit* pattern_;
+    QListWidget* tables_;
     design::FieldValidation* validation_;
     design::StatusLine* statusLine_ = nullptr;
     design::Button* cancel_ = nullptr;

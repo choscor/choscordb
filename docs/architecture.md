@@ -75,6 +75,7 @@ If a driver has no lock statement, the connection fails with an `Unsupported` er
 Before a statement runs, `sql_execution_gate` applies the safety level.
 The gate can run the statement, ask for confirmation, or reject a statement that can change data.
 The toolbar safety button shows the short name of the level from `SafetyLevel::name`. Its menu changes the level for the session.
+The menu cannot select Read-only for an open session. Only the profile can select it, because Read-only needs the locked session.
 `SELECT` statements get the row limit of the connection. `apply_row_limit` in `sql-language` adds or caps the `LIMIT`.
 The toolbar choice is stored in `ConnectionProfile::row_limit` through `Engine::profile_set_row_limit`. It must be one of `ROW_LIMIT_CHOICES`.
 
@@ -99,6 +100,9 @@ DEFAULT omits the column from an inserted row. For an existing row it writes `DE
 The grid stages an expression as `GridEditRow::expressions`. `plan_grid_edits` writes it into the statement without a parameter, so the review shows it.
 `GridTemporalKind::text` makes the ISO text of a picked date and time.
 `read_cell_file` and `write_cell_file` in `core` read and write a binary cell. A cell file can have up to `MAX_GRID_BINARY_BYTES` (64 KiB).
+A large value in the grid is a deferred handle. `Engine::save_value_to_file` sends `SaveValue` to the connection actor.
+The actor reads the value in chunks from the original value reader and writes each chunk to a temporary file. Then it replaces the destination.
+The actor sends `ValueSaved` with the byte count, or `ValueSaveFailed`. A failed save does not write the destination.
 
 ### Query plan
 
@@ -222,6 +226,7 @@ The export also fails when the file gets to 4 GiB. Then the destination file doe
 
 ### Table export
 
+The export dialog shows a check box for each table or view. Only the selected objects go into the request.
 `plan_table_export` in `core` makes one target for each table or view: the `SELECT` that Rust builds, the destination file and the export format.
 A folder destination uses a file name pattern with `{schema}` and `{table}`. Rust adds the extension and rejects two tables that write the same file.
 Several tables go to one file only for the SQL format.

@@ -298,6 +298,16 @@ pub enum Event {
         handle: Handle,
         value: Value,
     },
+    ValueSaved {
+        query: QueryId,
+        handle: Handle,
+        bytes: u64,
+    },
+    ValueSaveFailed {
+        query: QueryId,
+        handle: Handle,
+        error: DriverError,
+    },
     Ddl {
         connection: ConnectionId,
         object: ObjectId,

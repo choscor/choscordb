@@ -27,6 +27,63 @@ impl Reader {
         .map_err(|_| DriverError::new(ErrorKind::Internal, "Original value worker failed"))?
     }
 }
+struct SaveError(DriverError);
+impl From<std::io::Error> for SaveError {
+    fn from(error: std::io::Error) -> Self {
+        Self(DriverError::new(ErrorKind::Io, error.to_string()))
+    }
+}
+impl From<DriverError> for SaveError {
+    fn from(error: DriverError) -> Self {
+        Self(error)
+    }
+}
+impl Reader {
+    pub async fn save(
+        self,
+        handle: Handle,
+        destination: std::path::PathBuf,
+        max_bytes: usize,
+        stopped: impl Fn() -> bool + Send + 'static,
+    ) -> Result<u64> {
+        tokio::task::spawn_blocking(move || {
+            let reader = self.0.as_ref().expect("reader ownership");
+            let mut written = 0;
+            crate::document_io::write_atomically_with(&destination, |file| {
+                loop {
+                    if stopped() {
+                        return Err(SaveError(DriverError::new(
+                            ErrorKind::Cancelled,
+                            "The result closed before the value was saved",
+                        )));
+                    }
+                    let chunk = reader.read_chunk(handle, written, max_bytes)?;
+                    if chunk.offset != written {
+                        return Err(SaveError(DriverError::new(
+                            ErrorKind::Internal,
+                            "Original value chunk is out of order",
+                        )));
+                    }
+                    std::io::Write::write_all(file, &chunk.bytes)?;
+                    written += chunk.bytes.len() as u64;
+                    if written >= chunk.total_bytes {
+                        return Ok(());
+                    }
+                    if chunk.bytes.is_empty() {
+                        return Err(SaveError(DriverError::new(
+                            ErrorKind::Internal,
+                            "Original value ended before its length",
+                        )));
+                    }
+                }
+            })
+            .map(|()| written)
+            .map_err(|SaveError(error)| error)
+        })
+        .await
+        .map_err(|_| DriverError::new(ErrorKind::Internal, "Original value worker failed"))?
+    }
+}
 impl Drop for Reader {
     fn drop(&mut self) {
         if let Some(reader) = self.0.take() {

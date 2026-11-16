@@ -26,6 +26,7 @@
 #include <QDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -588,8 +589,27 @@ void NavigatorSqlWorkspaceTest::exportTablesFromTheNavigator() {
     exportAll->trigger();
     dialog = window.findChild<TableExportDialog*>("tableExportDialog");
     QVERIFY(dialog);
-    const auto scope = dialog->findChild<QLabel*>("tableExportScope")->text();
-    QVERIFY2(scope.contains("items") && scope.contains("item_names"), qPrintable(scope));
+    auto* tables = dialog->findChild<QListWidget*>("tableExportTables");
+    QVERIFY(tables);
+    QCOMPARE(tables->count(), 2);
+    QListWidgetItem* items = nullptr;
+    for (int row = 0; row < tables->count(); ++row) {
+        QCOMPARE(tables->item(row)->checkState(), Qt::Checked);
+        if (!tables->item(row)->text().contains("item_names"))
+            items = tables->item(row);
+    }
+    QVERIFY(items);
+    for (int row = 0; row < tables->count(); ++row)
+        tables->item(row)->setCheckState(Qt::Unchecked);
+    dialog->findChild<QLineEdit*>("tableExportPath")->setText(exports.filePath("none"));
+    dialog->findChild<QPushButton*>("tableExportStart")->click();
+    QCOMPARE(dynamic_cast<design::FieldValidation*>(
+                 dialog->findChild<QLineEdit*>("tableExportPath")->parentWidget())
+                 ->error(),
+             QString("Choose one or more tables to export."));
+    for (int row = 0; row < tables->count(); ++row)
+        if (tables->item(row) != items)
+            tables->item(row)->setCheckState(Qt::Checked);
     format = dialog->findChild<QComboBox*>("tableExportFormat");
     format->setCurrentIndex(format->findData("sql"));
     QVERIFY(dialog->findChild<QCheckBox*>("tableExportStructure")->isVisibleTo(dialog));
@@ -601,10 +621,9 @@ void NavigatorSqlWorkspaceTest::exportTablesFromTheNavigator() {
     QFile sql(exports.filePath("all.sql"));
     QVERIFY(sql.open(QIODevice::ReadOnly));
     const auto script = QString::fromUtf8(sql.readAll());
-    QVERIFY2(
-        script.contains("CREATE TABLE items") && script.contains("CREATE VIEW item_names") &&
-            script.contains("INSERT INTO \"main\".\"items\" (\"id\", \"name\") VALUES (1, 'a');"),
-        qPrintable(script));
+    QVERIFY2(!script.contains("CREATE TABLE items") && script.contains("CREATE VIEW item_names") &&
+                 !script.contains("INSERT INTO \"main\".\"items\""),
+             qPrintable(script));
 }
 
 void NavigatorSqlWorkspaceTest::importCsvIntoTablesFromTheNavigator() {

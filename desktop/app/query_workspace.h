@@ -249,6 +249,7 @@ class QueryWorkspace final : public QObject {
     void pasteCells(const QModelIndex& target);
     void loadCellFile(const QPersistentModelIndex& index);
     void saveCellFile(const QPersistentModelIndex& index);
+    void handleValueSaveEvent(const BridgeEvent& event);
     void populateColumnMenu(QMenu& menu);
     void showColumnChooser();
     void setColumnHidden(const QString& name, bool hide);
@@ -412,6 +413,7 @@ class QueryWorkspace final : public QObject {
     std::optional<quint64> query_;
     std::optional<quint64> queryConnection_;
     QHash<quint64, QString> pendingConnections_;
+    QHash<QPair<quint64, quint64>, QString> valueSaves_;
     QList<LiveConnection> liveConnections_;
     QHash<quint64, QString> connectionProfiles_;
     QHash<quint64, SavedProfile> connectionSources_;

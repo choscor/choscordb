@@ -2487,6 +2487,12 @@ pub mod ffi {
             max_bytes: u32,
         ) -> Submit;
         fn load_value(engine: &mut BridgeEngine, query: u64, handle: u64) -> Submit;
+        fn save_value_to_file(
+            engine: &mut BridgeEngine,
+            query: u64,
+            handle: u64,
+            path: &str,
+        ) -> Submit;
         fn sql_statement_plan(
             sql: &str,
             start: u64,
@@ -3145,6 +3151,18 @@ pub fn sql_statement_plan(
 pub fn load_value(engine: &mut BridgeEngine, query: u64, handle: u64) -> ffi::Submit {
     submit(engine, |e| {
         e.load_value(unpack(query), unpack(handle))
+            .map(|()| query)
+            .map_err(|e| e.to_string())
+    })
+}
+pub fn save_value_to_file(
+    engine: &mut BridgeEngine,
+    query: u64,
+    handle: u64,
+    path: &str,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.save_value_to_file(unpack(query), unpack(handle), path.into())
             .map(|()| query)
             .map_err(|e| e.to_string())
     })

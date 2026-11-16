@@ -6,17 +6,23 @@
 #include "design_system/menu/embedded_popup.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
+#include <QApplication>
 #include <QClipboard>
 #include <QDateTimeEdit>
 #include <QDialog>
+#include <QFile>
+#include <QFileDialog>
 #include <QGuiApplication>
 #include <QLabel>
+#include <QLocale>
 #include <QMenu>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTabWidget>
 #include <QTableView>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QtTest>
 
@@ -237,6 +243,63 @@ class GridSetValueTest : public QObject {
         auto* results = window.findChild<QTableView*>("queryResults");
         QTRY_COMPARE(results->model()->rowCount(), 1);
         QCOMPARE(results->model()->index(0, 0).data().toString(), QString("3"));
+    }
+    void saveValueWritesTheWholeLargeBinaryToTheFile() {
+        choscordb::MainWindow window;
+        window.show();
+        auto* sql = window.findChild<choscordb::QueryWorkspace*>();
+        sql->connectSqlite(":memory:");
+        QTRY_VERIFY(window.findChild<QAction*>("newQuery")->isEnabled());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* editor = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        QVERIFY(
+            run(window, editor,
+                "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < "
+                "59999) SELECT CAST(group_concat(printf('%05d', i), '') AS BLOB) AS b FROM n;"));
+        auto* grid = window.findChild<QTableView*>("queryResults");
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        QTemporaryDir directory;
+        const auto path = directory.filePath("value.bin");
+        QTimer dialogs;
+        connect(&dialogs, &QTimer::timeout, &window, [&path] {
+            for (auto* widget : QApplication::topLevelWidgets())
+                if (auto* dialog = qobject_cast<QFileDialog*>(widget);
+                    dialog && dialog->isVisible()) {
+                    dialog->selectFile(path);
+                    QMetaObject::invokeMethod(dialog, "accept");
+                }
+        });
+        dialogs.start(10);
+        bool offered = false;
+        QTimer poll;
+        connect(&poll, &QTimer::timeout, grid, [&offered, &poll] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            if (!menu)
+                return;
+            poll.stop();
+            QPointer<QAction> save = menu->findChild<QAction*>("saveCellFile");
+            offered = save && save->isEnabled();
+            menu->close();
+            if (offered)
+                save->trigger();
+        });
+        poll.start(10);
+        const auto cell = grid->model()->index(0, 0);
+        grid->setCurrentIndex(cell);
+        grid->customContextMenuRequested(grid->visualRect(cell).center());
+        QTRY_VERIFY(!poll.isActive());
+        QVERIFY(offered);
+        auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
+        const auto saved = QStringLiteral("Saved %1 bytes").arg(QLocale().toString(300000));
+        QTRY_VERIFY_WITH_TIMEOUT(messages->toPlainText().contains(saved), 10000);
+        dialogs.stop();
+        QFile written(path);
+        QVERIFY(written.open(QIODevice::ReadOnly));
+        QByteArray expected;
+        for (int i = 0; i < 60000; ++i)
+            expected += QByteArray::number(i).rightJustified(5, '0');
+        QCOMPARE(written.readAll(), expected);
     }
 };
 

@@ -41,6 +41,7 @@ void QueryWorkspace::setupSafetyLevel() {
     auto* menu = new QMenu(widgets_.safetyLevel);
     safetyMenu_ = menu;
     menu->setObjectName("safetyLevelMenu");
+    menu->setToolTipsVisible(true);
     auto* levels = new QActionGroup(menu);
     for (const auto& level : EngineAdapter::profileTagOptions().safetyLevels) {
         auto* action = menu->addAction(level.label);
@@ -68,6 +69,12 @@ void QueryWorkspace::syncConnectionTag() {
             tag.profileSafety == EngineAdapter::profileTagOptions().sessionLockedSafety;
         widgets_.safetyLevel->setEnabled(connection.has_value() && !locked);
         const auto actions = safetyMenu_->actions();
+        for (auto* action : actions)
+            if (action->data() == EngineAdapter::profileTagOptions().sessionLockedSafety) {
+                action->setEnabled(false);
+                action->setToolTip(tr("Edit the connection to set Read-only. The connection then "
+                                      "rejects all writes."));
+            }
         const auto current =
             std::find_if(actions.cbegin(), actions.cend(),
                          [&tag](const QAction* action) { return action->data() == tag.safety; });

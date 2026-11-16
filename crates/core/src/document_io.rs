@@ -223,12 +223,21 @@ pub fn write_sql_document(path: &Path, bytes: &[u8]) -> Result<(), DocumentIoErr
 }
 
 fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), DocumentIoError> {
+    write_atomically_with(path, |file| {
+        file.write_all(bytes).map_err(DocumentIoError::from)
+    })
+}
+
+pub(crate) fn write_atomically_with<E: From<std::io::Error>>(
+    path: &Path,
+    fill: impl FnOnce(&mut File) -> Result<(), E>,
+) -> Result<(), E> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-    temporary.write_all(bytes)?;
+    fill(temporary.as_file_mut())?;
     temporary.flush()?;
     temporary.as_file().sync_all()?;
     #[cfg(unix)]
@@ -237,9 +246,7 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), DocumentIoError> {
             .as_file()
             .set_permissions(metadata.permissions())?;
     }
-    temporary
-        .persist(path)
-        .map_err(|error| DocumentIoError::Io(error.error))?;
+    temporary.persist(path).map_err(|error| error.error)?;
     #[cfg(unix)]
     File::open(parent)?.sync_all()?;
     Ok(())

@@ -1,4 +1,7 @@
 #include "app/query_workspace.h"
+#include "app/query_workspace_p.h"
+#include "bridge/engine_adapter.h"
+#include "choscordb-bridge/src/lib.rs.h"
 #include "models/result_table_model.h"
 #include "widgets/document_io/document_io.h"
 
@@ -7,6 +10,7 @@
 #include <QFileDialog>
 #include <QFutureWatcher>
 #include <QGuiApplication>
+#include <QLocale>
 #include <QMenu>
 #include <QPointer>
 #include <QTableView>
@@ -36,7 +40,9 @@ void QueryWorkspace::appendSetValueActions(QMenu& menu, const QPersistentModelIn
     const auto value = current && clicked.isValid() ? model_->cellValue(clicked) : std::nullopt;
     auto* save = menu.addAction(tr("Save value to file…"));
     save->setObjectName("saveCellFile");
-    save->setEnabled(value && std::holds_alternative<QByteArray>(*value));
+    const auto* deferred = value ? std::get_if<DeferredValue>(&*value) : nullptr;
+    save->setEnabled(
+        value && (std::holds_alternative<QByteArray>(*value) || (deferred && !deferred->fallback)));
     connect(save, &QAction::triggered, this, [this, clicked] { saveCellFile(clicked); });
 }
 void QueryWorkspace::setCellValue(const QPersistentModelIndex& index, const QString& kind) {
@@ -132,11 +138,29 @@ void QueryWorkspace::loadCellFile(const QPersistentModelIndex& index) {
 void QueryWorkspace::saveCellFile(const QPersistentModelIndex& index) {
     const auto value = index.isValid() ? model_->cellValue(index) : std::nullopt;
     const auto* bytes = value ? std::get_if<QByteArray>(&*value) : nullptr;
-    if (!bytes)
+    const auto* deferred = value ? std::get_if<DeferredValue>(&*value) : nullptr;
+    if (!bytes && (!deferred || deferred->fallback))
         return;
+    if (deferred && query_ && valueSaves_.contains({*query_, deferred->handle})) {
+        message(tr("Save value: this value is still saving."));
+        return;
+    }
     const auto path = QFileDialog::getSaveFileName(widgets_.dialogParent, tr("Save value to file"));
     if (path.isEmpty())
         return;
+    if (deferred) {
+        if (!query_ || !queryAvailable()) {
+            message(tr("Save value: the result is no longer available."));
+            return;
+        }
+        if (const auto error = adapter_->saveValueToFile(*query_, deferred->handle, path);
+            !error.isEmpty()) {
+            message(tr("Save value: %1").arg(error));
+            return;
+        }
+        valueSaves_.insert({*query_, deferred->handle}, path);
+        return;
+    }
     auto* watcher = new QFutureWatcher<DocumentIoResult>(this);
     connect(watcher, &QFutureWatcher<DocumentIoResult>::finished, this,
             [this, watcher, path, size = bytes->size()] {
@@ -147,5 +171,16 @@ void QueryWorkspace::saveCellFile(const QPersistentModelIndex& index) {
                             : tr("Save value: %1").arg(result.error));
             });
     watcher->setFuture(DocumentIo().writeCell(path, *bytes));
+}
+void QueryWorkspace::handleValueSaveEvent(const BridgeEvent& event) {
+    const auto kind = query_workspace_detail::text(event.kind);
+    if (kind != QLatin1String("value_saved") && kind != QLatin1String("value_save_failed"))
+        return;
+    const auto path = valueSaves_.take({event.id, event.value_handle});
+    if (path.isEmpty())
+        return;
+    message(kind == QLatin1String("value_saved")
+                ? tr("Saved %1 bytes to %2.").arg(QLocale().toString(event.total_bytes), path)
+                : tr("Save value: %1").arg(query_workspace_detail::text(event.error)));
 }
 }

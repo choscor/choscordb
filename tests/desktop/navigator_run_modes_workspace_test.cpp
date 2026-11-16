@@ -354,16 +354,4 @@ void NavigatorSqlWorkspaceTest::runSqlFileReportsEachFailedStatement() {
     runButton->click();
     auto* grid = window.findChild<QTableView*>("queryResults");
     QTRY_COMPARE(grid->model()->index(0, 0).data().toString(), QString("2"));
-
-    setSafety("read_only");
-    action->trigger();
-    QTRY_VERIFY(window.findChildren<QDialog*>("sqlFileDialog").size() == 1);
-    dialog = window.findChildren<QDialog*>("sqlFileDialog").constLast();
-    dialog->findChild<QLineEdit*>("sqlFilePath")->setText(path);
-    dialog->findChild<QPushButton*>("sqlFileStart")->click();
-    QString fieldError;
-    for (auto* label : dialog->findChildren<QLabel*>())
-        if (label->property("designRole").toString() == "fieldError" && label->isVisible())
-            fieldError = label->text();
-    QVERIFY2(fieldError.contains("read-only"), qPrintable(fieldError));
 }
