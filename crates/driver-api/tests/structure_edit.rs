@@ -355,7 +355,7 @@ fn changes_are_validated_before_any_sql_is_built() {
                     ("default", "1; DROP TABLE people"),
                 ],
             ),
-            "The default expression cannot contain ;, -- or /*, or a comma outside parentheses.",
+            "The default expression cannot contain ;, --, /*, #, a backslash or a comma outside parentheses.",
         ),
         (
             change(
@@ -373,7 +373,7 @@ fn changes_are_validated_before_any_sql_is_built() {
                     ("default", "1, DROP COLUMN name"),
                 ],
             ),
-            "The default expression cannot contain ;, -- or /*, or a comma outside parentheses.",
+            "The default expression cannot contain ;, --, /*, #, a backslash or a comma outside parentheses.",
         ),
         (
             change(K::AddColumn, &[("type", "int")]),
@@ -395,6 +395,23 @@ fn changes_are_validated_before_any_sql_is_built() {
             "Enter one referenced column for each column.",
         ),
     ];
+    for default in [
+        "'\\'', DROP COLUMN name, ADD COLUMN z INT DEFAULT '\\''",
+        "E'\\'', DROP COLUMN name, ADD COLUMN z INT DEFAULT E'\\''",
+        "0 # hidden",
+    ] {
+        assert_eq!(
+            error(
+                &people,
+                &[change(
+                    K::AddColumn,
+                    &[("name", "x"), ("type", "int"), ("default", default)],
+                )]
+            ),
+            "Change 1: The default expression cannot contain ;, --, /*, #, a backslash or a comma outside parentheses.",
+            "{default}"
+        );
+    }
     for (changed, message) in cases {
         assert_eq!(error(&people, &[changed]), format!("Change 1: {message}"));
     }

@@ -119,7 +119,7 @@ pub fn row_import_sql(
     let mysql = driver == GridEditDriver::Mysql;
     let verb = match conflict {
         ImportConflict::Replace => "REPLACE",
-        ImportConflict::Skip if mysql => "INSERT IGNORE",
+        ImportConflict::Skip if mysql => MYSQL_SKIP_VERB,
         _ => "INSERT",
     };
     let insert = format!(
@@ -177,6 +177,13 @@ pub fn row_import_sql(
         }
     };
     Ok(insert + &suffix)
+}
+
+const MYSQL_SKIP_VERB: &str = "INSERT IGNORE";
+
+pub fn mysql_ignores_duplicates(sql: &str) -> bool {
+    sql.strip_prefix(MYSQL_SKIP_VERB)
+        .is_some_and(|rest| rest.starts_with(' '))
 }
 
 pub fn row_import_statement(

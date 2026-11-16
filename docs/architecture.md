@@ -264,7 +264,7 @@ Limits: 64 MiB, 100,000 rows and 1,000 columns for each file.
 | Replace | `REPLACE INTO` (SQLite only) | `REPLACE INTO` |
 
 `Update` needs all primary key columns in the mapping. PostgreSQL does not show `Replace`.
-`INSERT IGNORE` also changes bad values into warnings. Thus the MySQL driver reads `SHOW WARNINGS` after a statement with a warning. It accepts only a duplicate key on a skipped row. Each other warning stops the import.
+`INSERT IGNORE` also changes bad values into warnings. Thus the MySQL driver reads `SHOW WARNINGS` after a Skip statement with a warning. `mysql_ignores_duplicates` in `driver-api` finds a Skip statement. It accepts only a duplicate key on a skipped row. Each other warning stops the import.
 `TableImportFinished` counts each row statement that changed one or more rows. Thus an update or a replace counts one row on each driver.
 Before the import, the dialog shows the SQL for each row from `table_import_review`. It uses the same plan as the import.
 `Engine::import_table` sends one `ImportTable` command to the connection actor.
@@ -358,7 +358,7 @@ The changes add, change or drop a column, add or drop an index, set the primary 
 Each driver gives its `StructureDialect` through `DatabaseDriver::structure_dialect`. The dialect gives the column types and the changes that need a table rebuild.
 `StructureDialect::sql` gives the SQL family for quotes and syntax. Thus one lookup gives the rules and the SQL of a driver.
 `GridEditDriver::from_id` is the one map from a driver id to its SQL family. Grid edits, imports, exports, database actions and trigger scripts use it.
-A type or a default cannot have a comma outside parentheses. A MySQL column comment cannot have a backslash, because the SQL mode changes its meaning.
+A type or a default cannot have a comma outside parentheses. A default also cannot have `;`, `--`, `/*`, `#` or a backslash, because a backslash can hide the end of a string. A MySQL column comment cannot have a backslash, because the SQL mode changes its meaning.
 It also gives a reason when a column cannot change in place or keep a comment.
 The SQLite dialect needs a table rebuild for a primary key, a foreign key or a dropped key. The PostgreSQL and MySQL dialects change each item in place.
 The bridge finds the dialect of a driver in the same driver list that makes the engine. It makes this list one time. `plan_structure` gets the dialect and returns its reasons.

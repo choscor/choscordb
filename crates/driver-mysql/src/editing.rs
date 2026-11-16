@@ -416,7 +416,7 @@ pub(crate) async fn apply_stream(
                 let index = affected_rows.len();
                 let (sql, params, expected) =
                     edit_statement(edit).map_err(|failure| failure.at_statement(index))?;
-                let ignores_duplicates = sql.starts_with("INSERT IGNORE ");
+                let ignores_duplicates = mysql_ignores_duplicates(&sql);
                 tx.exec_drop(sql, mysql_async::Params::Positional(params))
                     .await
                     .map_err(|failure| normalize(failure).at_statement(index))?;

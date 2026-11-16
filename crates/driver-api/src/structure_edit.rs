@@ -391,10 +391,12 @@ fn expression(text: &str) -> Checked<String> {
         || text.contains('\0')
         || text.contains("--")
         || text.contains("/*")
+        || text.contains('#')
+        || text.contains('\\')
         || top_level_comma(text)
     {
         return Err(
-            "The default expression cannot contain ;, -- or /*, or a comma outside parentheses."
+            "The default expression cannot contain ;, --, /*, #, a backslash or a comma outside parentheses."
                 .into(),
         );
     }

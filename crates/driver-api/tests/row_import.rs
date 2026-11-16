@@ -191,3 +191,27 @@ fn new_table_sql_quotes_each_column_with_its_type() {
         Err(RowImportError::InvalidIdentifier)
     );
 }
+
+#[test]
+fn only_the_mysql_skip_policy_ignores_duplicate_rows() {
+    for conflict in [
+        ImportConflict::Stop,
+        ImportConflict::Skip,
+        ImportConflict::Update,
+        ImportConflict::Replace,
+    ] {
+        let sql = row_import_sql(
+            GridEditDriver::Mysql,
+            "`people`",
+            &columns(),
+            &keys(),
+            conflict,
+        )
+        .unwrap();
+        assert_eq!(
+            choscordb_driver_api::mysql_ignores_duplicates(&sql),
+            conflict == ImportConflict::Skip,
+            "{sql}"
+        );
+    }
+}
