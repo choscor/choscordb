@@ -99,7 +99,6 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
         message(tr("Result page exceeds the grid memory budget."));
         setExecutionState(QueryState::Failed, tr("Result page exceeds the grid memory budget."));
         hasMore_ = false;
-        hasMoreResults_ = false;
     } else {
         configureEditability();
         if (filterBar_)
@@ -115,7 +114,6 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
                 adapter_->releasePageLease(e.lease_id);
             currentPage_.reset();
             hasMore_ = false;
-            hasMoreResults_ = false;
             busy_ = false;
             message(tr("Result page exceeds its transfer reservation."));
             setExecutionState(QueryState::Failed,
@@ -158,7 +156,6 @@ void QueryWorkspace::showPage(const BridgeEvent& e, ResultTableModel::PreparedPa
                 referenceFilterFailed_ = true;
                 currentPage_.reset();
                 hasMore_ = false;
-                hasMoreResults_ = false;
                 filterBar_->showValidationError(tr("Referenced row filter could not start."));
                 setExecutionState(
                     QueryState::Failed,
@@ -311,23 +308,13 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         return;
     }
     if (eventKind == "transaction_state") {
-        if (e.transaction_active)
-            pendingTransactions_.insert(e.id);
-        else
-            pendingTransactions_.remove(e.id);
-        emit transactionStateChanged(e.id, e.transaction_active);
+        setTransactionActive(e.id, e.transaction_active);
         updateActions();
         return;
     }
     if (eventKind == "connected") {
-        if (e.has_transaction_state) {
-            if (e.transaction_active) {
-                pendingTransactions_.insert(e.id);
-            } else {
-                pendingTransactions_.remove(e.id);
-            }
-            emit transactionStateChanged(e.id, e.transaction_active);
-        }
+        if (e.has_transaction_state)
+            setTransactionActive(e.id, e.transaction_active);
         const auto name = pendingConnections_.take(e.id);
         {
             const auto label = name.isEmpty() ? tr("Connection %1").arg(e.id) : name;
@@ -390,6 +377,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             connectionSqlModes_.remove(e.id);
             connectionTags_.remove(e.id);
             connectionRowLimits_.remove(e.id);
+            databaseSwitches_.remove(e.id);
             disconnecting_.remove(e.id);
         }
         message(text(e.error) +
@@ -411,6 +399,7 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         connectionSqlModes_.remove(e.id);
         connectionTags_.remove(e.id);
         connectionRowLimits_.remove(e.id);
+        databaseSwitches_.remove(e.id);
         dropStatementResults(e.id);
         liveConnections_.removeIf([&e](const LiveConnection& live) { return live.id == e.id; });
         documentChanged();
@@ -426,7 +415,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             cancellationPending_ = false;
             fetching_ = false;
             hasMore_ = false;
-            hasMoreResults_ = false;
             query_.reset();
             queryConnection_.reset();
             currentPage_.reset();
@@ -477,7 +465,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             model_->setPage(columns_, {}, 0);
             currentPage_.reset();
             hasMore_ = false;
-            hasMoreResults_ = false;
             if (filterBar_) {
                 filterBar_->setBusy(false);
                 filterBar_->showValidationError(
@@ -562,7 +549,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             setExecutionState(QueryState::Failed, tr("Result page has an invalid column count."));
             busy_ = false;
             hasMore_ = false;
-            hasMoreResults_ = false;
             updateActions();
             return;
         }
@@ -572,7 +558,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             setExecutionState(QueryState::Failed, tr("Result page has an invalid cell count."));
             busy_ = false;
             hasMore_ = false;
-            hasMoreResults_ = false;
             updateActions();
             return;
         }
@@ -581,7 +566,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             fetching_ = false;
             busy_ = false;
             hasMore_ = false;
-            hasMoreResults_ = false;
             message(tr("Result page is no longer available."));
             setExecutionState(QueryState::Failed, tr("Result page is no longer available."));
             updateActions();
@@ -599,21 +583,18 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
             showPage(*page, std::move(prepared));
         });
     } else if (eventKind == "query_finished") {
-        hasMoreResults_ = e.has_more_results;
         if (queryConnection_ && e.has_sql_mode)
             connectionSqlModes_.insert(*queryConnection_, text(e.sql_mode));
         else if (queryConnection_)
             connectionSqlModes_.remove(*queryConnection_);
         const bool inspectNow =
-            queryConnection_ && !hasMoreResults_ &&
+            queryConnection_ && !e.has_more_results &&
             EngineAdapter::driverWorkflow(driverForConnection(*queryConnection_))
                 .inspectAfterResult;
         if (inspectNow) {
             inspectResultEdit();
             requestCellMetadata();
         }
-        if (hasMoreResults_)
-            message(tr("More results are available. Use Next result to continue."));
         cancellationPending_ = false;
         executionFinished_ = true;
         fetching_ = false;
@@ -647,7 +628,10 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
              hasResultPage ? tr("%1 in memory")
                                  .arg(QLocale().formattedDataSize(qint64(model_->residentBytes())))
                            : QString{}});
-        finishStatement(outcome, {});
+        if (e.has_more_results)
+            continueResultSets(outcome);
+        else
+            finishStatement(outcome, {});
         updateActions();
     } else if (eventKind == "query_failed") {
         if (queryConnection_)
@@ -664,7 +648,6 @@ void QueryWorkspace::handleEvent(const BridgeEvent& e) {
         busy_ = false;
         fetching_ = false;
         hasMore_ = false;
-        hasMoreResults_ = false;
         const auto failure =
             text(e.error) +
             (e.vendor_code.empty() ? QString{} : tr(" [Code: %1]").arg(text(e.vendor_code)));

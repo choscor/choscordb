@@ -361,6 +361,11 @@ void MainWindow::connectNavigator(const Ui& ui) {
                 navigatorController->addConnection(
                     id, workspace_->liveConnectionLabel(id).value_or(QString{}));
             });
+    connect(workspace_, &QueryWorkspace::databaseSwitched, navigatorController,
+            [this, navigatorController](quint64 id) {
+                navigatorController->reloadConnection(
+                    id, workspace_->liveConnectionLabel(id).value_or(QString{}));
+            });
     connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64 id) {
         const auto profileId = workspace_->profileIdForConnection(id);
         if (profileId.isEmpty())

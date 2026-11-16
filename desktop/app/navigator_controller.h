@@ -71,6 +71,7 @@ class NavigatorController final : public QObject {
     NavigatorModel* model() const { return model_; }
     void addConnection(quint64 connection, const QString& label);
     void renameConnection(quint64 connection, const QString& label);
+    void reloadConnection(quint64 connection, const QString& label);
     void setVisibleConnections(const QList<quint64>& orderedIds);
     void setSelectedConnection(quint64 connection);
     void clearSelectedConnection();

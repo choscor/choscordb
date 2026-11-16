@@ -923,6 +923,24 @@ fn bounded(value: &str) -> Result<(), SubmitError> {
     Ok(())
 }
 
+fn validate_connection_request(
+    profile: &mut ConnectionProfile,
+    secrets: &ProfileSecrets,
+) -> Result<(), SubmitError> {
+    prune_draft_hop_references(profile);
+    validate(profile)?;
+    validate_hop_secrets(profile, &secrets.ssh_jumps)?;
+    validate_inline_secrets(profile, secrets)?;
+    [
+        &secrets.database,
+        &secrets.ssh,
+        &secrets.tls,
+        &secrets.proxy,
+    ]
+    .into_iter()
+    .flatten()
+    .try_for_each(validate_secret)
+}
 fn validate_secret(secret: &Secret) -> Result<(), SubmitError> {
     if secret.expose().len() > 16 * 1024 {
         Err(SubmitError::ResourceLimit)
@@ -1195,6 +1213,13 @@ impl ProfileBackup {
             Some(crate::BackupTarget::from_options(options));
         Ok(())
     }
+    pub(crate) fn snapshot(&self) -> Result<Option<crate::BackupTarget>, DriverError> {
+        Ok(self.target.lock().map_err(|_| backup_slot_error())?.clone())
+    }
+    pub(crate) fn restore(&self, target: Option<crate::BackupTarget>) -> Result<(), DriverError> {
+        *self.target.lock().map_err(|_| backup_slot_error())? = target;
+        Ok(())
+    }
     pub(crate) fn target(&self) -> Result<crate::BackupTarget, DriverError> {
         self.target
             .lock()
@@ -1302,21 +1327,7 @@ impl Engine {
         secrets: ProfileSecrets,
     ) -> Result<ConnectionId, SubmitError> {
         self.ensure_running()?;
-        prune_draft_hop_references(&mut profile);
-        validate(&profile)?;
-        validate_hop_secrets(&profile, &secrets.ssh_jumps)?;
-        validate_inline_secrets(&profile, &secrets)?;
-        for secret in [
-            &secrets.database,
-            &secrets.ssh,
-            &secrets.tls,
-            &secrets.proxy,
-        ]
-        .into_iter()
-        .flatten()
-        {
-            validate_secret(secret)?;
-        }
+        validate_connection_request(&mut profile, &secrets)?;
         let id = profile.configuration.driver_id();
         let inner = self
             .drivers
@@ -1345,6 +1356,24 @@ impl Engine {
         self.connection_profiles.insert(connection, profile.id);
         self.profile_backups.insert(connection, backup);
         Ok(connection)
+    }
+    pub fn switch_profile_database(
+        &self,
+        connection: ConnectionId,
+        mut profile: ConnectionProfile,
+        secrets: ProfileSecrets,
+        request_token: u64,
+    ) -> Result<(), SubmitError> {
+        if self.connection_profiles.get(&connection) != Some(&profile.id) {
+            return Err(SubmitError::InvalidInput);
+        }
+        validate_connection_request(&mut profile, &secrets)?;
+        self.submit_database_switch(
+            connection,
+            profile_options(&profile, secrets),
+            self.profile_backups.get(&connection).cloned(),
+            request_token,
+        )
     }
 }
 

@@ -155,7 +155,13 @@ PostgreSQL lists the databases that accept connections, and not the templates. M
 SQLite lists the `.db`, `.sqlite` and `.sqlite3` files in the folder of the database file.
 A list can have up to `MAX_DATABASE_CHOICES` (10,000) entries. A larger list is a `ResourceLimit` error.
 `profile_with_database` in `bridge` sets the database name, or the SQLite path, of a copy of the profile.
-The desktop frontend opens a new connection with that profile and moves the current SQL tab to it. The old connection stays open.
+`switch_database` in `bridge` sends the new options to the connection actor. The connection keeps its ID.
+A saved connection switches only through its own profile. The engine resolves its credentials again.
+The actor refuses the switch while a transaction is open.
+The actor opens and probes the new session before it closes the old one. If the new session fails, the old session stays.
+After the switch, the actor closes the active results and starts a new catalog session for the new database.
+It sends `DatabaseSwitched` or `DatabaseSwitchFailed` with the request token.
+The desktop frontend clears the results of the connection and loads the navigator again.
 
 ### Manage databases
 
@@ -341,6 +347,9 @@ Rust (`statement_plan` in `crates/sql-language`) splits the selection or the doc
 The label is `Query N`, or the text of a `-- name:` comment line above the statement.
 A plan has a maximum of 64 statements. If the plan is empty or too large, Rust returns the error that the frontend shows.
 The query workspace keeps one result tab for each finished statement.
+A statement can return more than one result set, for example a MySQL `CALL`.
+`Engine::next_result_set` gives each further result set a new query ID. The earlier result set stays readable.
+The workspace then shows one tab for each result set, with the label `Query N · Result M`.
 When a statement fails and "Stop on first error" is on, the run stops at that statement.
 A pinned tab stays when the next run starts. The next run releases the other tabs.
 Limitation: a connection keeps only one open cursor.

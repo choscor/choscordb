@@ -117,6 +117,7 @@ class QueryWorkspace final : public QObject {
     std::optional<quint64> connectSavedProfile(const SavedProfile& profile);
     std::optional<SavedProfile> connectionSource(quint64 connection) const;
     void refreshProfileTag(const SavedProfile& profile);
+    bool switchDatabase(quint64 connection, const SavedProfile& profile);
     std::optional<quint64> selectedConnection() const;
     void runSqlFile();
     void stepResultPage(bool next);
@@ -163,6 +164,7 @@ class QueryWorkspace final : public QObject {
     void setColumnContext(const QString& context);
   signals:
     void connectionReady(quint64 connection);
+    void databaseSwitched(quint64 connection);
     void connectionNotice(const QString& notice);
     void documentTargetChanged();
     void openQueryRequested(quint64 connection);
@@ -198,6 +200,9 @@ class QueryWorkspace final : public QObject {
     void setupStatementResults();
     void submitStatement();
     void finishStatement(const QString& outcome, const QString& error);
+    void continueResultSets(const QString& outcome);
+    void recordStatementResult(const QString& outcome, const QString& error);
+    QString resultSetLabel() const;
     void showStatementResult(int index);
     void releaseStatementResults(bool keepPinned);
     void dropStatementResults(quint64 connection);
@@ -208,6 +213,8 @@ class QueryWorkspace final : public QObject {
     std::vector<StatementResult> statementResults_;
     QList<QueuedStatement> statementQueue_;
     QString runningStatementLabel_;
+    QString resultSetStatement_;
+    int resultSet_ = 1;
     QPointer<SqlEditor> statementEditor_;
     RunScope executionModeScope_ = RunScope::Current;
     quint64 executionModeToken_ = 0;
@@ -279,6 +286,8 @@ class QueryWorkspace final : public QObject {
     void handleRowJsonEvent(const BridgeEvent& event);
     void explainStatement();
     void handleExplainEvent(const BridgeEvent& event);
+    void handleDatabaseSwitchEvent(const BridgeEvent& event);
+    void setTransactionActive(quint64 connection, bool active);
     void applySqlEdit(SqlEditor* editor, const SqlTextEdit& edit);
     void copyResult(int scope, const QString& format = QStringLiteral("tsv"));
     std::optional<ResultTableModel::CopySnapshot>
@@ -404,6 +413,11 @@ class QueryWorkspace final : public QObject {
     QList<LiveConnection> liveConnections_;
     QHash<quint64, QString> connectionProfiles_;
     QHash<quint64, SavedProfile> connectionSources_;
+    struct DatabaseSwitch {
+        quint64 token = 0;
+        SavedProfile profile;
+    };
+    QHash<quint64, DatabaseSwitch> databaseSwitches_;
     QHash<quint64, QString> connectionDrivers_;
     QHash<quint64, QString> connectionSqlModes_;
     QHash<quint64, quint32> connectionRowLimits_;
@@ -440,7 +454,6 @@ class QueryWorkspace final : public QObject {
     bool busy_ = false;
     bool fetching_ = false;
     bool hasMore_ = false;
-    bool hasMoreResults_ = false;
     bool stopping_ = false;
     bool externalWork_ = false, invalidatePending_ = false;
     bool invalidateConnectionLost_ = false;

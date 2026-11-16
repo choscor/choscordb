@@ -63,13 +63,6 @@ void MainWindow::requestDatabases(bool forActions) {
                     databaseListToken_ = 0;
                     reportError(tr("Could not list the databases: %1").arg(error));
                 });
-        connect(workspace_, &QueryWorkspace::connectionReady, this, [this](quint64 connection) {
-            if (connection != databaseSwitchConnection_)
-                return;
-            databaseSwitchConnection_.reset();
-            if (const auto editor = std::exchange(databaseSwitchEditor_, nullptr))
-                workspace_->changeDocumentConnection(editor, connection);
-        });
     }
     const auto connection = workspace_->selectedConnection();
     if (!connection || !workspace_->connectionSource(*connection)) {
@@ -120,10 +113,7 @@ void MainWindow::openDatabase(const QString& target) {
         reportError(switched.error);
         return;
     }
-    databaseSwitchEditor_ = qobject_cast<SqlEditor*>(editors_->currentWidget());
-    databaseSwitchConnection_ = switched.profile.id.isEmpty()
-                                    ? workspace_->connectSqlite(switched.profile.path)
-                                    : workspace_->connectSavedProfile(switched.profile);
+    workspace_->switchDatabase(databaseListConnection_, switched.profile);
 }
 
 }

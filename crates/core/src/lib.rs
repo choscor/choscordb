@@ -398,16 +398,7 @@ impl Engine {
         let command_permit = tx.try_reserve().map_err(map_send)?;
         let event_sender = self.events_tx.clone();
         let event_permit = event_sender.try_reserve().map_err(map_send)?;
-        let (cancellation, cancel_rx) = watch::channel(false);
-        let (released, _) = watch::channel(false);
-        let (view_cancellation, _) = watch::channel(false);
-        let id = self.queries.insert(QuerySlot {
-            connection,
-            page_size: options.page_size,
-            cancellation,
-            released,
-            view_cancellation,
-        });
+        let (id, cancel_rx) = self.insert_query(connection, options.page_size);
         event_permit.send(Event::QueryState {
             query: id,
             state: QueryState::Queued,
@@ -597,13 +588,49 @@ impl Engine {
     ) -> std::result::Result<(), SubmitError> {
         self.submit(connection, actor::Command::SqlMode { request_token })
     }
-    pub fn next_result_set(&self, query: QueryId) -> std::result::Result<(), SubmitError> {
-        let owner = self
-            .queries
-            .get(query)
+    fn insert_query(
+        &mut self,
+        connection: ConnectionId,
+        page_size: PageSize,
+    ) -> (QueryId, watch::Receiver<bool>) {
+        let (cancellation, cancel_rx) = watch::channel(false);
+        let (released, _) = watch::channel(false);
+        let (view_cancellation, _) = watch::channel(false);
+        let id = self.queries.insert(QuerySlot {
+            connection,
+            page_size,
+            cancellation,
+            released,
+            view_cancellation,
+        });
+        (id, cancel_rx)
+    }
+    pub fn next_result_set(&mut self, query: QueryId) -> std::result::Result<QueryId, SubmitError> {
+        self.ensure_running()?;
+        let source = self.queries.get(query).ok_or(SubmitError::StaleHandle)?;
+        let (connection, page_size) = (source.connection, source.page_size);
+        if self.query_count >= self.config.max_queries {
+            return Err(SubmitError::ResourceLimit);
+        }
+        let permit = self
+            .connections
+            .get(connection)
             .ok_or(SubmitError::StaleHandle)?
-            .connection;
-        self.submit(owner, actor::Command::NextResult { query })
+            .commands
+            .clone()
+            .try_reserve_owned()
+            .map_err(map_send)?;
+        let (into, cancel_rx) = self.insert_query(connection, page_size);
+        permit.send(actor::Request {
+            command: actor::Command::NextResult {
+                from: query,
+                into,
+                cancellation: cancel_rx,
+            },
+        });
+        self.query_count += 1;
+        self.query_owners.insert(into, connection);
+        Ok(into)
     }
     pub fn fetch_page(&self, query: QueryId) -> std::result::Result<(), SubmitError> {
         let slot = self.queries.get(query).ok_or(SubmitError::StaleHandle)?;
@@ -761,6 +788,33 @@ impl Engine {
         request_token: u64,
     ) -> std::result::Result<(), SubmitError> {
         self.submit(connection, actor::Command::Databases { request_token })
+    }
+    pub fn switch_database(
+        &self,
+        connection: ConnectionId,
+        options: ConnectionOptions,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        if self.connection_profiles.contains_key(&connection) {
+            return Err(SubmitError::InvalidInput);
+        }
+        self.submit_database_switch(connection, options, None, request_token)
+    }
+    fn submit_database_switch(
+        &self,
+        connection: ConnectionId,
+        options: ConnectionOptions,
+        backup: Option<Arc<profiles::ProfileBackup>>,
+        request_token: u64,
+    ) -> std::result::Result<(), SubmitError> {
+        self.submit(
+            connection,
+            actor::Command::SwitchDatabase {
+                options: Box::new(options),
+                backup,
+                request_token,
+            },
+        )
     }
     pub fn apply_edit_batch(
         &self,
@@ -1173,7 +1227,7 @@ impl Engine {
             .get(connection)
             .ok_or(SubmitError::StaleHandle)?;
         if let Some(reads) = slot.catalog.reads() {
-            match reads.clone().try_reserve_owned() {
+            match reads.try_reserve_owned() {
                 Ok(permit) => return Ok(CatalogPermit::Catalog(permit)),
                 Err(mpsc::error::TrySendError::Full(_)) => return Err(SubmitError::QueueFull),
                 Err(mpsc::error::TrySendError::Closed(_)) => {}

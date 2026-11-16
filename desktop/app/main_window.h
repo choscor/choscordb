@@ -240,8 +240,6 @@ class MainWindow final : public QMainWindow {
     DatabaseList databaseChoices_;
     quint64 databaseListToken_ = 0, databaseListConnection_ = 0;
     bool databaseListForActions_ = false;
-    QPointer<SqlEditor> databaseSwitchEditor_;
-    std::optional<quint64> databaseSwitchConnection_;
     struct QuickEditorMatch {
         QPointer<SqlEditor> editor;
         quint64 revision = 0;

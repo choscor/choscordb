@@ -683,3 +683,116 @@ fn saved_profiles_give_the_tool_their_password_and_keep_read_only() {
         }
     }
 }
+
+struct SwitchingDriver;
+#[async_trait::async_trait]
+impl choscordb_driver_api::DatabaseDriver for SwitchingDriver {
+    fn id(&self) -> &'static str {
+        "postgres"
+    }
+    fn capabilities(&self) -> choscordb_driver_api::DriverCapabilities {
+        Default::default()
+    }
+    async fn connect(
+        &self,
+        options: ConnectionOptions,
+    ) -> choscordb_driver_api::Result<Box<dyn choscordb_driver_api::Connection>> {
+        if matches!(&options, ConnectionOptions::Postgres { database, .. } if database == "gone") {
+            return Err(choscordb_driver_api::DriverError::new(
+                ErrorKind::Connection,
+                "database \"gone\" does not exist",
+            ));
+        }
+        LocalDriver.connect(options).await
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_database_switch_keeps_the_backup_target_of_the_open_database() {
+    use std::os::unix::fs::PermissionsExt;
+    let tools = tempfile::tempdir().unwrap();
+    let script = tools.path().join("pg_dump");
+    std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let profile = |database: &str| -> choscordb_core::ConnectionProfile {
+        serde_json::from_value(serde_json::json!({
+            "id":"saved", "name":"Saved", "credential_ref":"saved-ref",
+            "configuration":{"driver":"postgres", "host":"db.example", "port":5432,
+                "database":database, "user":"alice", "tls":{"mode":"Disable"}}
+        }))
+        .unwrap()
+    };
+    let secrets = || choscordb_core::ProfileSecrets {
+        ssh_private_key: None,
+        ssh_jump_private_keys: Default::default(),
+        ssh_jumps: Default::default(),
+        database: None,
+        ssh: None,
+        tls: None,
+        proxy: None,
+    };
+    let mut engine = Engine::new_with_credentials(
+        Default::default(),
+        vec![std::sync::Arc::new(SwitchingDriver)],
+        std::sync::Arc::new(SavedPassword),
+    )
+    .unwrap();
+    let connection = engine.connect_profile(profile("shop"), None).unwrap();
+    wait(&mut engine, |event| {
+        matches!(event, Event::Connected { .. })
+    });
+    let command = |engine: &mut Engine, file: &str| {
+        engine
+            .start_backup(
+                connection,
+                request(
+                    "postgres",
+                    BackupDirection::Backup,
+                    &out.path().join(file),
+                    tools.path(),
+                    &[],
+                ),
+            )
+            .unwrap();
+        match wait(engine, |event| {
+            matches!(
+                event,
+                Event::BackupOutput { .. } | Event::BackupFailed { .. }
+            )
+        }) {
+            Event::BackupOutput { line, .. } => line,
+            Event::BackupFailed { error, .. } => panic!("{}", error.message),
+            _ => unreachable!(),
+        }
+    };
+    engine
+        .switch_profile_database(connection, profile("gone"), secrets(), 4)
+        .unwrap();
+    wait(&mut engine, |event| {
+        matches!(
+            event,
+            Event::DatabaseSwitchFailed {
+                request_token: 4,
+                ..
+            }
+        )
+    });
+    let line = command(&mut engine, "after-failure.dump");
+    assert!(line.contains("shop") && !line.contains("gone"), "{line}");
+    engine
+        .switch_profile_database(connection, profile("other"), secrets(), 5)
+        .unwrap();
+    wait(&mut engine, |event| {
+        matches!(
+            event,
+            Event::DatabaseSwitched {
+                request_token: 5,
+                ..
+            }
+        )
+    });
+    let line = command(&mut engine, "after-switch.dump");
+    assert!(line.contains("other") && !line.contains("shop"), "{line}");
+}

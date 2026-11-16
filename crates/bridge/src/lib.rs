@@ -2325,6 +2325,13 @@ pub mod ffi {
         ) -> Submit;
         fn profile_test(engine: &mut BridgeEngine, profile: ProfileDto, token: u64) -> Submit;
         fn profile_connect(engine: &mut BridgeEngine, profile: ProfileDto) -> Submit;
+        fn switch_database(
+            engine: &mut BridgeEngine,
+            connection: u64,
+            profile: ProfileDto,
+            credentials: ProfileCredentialsDto,
+            request_token: u64,
+        ) -> Submit;
         fn profile_save_secret(
             engine: &mut BridgeEngine,
             profile: ProfileDto,
@@ -4110,7 +4117,7 @@ pub fn result_cells_request(
 pub fn next_result_set(engine: &mut BridgeEngine, query: u64) -> ffi::Submit {
     submit(engine, |e| {
         e.next_result_set(unpack(query))
-            .map(|_| query)
+            .map(pack)
             .map_err(|e| e.to_string())
     })
 }
@@ -4383,24 +4390,66 @@ pub fn profile_connect_credentials(
 ) -> ffi::Submit {
     let credentials = ProtectedCredentials::from(credentials);
     submit(engine, |e| {
-        let (ssh_jumps, ssh_jump_private_keys) = hop_secrets(credentials.ssh_hops)?;
-        let secrets = choscordb_core::ProfileSecrets {
-            ssh_private_key: owned_private_key_secret(
-                credentials.ssh_private_key,
-                credentials.has_ssh_private_key,
-            )?,
-            ssh_jump_private_keys,
-            ssh_jumps,
-            database: owned_secret(credentials.database, credentials.has_database)?,
-            ssh: owned_secret(credentials.ssh, credentials.has_ssh)?,
-            tls: owned_secret(credentials.tls, credentials.has_tls)?,
-            proxy: owned_secret(credentials.proxy, credentials.has_proxy)?,
-        };
-        let session_timeout = (dto.session_connection_timeout_seconds != 0)
-            .then_some(dto.session_connection_timeout_seconds);
-        e.connect_profile_with_secrets(profile_with_session_timeout(dto, session_timeout)?, secrets)
+        let (profile, secrets) = profile_request(dto, credentials)?;
+        e.connect_profile_with_secrets(profile, secrets)
             .map(pack)
             .map_err(|e| e.to_string())
+    })
+}
+
+fn profile_request(
+    dto: ffi::ProfileDto,
+    credentials: ProtectedCredentials,
+) -> std::result::Result<
+    (
+        choscordb_core::ConnectionProfile,
+        choscordb_core::ProfileSecrets,
+    ),
+    String,
+> {
+    let (ssh_jumps, ssh_jump_private_keys) = hop_secrets(credentials.ssh_hops)?;
+    let secrets = choscordb_core::ProfileSecrets {
+        ssh_private_key: owned_private_key_secret(
+            credentials.ssh_private_key,
+            credentials.has_ssh_private_key,
+        )?,
+        ssh_jump_private_keys,
+        ssh_jumps,
+        database: owned_secret(credentials.database, credentials.has_database)?,
+        ssh: owned_secret(credentials.ssh, credentials.has_ssh)?,
+        tls: owned_secret(credentials.tls, credentials.has_tls)?,
+        proxy: owned_secret(credentials.proxy, credentials.has_proxy)?,
+    };
+    let session_timeout = (dto.session_connection_timeout_seconds != 0)
+        .then_some(dto.session_connection_timeout_seconds);
+    Ok((profile_with_session_timeout(dto, session_timeout)?, secrets))
+}
+
+pub fn switch_database(
+    engine: &mut BridgeEngine,
+    connection: u64,
+    dto: ffi::ProfileDto,
+    credentials: ffi::ProfileCredentialsDto,
+    request_token: u64,
+) -> ffi::Submit {
+    let credentials = ProtectedCredentials::from(credentials);
+    submit(engine, |e| {
+        let id = unpack(connection);
+        let submitted = if !dto.id.is_empty() {
+            let (profile, secrets) = profile_request(dto, credentials)?;
+            e.switch_profile_database(id, profile, secrets, request_token)
+        } else if choscordb_driver_api::database_target_field(&dto.driver)
+            == Some(choscordb_driver_api::DatabaseTargetField::Path)
+        {
+            let options = ConnectionOptions::Sqlite {
+                path: dto.path.into(),
+                read_only: dto.read_only,
+            };
+            e.switch_database(id, options, request_token)
+        } else {
+            return Err("This connection cannot switch databases.".into());
+        };
+        submitted.map(|()| connection).map_err(|e| e.to_string())
     })
 }
 

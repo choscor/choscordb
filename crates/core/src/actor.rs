@@ -94,6 +94,11 @@ pub(crate) enum Command {
     Databases {
         request_token: u64,
     },
+    SwitchDatabase {
+        options: Box<ConnectionOptions>,
+        backup: Option<Arc<crate::profiles::ProfileBackup>>,
+        request_token: u64,
+    },
     ObjectGraph {
         object: ObjectId,
         request_token: u64,
@@ -107,7 +112,9 @@ pub(crate) enum Command {
         cancellation: watch::Receiver<bool>,
     },
     NextResult {
-        query: QueryId,
+        from: QueryId,
+        into: QueryId,
+        cancellation: watch::Receiver<bool>,
     },
     Fetch {
         query: QueryId,
@@ -641,6 +648,52 @@ fn session_probe_timeout(options: &ConnectionOptions) -> Duration {
     }
 }
 
+type OpenedSession = (Box<dyn Connection>, Option<String>, Option<bool>);
+async fn open_session(
+    driver: &dyn DatabaseDriver,
+    options: ConnectionOptions,
+    timeout: Duration,
+    probe_timeout: Duration,
+    grace: Duration,
+) -> Result<OpenedSession> {
+    let deadline = Instant::now() + timeout;
+    let mut connection = tokio::time::timeout_at(deadline, driver.connect(options))
+        .await
+        .unwrap_or_else(|_| {
+            Err(DriverError::new(
+                ErrorKind::Timeout,
+                "Connection attempt timed out",
+            ))
+        })?;
+    let probe_deadline = deadline.min(Instant::now() + probe_timeout);
+    let probed = tokio::time::timeout_at(probe_deadline, async {
+        let mode = connection.sql_mode().await?;
+        let transaction_active = connection.transaction_state().await?;
+        Ok((mode, transaction_active))
+    })
+    .await
+    .unwrap_or_else(|_| {
+        Err(DriverError::new(
+            ErrorKind::Timeout,
+            "The initial connection state query timed out",
+        ))
+    });
+    match probed {
+        Ok((mode, transaction_active)) => Ok((connection, mode, transaction_active)),
+        Err(mut error) => {
+            let closed = match tokio::time::timeout(grace, connection.close()).await {
+                Ok(Ok(())) => None,
+                Ok(Err(closed)) => Some(closed.message),
+                Err(_) => Some("The close timed out.".to_owned()),
+            };
+            if let Some(closed) = closed {
+                error.message = format!("{} The connection did not close: {closed}", error.message);
+            }
+            Err(error)
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run(
     id: ConnectionId,
@@ -661,9 +714,8 @@ pub(crate) async fn run(
     let (route, fallback) = catalog;
     let events = EventSink::with_diagnostics(events, shutdown.clone(), diagnostics, driver.id());
     let probe_timeout = session_probe_timeout(&options);
-    let backup_target = crate::BackupTarget::from_options(&options);
+    let mut backup_target = crate::BackupTarget::from_options(&options);
     let attempt_timeout = attempt_timeout.unwrap_or(probe_timeout);
-    let attempt_deadline = Instant::now() + attempt_timeout;
     let raw_limit = memory.raw_limit();
     store_config.max_page_decoded_bytes = store_config.max_page_decoded_bytes.min(raw_limit);
     store_config.max_schema_bytes = store_config.max_schema_bytes.min(raw_limit as u64);
@@ -672,52 +724,14 @@ pub(crate) async fn run(
             let _ = shutdown.changed().await;
         }
     };
-    let connected = tokio::select! { biased; _ = stopped => {
-        let queued = end_queued_history(&mut commands, &events).await;
-        send(&events, Event::Disconnected { connection: id }).await;
-        fail_queued_queries(queued, &events).await;
-        return;
-    }, value = tokio::time::timeout_at(attempt_deadline, async {
-        driver.connect(options).await
-    }) => value.unwrap_or_else(|_| Err(DriverError::new(ErrorKind::Timeout, "Connection attempt timed out"))) };
-    let mut connection = match connected {
-        Ok(connection) => connection,
-        Err(error) => {
-            let queued = end_queued_history(&mut commands, &events).await;
-            send(
-                &events,
-                Event::ConnectionFailed {
-                    connection: id,
-                    error,
-                },
-            )
-            .await;
-            fail_queued_queries(queued, &events).await;
-            return;
-        }
-    };
-    let mode = tokio::select! {
+    let opened = tokio::select! {
         biased;
-        _ = shutdown.wait_for(|stopped| *stopped) => None,
-        result = tokio::time::timeout_at(attempt_deadline.min(Instant::now() + probe_timeout), async {
-            let mode = connection.sql_mode().await?;
-            let transaction_active = connection.transaction_state().await?;
-            Ok::<_, DriverError>((mode, transaction_active))
-        }) => Some(
-            result.unwrap_or_else(|_| Err(DriverError::new(
-                ErrorKind::Timeout, "The initial connection state query timed out",
-            )))
-        ),
+        _ = stopped => None,
+        opened = open_session(&*driver, options, attempt_timeout, probe_timeout, grace) => Some(opened),
     };
-    let (mode, transaction_active) = match mode {
-        Some(Ok(state)) => state,
+    let (mut connection, mode, transaction_active) = match opened {
+        Some(Ok(session)) => session,
         failure => {
-            commands.close();
-            let _ = tokio::time::timeout(probe_timeout, async {
-                let _ = tokio::time::timeout(grace, connection.close()).await;
-            })
-            .await;
-            drop(connection);
             let queued = end_queued_history(&mut commands, &events).await;
             send(
                 &events,
@@ -726,8 +740,7 @@ pub(crate) async fn run(
                         connection: id,
                         error,
                     },
-                    None => Event::Disconnected { connection: id },
-                    Some(Ok(_)) => unreachable!("successful session initialization"),
+                    _ => Event::Disconnected { connection: id },
                 },
             )
             .await;
@@ -740,7 +753,7 @@ pub(crate) async fn run(
         &*connection,
         crate::catalog::CatalogSession {
             id,
-            fallback,
+            fallback: fallback.clone(),
             events: events.clone(),
             shutdown: shutdown.clone(),
             grace,
@@ -1306,8 +1319,12 @@ pub(crate) async fn run(
                     break;
                 }
             }
-            Command::NextResult { query } => {
-                let Some(current) = active.as_mut().filter(|a| a.id == query) else {
+            Command::NextResult {
+                from,
+                into: query,
+                cancellation,
+            } => {
+                let Some(current) = active.as_mut().filter(|a| a.id == from) else {
                     failure(
                         &events,
                         query,
@@ -1319,6 +1336,8 @@ pub(crate) async fn run(
                 if current.completed {
                     current.deadline = None;
                 }
+                current.id = query;
+                current.cancellation = cancellation;
                 let outcome = perform(
                     current.cursor.next_result_set(),
                     current.cancel.clone(),
@@ -1357,8 +1376,6 @@ pub(crate) async fn run(
                             )
                             .await?;
                             stores.insert(query, store);
-                            views.remove(&query);
-                            cache.remove(query);
                             current.completed = false;
                             current.fetched_rows = 0;
                             lease
@@ -1389,6 +1406,15 @@ pub(crate) async fn run(
                         }
                     }
                     Ok(false) => {
+                        current.completed = true;
+                        send(
+                            &events,
+                            Event::QueryState {
+                                query,
+                                state: crate::query_machine::result_state(false, 0),
+                            },
+                        )
+                        .await;
                         send(
                             &events,
                             Event::QueryFinished {
@@ -2098,6 +2124,106 @@ pub(crate) async fn run(
                     &shutdown,
                 )
                 .await
+            }
+            Command::SwitchDatabase {
+                options,
+                backup,
+                request_token,
+            } => {
+                let blocked = match metadata_operation(
+                    connection.transaction_state(),
+                    &mut shutdown,
+                )
+                .await
+                {
+                    Ok(Some(true)) => Some(DriverError::new(
+                        ErrorKind::InvalidInput,
+                        "Commit or roll back the open transaction before you switch the database.",
+                    )),
+                    Ok(_) => None,
+                    Err(error) => Some(error),
+                };
+                let next_target = crate::BackupTarget::from_options(&options);
+                let kept = match &backup {
+                    Some(backup) => backup.snapshot().map(Some),
+                    None => Ok(None),
+                };
+                let opened = match (blocked, &kept) {
+                    (Some(error), _) => Err(error),
+                    (None, Err(error)) => Err(error.clone()),
+                    (None, Ok(_)) => tokio::select! {
+                        biased;
+                        _ = crate::operation::signalled(&mut shutdown) => break,
+                        opened = open_session(&*driver, *options, attempt_timeout, probe_timeout, grace) => opened,
+                    },
+                };
+                let (next, mode, transaction_active) = match opened {
+                    Ok(session) => session,
+                    Err(mut error) => {
+                        if let (Some(backup), Ok(Some(target))) = (&backup, kept)
+                            && let Err(restore) = backup.restore(target)
+                        {
+                            error.message = format!("{} {}", error.message, restore.message);
+                        }
+                        send(
+                            &events,
+                            Event::DatabaseSwitchFailed {
+                                connection: id,
+                                request_token,
+                                error,
+                            },
+                        )
+                        .await;
+                        continue;
+                    }
+                };
+                close_active(&mut sql_active, &events).await;
+                close_active(&mut object_active, &events).await;
+                let mut previous = std::mem::replace(&mut connection, next);
+                if let Ok(Err(error)) = tokio::time::timeout(grace, previous.close()).await {
+                    send(
+                        &events,
+                        Event::OperationFailed {
+                            connection: id,
+                            error,
+                        },
+                    )
+                    .await;
+                }
+                backup_target = next_target;
+                route.follow(Ok(transaction_active));
+                route.start(
+                    &*connection,
+                    crate::catalog::CatalogSession {
+                        id,
+                        fallback: fallback.clone(),
+                        events: events.clone(),
+                        shutdown: shutdown.clone(),
+                        grace,
+                    },
+                    commands.max_capacity(),
+                );
+                send(
+                    &events,
+                    Event::DatabaseSwitched {
+                        connection: id,
+                        request_token,
+                        transaction_active,
+                        notices: connection.notices(),
+                    },
+                )
+                .await;
+                if let Some(mode) = mode {
+                    send(
+                        &events,
+                        Event::SessionSqlMode {
+                            connection: id,
+                            mode,
+                            request_token: 0,
+                        },
+                    )
+                    .await;
+                }
             }
             Command::Databases { request_token } => {
                 let event =

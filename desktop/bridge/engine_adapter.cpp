@@ -17,12 +17,8 @@ using engine_adapter_detail::profileDto;
 using engine_adapter_detail::secretDraftsDto;
 using engine_adapter_detail::toRust;
 using engine_adapter_detail::utf8View;
+using engine_adapter_detail::withConnectionTimeout;
 namespace {
-ProfileDto withConnectionTimeout(const SavedProfile& profile, quint32 timeout) {
-    auto dto = profileDto(profile);
-    dto.session_connection_timeout_seconds = timeout;
-    return dto;
-}
 SavedProfile savedProfile(const ProfileDto& dto) {
     SavedProfile value;
     value.groupId = fromRust(dto.group_id);
@@ -593,12 +589,6 @@ ProfileDatabase EngineAdapter::profileWithDatabase(const SavedProfile& profile,
     const auto result = profile_with_database(profileDto(profile), toRust(target));
     return {result.valid, savedProfile(result.profile), fromRust(result.error)};
 }
-bool EngineAdapter::listDatabases(quint64 connection, quint64 token) {
-    auto reply = list_databases(*d_->engine, connection, token);
-    if (!reply.accepted)
-        emit commandFailed(fromRust(reply.error));
-    return reply.accepted;
-}
 SavedProfile EngineAdapter::profileDraftDefaults(const SavedProfile& profile) {
     return savedProfile(profile_draft_defaults(profileDto(profile)));
 }
@@ -732,10 +722,13 @@ bool EngineAdapter::refreshSqlMode(quint64 connection, quint64 requestToken) {
         emit commandFailed(fromRust(reply.error));
     return reply.accepted;
 }
-void EngineAdapter::nextResultSet(quint64 query) {
+std::optional<quint64> EngineAdapter::nextResultSet(quint64 query) {
     auto reply = next_result_set(*d_->engine, query);
-    if (!reply.accepted)
+    if (!reply.accepted) {
         emit commandFailed(fromRust(reply.error));
+        return std::nullopt;
+    }
+    return reply.id;
 }
 void EngineAdapter::requestMetadataPage(quint64 connection, const QString& parent,
                                         quint64 requestToken, quint64 offset, bool fresh) {

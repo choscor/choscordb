@@ -270,19 +270,31 @@ fn mysql_script_results_advance_with_new_schema_and_pages() {
     };
     assert!(summary.has_more_results);
     std::thread::sleep(Duration::from_millis(1100));
-    engine.next_result_set(query).unwrap();
-    let Event::Schema { columns, .. } = until(&mut engine, |e| matches!(e, Event::Schema { .. }))
-    else {
+    let second = engine.next_result_set(query).unwrap();
+    assert_ne!(second, query);
+    let Event::Schema { columns, .. } = until(
+        &mut engine,
+        |e| matches!(e, Event::Schema { query, .. } if *query == second),
+    ) else {
         unreachable!()
     };
     assert_eq!(columns[0].name, "second_answer");
-    engine.fetch_page_at(query, 0).unwrap();
-    let Event::StoredPage { page, .. } =
-        until(&mut engine, |e| matches!(e, Event::StoredPage { .. }))
-    else {
+    engine.fetch_page_at(second, 0).unwrap();
+    let Event::StoredPage { page, .. } = until(
+        &mut engine,
+        |e| matches!(e, Event::StoredPage { query, .. } if *query == second),
+    ) else {
         unreachable!()
     };
     assert_eq!(page.rows, vec![vec![Value::Text("second".into())]]);
+    engine.fetch_page_at(query, 0).unwrap();
+    let Event::StoredPage { page, .. } = until(
+        &mut engine,
+        |e| matches!(e, Event::StoredPage { query: q, .. } if *q == query),
+    ) else {
+        unreachable!()
+    };
+    assert_eq!(page.rows, vec![vec![Value::Integer(11)]]);
 }
 
 #[test]

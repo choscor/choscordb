@@ -54,6 +54,11 @@ inline ProfileDto profileDto(const SavedProfile& value) {
     dto.row_limit = value.rowLimit;
     return dto;
 }
+inline ProfileDto withConnectionTimeout(const SavedProfile& profile, quint32 timeout) {
+    auto dto = profileDto(profile);
+    dto.session_connection_timeout_seconds = timeout;
+    return dto;
+}
 inline ProfileSecretDraftsDto secretDraftsDto(const ProfileSecretDrafts& value) {
     ProfileSecretDraftsDto dto;
     dto.save_credentials = value.saveCredentials;

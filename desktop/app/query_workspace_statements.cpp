@@ -60,10 +60,11 @@ void QueryWorkspace::submitStatement() {
     if (query_ && statementEditor_)
         statementEditor_->setProfileId(connectionProfiles_.value(connection));
     runningStatementLabel_ = query_ ? next.label : QString{};
+    resultSetStatement_.clear();
+    resultSet_ = 1;
     clearResult();
     currentPage_.reset();
     hasMore_ = false;
-    hasMoreResults_ = false;
     fetching_ = false;
     busy_ = query_.has_value();
     executionFinished_ = !query_.has_value();
@@ -79,12 +80,53 @@ void QueryWorkspace::submitStatement() {
     updateActions();
 }
 
-void QueryWorkspace::finishStatement(const QString& outcome, const QString& error) {
-    if (runningStatementLabel_.isEmpty() || !query_ || !queryConnection_)
-        return;
+QString QueryWorkspace::resultSetLabel() const {
+    return tr("%1 · Result %2").arg(resultSetStatement_).arg(resultSet_);
+}
+
+void QueryWorkspace::recordStatementResult(const QString& outcome, const QString& error) {
     statementResults_.push_back({*query_, *queryConnection_,
                                  std::exchange(runningStatementLabel_, QString{}), executedSql_,
                                  outcome, error, columns_, false});
+}
+
+void QueryWorkspace::continueResultSets(const QString& outcome) {
+    if (runningStatementLabel_.isEmpty() || !query_ || !queryConnection_)
+        return;
+    if (resultSetStatement_.isEmpty())
+        resultSetStatement_ = runningStatementLabel_;
+    runningStatementLabel_ = resultSetLabel();
+    recordStatementResult(outcome, {});
+    const auto next = adapter_->nextResultSet(*query_);
+    if (!next) {
+        resultSetStatement_.clear();
+        resultSet_ = 1;
+        syncStatementTabs();
+        statementQueue_.clear();
+        return;
+    }
+    query_ = next;
+    ++resultSet_;
+    runningStatementLabel_ = resultSetLabel();
+    clearViewState();
+    clearResult();
+    currentPage_.reset();
+    completedDurationMs_.reset();
+    completedAffectedRows_.clear();
+    executionFinished_ = false;
+    busy_ = true;
+    syncStatementTabs();
+}
+
+void QueryWorkspace::finishStatement(const QString& outcome, const QString& error) {
+    if (runningStatementLabel_.isEmpty() || !query_ || !queryConnection_)
+        return;
+    if (!resultSetStatement_.isEmpty()) {
+        runningStatementLabel_ = resultSetLabel();
+        resultSetStatement_.clear();
+        resultSet_ = 1;
+    }
+    recordStatementResult(outcome, error);
     if (!error.isEmpty() && !statementQueue_.isEmpty() && widgets_.stopOnFirstError &&
         widgets_.stopOnFirstError->isChecked()) {
         statementQueue_.clear();
@@ -114,7 +156,6 @@ void QueryWorkspace::showStatementResult(int index) {
     executedSql_ = result.sql;
     currentPage_.reset();
     hasMore_ = false;
-    hasMoreResults_ = false;
     message(tr("%1: %2").arg(result.label, result.error.isEmpty() ? result.outcome : result.error));
     if (!result.error.isEmpty()) {
         setExecutionState(QueryState::Failed, result.error);

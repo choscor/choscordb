@@ -32,7 +32,7 @@ class SqlTextCommandsTest : public QObject {
     }
 
   private slots:
-    void switchDatabaseReconnectsTheTabToASiblingFile() {
+    void switchDatabaseSwitchesTheConnectionInPlace() {
         QTemporaryDir folder;
         for (const auto* name : {"main.sqlite", "archive.db", "notes.txt"}) {
             QFile file(folder.filePath(name));
@@ -63,13 +63,39 @@ class SqlTextCommandsTest : public QObject {
         input->setText("arch");
         QTRY_COMPARE(picker->results().size(), 1);
         const auto target = picker->results().first().id;
+        QSignalSpy switched(workspace, &choscordb::QueryWorkspace::databaseSwitched);
         emit picker->activated(target);
-        QTRY_COMPARE(connected.count(), 2);
-        const auto second = connected.at(1).at(0).toULongLong();
-        QVERIFY(second != first);
-        QTRY_COMPARE(workspace->selectedConnection(), std::optional<quint64>(second));
-        QCOMPARE(workspace->connectionSource(second)->path, target);
+        QTRY_COMPARE(switched.count(), 1);
+        QCOMPARE(switched.first().at(0).toULongLong(), first);
+        QCOMPARE(connected.count(), 1);
+        QCOMPARE(workspace->selectedConnection(), std::optional<quint64>(first));
+        QCOMPARE(workspace->connectionSource(first)->path, target);
+        QCOMPARE(workspace->liveConnectionLabel(first), std::optional<QString>(target));
         QVERIFY(target.endsWith("archive.db"));
+        command->trigger();
+        QTRY_VERIFY(picker->isVisible());
+        QTRY_COMPARE(picker->results().size(), 2);
+        QCOMPARE(picker->results().at(0).context, QString("Current"));
+    }
+    void aFailedSwitchKeepsTheCurrentDatabase() {
+        QTemporaryDir folder;
+        choscordb::MainWindow window(nullptr, folder.filePath("settings.store"));
+        QVERIFY(openEditor(window));
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        QSignalSpy connected(workspace, &choscordb::QueryWorkspace::connectionReady);
+        workspace->connectSqlite(folder.filePath("main.sqlite"));
+        QTRY_COMPARE(connected.count(), 1);
+        const auto first = connected.first().at(0).toULongLong();
+        choscordb::SavedProfile missing;
+        missing.driver = "sqlite";
+        missing.path = folder.filePath("missing/other.sqlite");
+        QVERIFY(workspace->switchDatabase(first, missing));
+        QVERIFY(!workspace->switchDatabase(first, missing));
+        QTRY_VERIFY(window.findChild<QPlainTextEdit*>("queryMessages")
+                        ->toPlainText()
+                        .contains("Could not switch the database"));
+        QCOMPARE(workspace->connectionSource(first)->path, folder.filePath("main.sqlite"));
+        QVERIFY(workspace->switchDatabase(first, missing));
     }
     void theToolbarDatabaseButtonOpensTheSwitcher() {
         QTemporaryDir folder;

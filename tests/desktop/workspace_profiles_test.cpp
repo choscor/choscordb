@@ -289,35 +289,18 @@ void WorkspaceTest::mysqlSelectedScriptNavigatesDifferentResultSchemas() {
     f.editor.setText("SELECT 11 AS first_answer; SELECT 'second' AS second_answer;");
     f.editor.selectAll();
     f.runConfirmedSql();
-    QTRY_COMPARE(f.grid.model()->rowCount(), 1);
-    QCOMPARE(f.grid.model()->headerData(0, Qt::Horizontal).toString(),
-             QString("first_answer · LONGLONG"));
-    QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("11"));
-    QTRY_VERIFY(f.next.isEnabled());
-    QCOMPARE(f.next.toolTip(), QString("Next result"));
-    f.editor.setText("DELETE FROM mysql_confirmation_must_not_execute");
-    bool rejected = false;
-    QTimer reject;
-    connect(&reject, &QTimer::timeout, &f.parent, [&] {
-        auto* box =
-            qobject_cast<QMessageBox*>(choscordb::design::DialogPresentation::activeDialog());
-        if (box && box->windowTitle() == "Run statement?") {
-            rejected = true;
-            box->button(QMessageBox::Cancel)->click();
-        }
-    });
-    reject.start(10);
-    f.run.trigger();
-    QTRY_VERIFY(rejected);
-    reject.stop();
-    QTRY_VERIFY(f.next.isEnabled());
-    f.next.click();
+    QTRY_COMPARE(f.statementResults.count(), 2);
+    QVERIFY(f.statementResults.tabText(0).endsWith("Result 1"));
+    QVERIFY(f.statementResults.tabText(1).endsWith("Result 2"));
+    QTRY_VERIFY(f.run.isEnabled());
     QTRY_COMPARE(f.grid.model()->headerData(0, Qt::Horizontal).toString(),
                  QString("second_answer · VAR_STRING"));
-    QTRY_COMPARE(f.grid.model()->rowCount(), 1);
     QCOMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("second"));
-    QTRY_VERIFY(f.run.isEnabled());
     QVERIFY(!f.next.isEnabled());
+    f.statementResults.setCurrentIndex(0);
+    QTRY_COMPARE(f.grid.model()->headerData(0, Qt::Horizontal).toString(),
+                 QString("first_answer · LONGLONG"));
+    QTRY_COMPARE(f.grid.model()->data(f.grid.model()->index(0, 0)).toString(), QString("11"));
 }
 
 void WorkspaceTest::mysqlGridEditsReviewBoundValuesAndPersistChanges() {

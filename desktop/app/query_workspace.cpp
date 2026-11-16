@@ -155,6 +155,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleRowJsonEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleExplainEvent);
+    connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleDatabaseSwitchEvent);
     connect(adapter_, &EngineAdapter::eventReady, this, &QueryWorkspace::handleCopyEvent);
     connect(adapter_, &EngineAdapter::valueChunkSubmissionFailed, this,
             [this](quint64 query, quint64 handle, quint64 offset, const QString& error) {
@@ -238,25 +239,14 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     });
     connect(widgets_.newConnection, &QAction::triggered, this, [this] { showProfiles(); });
     connect(widgets_.nextPage, &QPushButton::clicked, this, [this] {
-        if (query_ && (hasMore_ || hasMoreResults_) && !fetching_ && queryAvailable() &&
-            !exporting_) {
+        if (query_ && hasMore_ && !fetching_ && queryAvailable() && !exporting_) {
             if (!resolvePendingEdits())
                 return;
             fetching_ = true;
             busy_ = true;
             setExecutionState(QueryState::Running, tr("Loading result page…"));
             updateActions();
-            if (hasMore_) {
-                adapter_->fetchPageAt(*query_, currentPage_.value_or(0) + 1);
-            } else {
-                hasMoreResults_ = false;
-                currentPage_.reset();
-                completedDurationMs_.reset();
-                completedAffectedRows_.clear();
-                executionFinished_ = false;
-                clearViewState();
-                adapter_->nextResultSet(*query_);
-            }
+            adapter_->fetchPageAt(*query_, currentPage_.value_or(0) + 1);
         }
     });
     if (widgets_.previousPage)
@@ -408,7 +398,7 @@ bool QueryWorkspace::queryAvailable() const {
 }
 bool QueryWorkspace::workInFlight() const {
     return quickFilterPreparing_ || externalWorkActive() || executionModeToken_ != 0 || viewBusy_ ||
-           gridEditBusy() ||
+           !databaseSwitches_.isEmpty() || gridEditBusy() ||
            ((cancellationPending_ || busy_ || fetching_ || exporting_) &&
             !(queryConnection_ && disconnecting_.contains(*queryConnection_)));
 }
@@ -572,7 +562,6 @@ bool QueryWorkspace::openObjectData(quint64 connection, const QString& object, c
         filterBar_->setExpression(initialFilter_);
     currentPage_.reset();
     hasMore_ = false;
-    hasMoreResults_ = false;
     fetching_ = false;
     invalidatePending_ = false;
     cancellationPending_ = false;
@@ -643,7 +632,6 @@ void QueryWorkspace::invalidateResult(bool connectionLost) {
     queryConnection_.reset();
     currentPage_.reset();
     hasMore_ = false;
-    hasMoreResults_ = false;
     resultOrigin_.clear();
     clearViewState();
     if (connectionLost)
@@ -768,11 +756,8 @@ void QueryWorkspace::updateActions() {
     if (widgets_.exportResult)
         widgets_.exportResult->setEnabled(displayedResult && query_ && currentPage_ && !inFlight &&
                                           queryAvailable());
-    widgets_.nextPage->setEnabled(displayedResult && query_.has_value() &&
-                                  (hasMore_ || hasMoreResults_) && !inFlight && queryAvailable());
-    widgets_.nextPage->setToolTip(!hasMore_ && hasMoreResults_ ? tr("Next result")
-                                                               : tr("Next page"));
-    widgets_.nextPage->setAccessibleName(widgets_.nextPage->toolTip());
+    widgets_.nextPage->setEnabled(displayedResult && query_.has_value() && hasMore_ && !inFlight &&
+                                  queryAvailable());
     if (widgets_.previousPage)
         widgets_.previousPage->setEnabled(displayedResult && query_ && currentPage_ &&
                                           *currentPage_ > 0 && !inFlight && queryAvailable());

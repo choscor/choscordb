@@ -832,6 +832,10 @@ void NavigatorController::addConnection(quint64 connection, const QString& label
     if (!filter_->text().trimmed().isEmpty() && visibleConnections().contains(connection))
         restartSearch();
 }
+void NavigatorController::reloadConnection(quint64 connection, const QString& label) {
+    model_->removeConnection(connection);
+    addConnection(connection, label);
+}
 void NavigatorController::renameConnection(quint64 connection, const QString& label) {
     model_->renameConnection(connection, label);
 }

@@ -345,6 +345,17 @@ pub enum Event {
         connection: ConnectionId,
         error: DriverError,
     },
+    DatabaseSwitched {
+        connection: ConnectionId,
+        request_token: u64,
+        transaction_active: Option<bool>,
+        notices: Vec<String>,
+    },
+    DatabaseSwitchFailed {
+        connection: ConnectionId,
+        request_token: u64,
+        error: DriverError,
+    },
     QueryState {
         query: QueryId,
         state: QueryState,

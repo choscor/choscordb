@@ -247,3 +247,32 @@ fn the_catalog_session_closes_on_disconnect() {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
+
+#[test]
+fn a_database_switch_replaces_the_catalog_session() {
+    let opens = Arc::new(Opens::default());
+    let (mut engine, connection) = connected(opens.clone());
+    assert_eq!(answered_by(&mut engine, connection), "catalog");
+    let options = ConnectionOptions::Sqlite {
+        path: ":memory:".into(),
+        read_only: false,
+    };
+    engine.switch_database(connection, options, 5).unwrap();
+    while !matches!(
+        next(&mut engine),
+        Event::DatabaseSwitched {
+            request_token: 5,
+            ..
+        }
+    ) {}
+    assert_eq!(answered_by(&mut engine, connection), "catalog");
+    assert_eq!(opens.count.load(Ordering::SeqCst), 2);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while opens.closed.load(Ordering::SeqCst) == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "the old catalog session stayed open"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}

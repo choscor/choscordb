@@ -675,6 +675,7 @@ class EngineAdapter final : public QObject {
     static SavedProfile profileDraftDefaults(const SavedProfile& profile);
     static ProfileDatabase profileWithDatabase(const SavedProfile& profile, const QString& target);
     bool listDatabases(quint64 connection, quint64 token);
+    bool switchDatabase(quint64 connection, const SavedProfile& profile, quint64 token);
     static SavedProfile normalizeProfileDraft(const SavedProfile& original,
                                               const SavedProfile& edited,
                                               const ProfileSecretDrafts& secrets);
@@ -692,7 +693,7 @@ class EngineAdapter final : public QObject {
     void setProfileRowLimit(const QString& id, quint32 rowLimit, quint64 token);
     std::optional<quint64> connectProfile(const SavedProfile& profile);
     bool refreshSqlMode(quint64 connection, quint64 requestToken);
-    void nextResultSet(quint64 query);
+    std::optional<quint64> nextResultSet(quint64 query);
     void fetchPage(quint64 query);
     void fetchPageAt(quint64 query, quint64 index);
     bool applyResultView(quint64 query, const QList<ResultFilterCondition>& filters,

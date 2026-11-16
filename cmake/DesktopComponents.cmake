@@ -79,6 +79,7 @@ choscordb_add_library(choscordb-desktop-services
   desktop/bridge/result_column_adapter.cpp
   desktop/bridge/engine_adapter.cpp
   desktop/bridge/engine_adapter_values.cpp
+  desktop/bridge/engine_adapter_databases.cpp
   desktop/bridge/engine_adapter_graph.cpp
   desktop/bridge/engine_adapter_ssh_trust.cpp
   desktop/bridge/engine_adapter_storage.cpp
@@ -160,6 +161,7 @@ choscordb_add_library(choscordb-desktop
   desktop/app/query_workspace_copy.cpp
   desktop/app/query_workspace_sql_edit.cpp
   desktop/app/query_workspace_safety.cpp
+  desktop/app/query_workspace_database_switch.cpp
   desktop/app/query_workspace_grid_commands.cpp
   desktop/app/query_workspace_edit.cpp
   desktop/app/query_workspace_cell_edit.cpp

@@ -812,6 +812,29 @@ pub fn event(
             e.transaction_active = transaction_active.unwrap_or(false);
             "connected"
         }
+        Event::DatabaseSwitched {
+            connection,
+            request_token,
+            transaction_active,
+            notices,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            e.warnings = notices;
+            e.has_transaction_state = transaction_active.is_some();
+            e.transaction_active = transaction_active.unwrap_or(false);
+            "database_switched"
+        }
+        Event::DatabaseSwitchFailed {
+            connection,
+            request_token,
+            error: err,
+        } => {
+            e.id = pack(connection);
+            e.request_token = request_token;
+            error(&mut e, err);
+            "database_switch_failed"
+        }
         Event::Disconnected { connection } => {
             e.id = pack(connection);
             "disconnected"

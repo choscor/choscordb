@@ -6,7 +6,7 @@ use crate::{
 use choscordb_driver_api::*;
 use std::{
     sync::{
-        Arc, OnceLock,
+        Arc, Mutex, PoisonError,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -17,12 +17,16 @@ use tokio::sync::{mpsc, watch};
 
 #[derive(Default)]
 pub(crate) struct CatalogRoute {
-    reads: OnceLock<mpsc::Sender<CatalogRead>>,
+    reads: Mutex<Option<mpsc::Sender<CatalogRead>>>,
     in_transaction: AtomicBool,
 }
 impl CatalogRoute {
-    pub(crate) fn reads(&self) -> Option<&mpsc::Sender<CatalogRead>> {
-        let reads = self.reads.get();
+    pub(crate) fn reads(&self) -> Option<mpsc::Sender<CatalogRead>> {
+        let reads = self
+            .reads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         let catalog = if reads.is_some() {
             Catalog::Closed
         } else {
@@ -46,13 +50,12 @@ impl CatalogRoute {
         session: CatalogSession,
         capacity: usize,
     ) {
-        let Some(opener) = connection.sibling_sessions() else {
-            return;
-        };
-        let (sender, reads) = mpsc::channel(capacity);
-        if self.reads.set(sender).is_ok() {
+        let mut current = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
+        *current = connection.sibling_sessions().map(|opener| {
+            let (sender, reads) = mpsc::channel(capacity);
             tokio::spawn(run(opener, reads, session));
-        }
+            sender
+        });
     }
 }
 
