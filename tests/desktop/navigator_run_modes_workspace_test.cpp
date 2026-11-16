@@ -105,7 +105,9 @@ void NavigatorSqlWorkspaceTest::runAllShowsOneResultTabPerStatement() {
     QCOMPARE(grid->model()->headerData(0, Qt::Horizontal).toString(), QString("a"));
     tabs->setCurrentIndex(1);
     QTRY_COMPARE(cell(), QString("20"));
-    stop->setChecked(false);
+    QTRY_VERIFY(stop->isEnabled());
+    stop->trigger();
+    QTRY_VERIFY(!workspace->queryPreferences().stopOnFirstError);
     runAll->trigger();
     QTRY_COMPARE(labels(), (QStringList{"Customers", "Query 2", "Query 3", "Query 4"}));
     QTRY_VERIFY(runAll->isEnabled());
@@ -139,6 +141,8 @@ void NavigatorSqlWorkspaceTest::runAllShowsOneResultTabPerStatement() {
     window.findChild<QAction*>("runStatement")->trigger();
     QTRY_COMPARE(labels(), (QStringList{"Customers · Pinned", "Query 1"}));
     QTRY_COMPARE(cell(), QString("9"));
+    stop->trigger();
+    QTRY_VERIFY(workspace->queryPreferences().stopOnFirstError);
 }
 
 void NavigatorSqlWorkspaceTest::statusLineShowsTheTargetOfEachDocument() {

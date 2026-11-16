@@ -76,6 +76,7 @@ Before a statement runs, `sql_execution_gate` applies the safety level.
 The gate can run the statement, ask for confirmation, or reject a statement that can change data.
 The toolbar safety button shows the short name of the level from `SafetyLevel::name`. Its menu changes the level for the session.
 The menu cannot select Read-only for an open session. Only the profile can select it, because Read-only needs the locked session.
+`SafetyLevel::session_unavailable` gives this rule and its reason. `profile_tag_options` sends the reason of each level in `session_safety`, and the menu disables a level that has a reason.
 `SELECT` statements get the row limit of the connection. `apply_row_limit` in `sql-language` adds or caps the `LIMIT`.
 The toolbar choice is stored in `ConnectionProfile::row_limit` through `Engine::profile_set_row_limit`. It must be one of `ROW_LIMIT_CHOICES`.
 
@@ -103,6 +104,7 @@ The grid stages an expression as `GridEditRow::expressions`. `plan_grid_edits` w
 A large value in the grid is a deferred handle. `Engine::save_value_to_file` sends `SaveValue` to the connection actor.
 The actor reads the value in chunks from the original value reader and writes each chunk to a temporary file. Then it replaces the destination.
 The actor sends `ValueSaved` with the byte count, or `ValueSaveFailed`. A failed save does not write the destination.
+The save holds one page lease of the result memory budget until its worker stops, so it waits for memory like a chunk read.
 
 ### Query plan
 
@@ -150,6 +152,7 @@ Thus MySQL and MariaDB run the DDL statements, which a grid edit batch does not 
 `create_template` in `sql-language` gives the SQL to start a new table, view, function, procedure or schema.
 A schema parent qualifies the new name. A connection or database parent does not.
 SQLite supports only tables and views, so the other templates return a reason, and the menu item is disabled.
+`create_template` returns a `DriverError` of kind `Unsupported` for these templates and `InvalidInput` for a bad parent.
 MySQL and MariaDB make a schema with `CREATE DATABASE`.
 
 ### Switch database
@@ -172,7 +175,7 @@ The desktop frontend clears the results of the connection and loads the navigato
 `plan_database_action` in `core` makes the SQL to create, rename or drop a database.
 It quotes the names for PostgreSQL, MySQL and MariaDB, and it validates the encoding and the collation.
 It refuses to rename or drop the current database. A drop needs the typed database name.
-MySQL and MariaDB cannot rename a database, and SQLite keeps each database in a file. The plan returns a reason for these cases.
+MySQL and MariaDB cannot rename a database, and SQLite keeps each database in a file. The plan returns a `DriverError` of kind `Unsupported` for these cases, and `InvalidInput` for a bad request.
 `DatabaseActionKind::fields` tells the dialog which fields each action shows.
 The dialog shows the SQL before Apply and sends it through `Engine::apply_ddl`.
 
@@ -211,6 +214,7 @@ On PostgreSQL, the Definition starts with the `CREATE OR REPLACE FUNCTION` state
 MySQL and MariaDB read the columns and the triggers in one paged query, thus the page offsets stay correct.
 The Triggers pane of an object tab shows these children. The navigator does not show them.
 `trigger_script` in `core` makes the SQL to create, edit or drop a trigger. Edit gives a `DROP TRIGGER` statement and the definition.
+A driver that cannot manage triggers gets a `DriverError` of kind `Unsupported`. A bad request gets `InvalidInput`.
 The desktop frontend opens the SQL in a new query tab. The user reads the SQL and then runs it.
 The SQL scanner keeps a `BEGIN ... END` trigger body in one statement. It counts `BEGIN`, `CASE` and the MySQL `END IF`, `END LOOP`, `END WHILE` and `END REPEAT` blocks.
 
@@ -228,6 +232,7 @@ The export also fails when the file gets to 4 GiB. Then the destination file doe
 
 The export dialog shows a check box for each table or view. Only the selected objects go into the request.
 `plan_table_export` in `core` makes one target for each table or view: the `SELECT` that Rust builds, the destination file and the export format.
+A failed plan returns `TableExportError` with its `TableExportField`: tables, options or destination. The dialog shows the error below that field.
 A folder destination uses a file name pattern with `{schema}` and `{table}`. Rust adds the extension and rejects two tables that write the same file.
 Several tables go to one file only for the SQL format.
 CSV options are part of `ExportFormat::Csv`: delimiter, quote, line break, NULL text and header row. `CsvOptions::validate` rejects options that make the file ambiguous.
@@ -342,7 +347,11 @@ The mode shows the structure editor below the Columns, Indexes and Keys panes. I
 `StructureChangeKind` in `driver-api` gives the changes and the fields of each change.
 The changes add, change or drop a column, add or drop an index, set the primary key, add a foreign key or drop a key.
 `StructureChangeKind::pane` gives the pane of each change: Columns, Indexes or Keys. The "Add change" menu of the mode shows only the changes of the current pane.
-`StructureChangeKind::unavailable` gives the reason when a driver cannot do a change. SQLite needs a table rebuild for a primary key, a foreign key or a dropped key. A new table permits only the changes that create columns, indexes and keys.
+`StructureChangeKind::unavailable` gives the reason when a driver cannot do a change. A new table permits only the changes that create columns, indexes and keys.
+Each driver gives its `StructureDialect` through `DatabaseDriver::structure_dialect`. The dialect gives the column types and the changes that need a table rebuild.
+It also gives a reason when a column cannot change in place or keep a comment.
+The SQLite dialect needs a table rebuild for a primary key, a foreign key or a dropped key. The PostgreSQL and MySQL dialects change each item in place.
+The bridge finds the dialect of a driver in the same driver list that makes the engine. `plan_structure` gets the dialect and returns its reasons.
 The editor makes one form for each change from the field descriptors. It does not know the SQL rules.
 `plan_structure` makes the SQL for each driver. A new table gets one `CREATE TABLE` with its columns and constraints, then the comments and the indexes.
 The editor shows the SQL before Apply. The SQL comes from `structure_plan` in the bridge, and `apply_structure` makes the same plan again in Rust.
@@ -370,6 +379,7 @@ A statement can return more than one result set, for example a MySQL `CALL`.
 `Engine::next_result_set` gives each further result set a new query ID. The earlier result set stays readable.
 The workspace then shows one tab for each result set, with the label `Query N · Result M`.
 When a statement fails and "Stop on first error" is on, the run stops at that statement.
+`run_all_step` in `core` makes this decision and gives the message. The choice is `QueryPreferences::stop_on_first_error`, which is on by default. The Run menu saves it, and it stays after a restart.
 A pinned tab stays when the next run starts. The next run releases the other tabs.
 Limitation: a connection keeps only one open cursor.
 When the next statement starts, the earlier statement keeps only the pages that it loaded before.

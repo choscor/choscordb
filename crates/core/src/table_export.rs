@@ -92,18 +92,47 @@ fn file_name_part(value: &str) -> String {
         .collect()
 }
 
-pub fn plan_table_export(request: &TableExportRequest) -> Result<Vec<TableExportTarget>, String> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TableExportField {
+    Tables,
+    Options,
+    Destination,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TableExportError {
+    pub field: TableExportField,
+    pub message: String,
+}
+
+impl TableExportError {
+    pub fn new(field: TableExportField, message: impl Into<String>) -> Self {
+        Self {
+            field,
+            message: message.into(),
+        }
+    }
+}
+
+pub fn plan_table_export(
+    request: &TableExportRequest,
+) -> Result<Vec<TableExportTarget>, TableExportError> {
+    use TableExportField::{Destination, Options, Tables};
+    let fail = |field, message: String| TableExportError::new(field, message);
     if request.objects.is_empty() {
-        return Err("Choose one or more tables to export.".into());
+        return Err(fail(Tables, "Choose one or more tables to export.".into()));
     }
     if request.objects.len() > MAX_TABLE_EXPORT_OBJECTS {
-        return Err(format!(
-            "Export up to {MAX_TABLE_EXPORT_OBJECTS} tables at a time."
+        return Err(fail(
+            Tables,
+            format!("Export up to {MAX_TABLE_EXPORT_OBJECTS} tables at a time."),
         ));
     }
     let (structure, drop, data) = match &request.format {
         TableExportFormat::Csv(options) => {
-            options.validate().map_err(|error| error.message)?;
+            options
+                .validate()
+                .map_err(|error| fail(Options, error.message))?;
             (false, false, true)
         }
         TableExportFormat::Sql {
@@ -112,7 +141,10 @@ pub fn plan_table_export(request: &TableExportRequest) -> Result<Vec<TableExport
             data,
         } => {
             if !(*structure || *drop || *data) {
-                return Err("Choose structure, drop or data for the SQL export.".into());
+                return Err(fail(
+                    Options,
+                    "Choose structure, drop or data for the SQL export.".into(),
+                ));
             }
             (*structure, *drop, *data)
         }
@@ -125,18 +157,27 @@ pub fn plan_table_export(request: &TableExportRequest) -> Result<Vec<TableExport
         && request.objects.len() > 1
         && !sql
     {
-        return Err("Choose a folder to export several tables as CSV, JSON or Excel.".into());
+        return Err(fail(
+            Destination,
+            "Choose a folder to export several tables as CSV, JSON or Excel.".into(),
+        ));
     }
     if let TableExportDestination::Folder { pattern, .. } = &request.destination
         && (pattern.contains(['/', '\\']) || pattern.trim().is_empty())
     {
-        return Err("The file name pattern cannot contain a folder.".into());
+        return Err(fail(
+            Destination,
+            "The file name pattern cannot contain a folder.".into(),
+        ));
     }
     let mut destinations = HashSet::new();
     let mut targets = Vec::with_capacity(request.objects.len());
     for object in &request.objects {
         if !matches!(object.kind.as_str(), "table" | "view") {
-            return Err("Only tables and views can be exported.".into());
+            return Err(fail(
+                Tables,
+                "Only tables and views can be exported.".into(),
+            ));
         }
         let statement = prepare_object_action(
             ObjectAction::Drop,
@@ -146,7 +187,8 @@ pub fn plan_table_export(request: &TableExportRequest) -> Result<Vec<TableExport
             &object.qualified_name,
             "",
             &object.relation_subtype,
-        )?;
+        )
+        .map_err(|message| fail(Tables, message.into()))?;
         let (schema, name) = object_display_identity(&object.object_id, &object.qualified_name);
         let label = match &schema {
             Some(schema) => format!("{schema}.{name}"),
@@ -160,7 +202,10 @@ pub fn plan_table_export(request: &TableExportRequest) -> Result<Vec<TableExport
                     .replace("{table}", &file_name_part(&name));
                 let path = path.join(format!("{stem}.{}", request.format.extension()));
                 if !destinations.insert(path.clone()) {
-                    return Err("Two tables would write the same file. Add {table} or {schema} to the file name pattern.".into());
+                    return Err(fail(
+                        Destination,
+                        "Two tables would write the same file. Add {table} or {schema} to the file name pattern.".into(),
+                    ));
                 }
                 path
             }
@@ -172,7 +217,7 @@ pub fn plan_table_export(request: &TableExportRequest) -> Result<Vec<TableExport
             TableExportFormat::Xlsx => ExportFormat::Xlsx,
             TableExportFormat::Sql { .. } => ExportFormat::SqlInsert {
                 table: schema.iter().cloned().chain([name.clone()]).collect(),
-                dialect: sql_dialect(&request.driver)?,
+                dialect: sql_dialect(&request.driver).map_err(|message| fail(Options, message))?,
             },
         };
         targets.push(TableExportTarget {

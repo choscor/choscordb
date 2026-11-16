@@ -3,14 +3,23 @@ use crate::{BridgeEngine, ffi, submit, unpack};
 use choscordb_core::structure_edit_unavailable;
 use choscordb_driver_api::GridEditDriver;
 use choscordb_driver_api::{
-    StructureChange, StructureChangeKind, StructureColumn, StructureKey, StructurePane,
-    StructureTable, plan_structure, structure_change_summary,
+    StructureChange, StructureChangeKind, StructureColumn, StructureDialect, StructureKey,
+    StructurePane, StructureTable, plan_structure, structure_change_summary,
 };
 use std::collections::BTreeMap;
 
+const NO_STRUCTURE: &str = "This connection cannot edit table structures.";
+
 fn structure_driver(name: &str) -> Result<GridEditDriver, String> {
-    crate::grid_edit::grid_driver(name)
-        .map_err(|_| "This connection cannot edit table structures.".into())
+    crate::grid_edit::grid_driver(name).map_err(|_| NO_STRUCTURE.into())
+}
+
+fn structure_dialect(name: &str) -> Result<&'static dyn StructureDialect, String> {
+    crate::drivers()
+        .into_iter()
+        .find(|driver| driver.id() == name)
+        .and_then(|driver| driver.structure_dialect())
+        .ok_or_else(|| NO_STRUCTURE.into())
 }
 
 pub fn structure_unavailable_reason(kind: &str, relation_subtype: &str) -> String {
@@ -20,7 +29,7 @@ pub fn structure_unavailable_reason(kind: &str, relation_subtype: &str) -> Strin
 }
 
 pub fn structure_change_kinds(driver: &str, new_table: bool) -> Vec<ffi::StructureChangeKindDto> {
-    let driver = structure_driver(driver);
+    let dialect = structure_dialect(driver);
     StructureChangeKind::ALL
         .into_iter()
         .map(|kind| ffi::StructureChangeKindDto {
@@ -31,9 +40,9 @@ pub fn structure_change_kinds(driver: &str, new_table: bool) -> Vec<ffi::Structu
                 StructurePane::Indexes => ffi::StructurePaneDto::Indexes,
                 StructurePane::Keys => ffi::StructurePaneDto::Keys,
             },
-            unavailable: match &driver {
-                Ok(driver) => kind
-                    .unavailable(*driver, new_table)
+            unavailable: match &dialect {
+                Ok(dialect) => kind
+                    .unavailable(*dialect, new_table)
                     .unwrap_or_default()
                     .into(),
                 Err(error) => error.clone(),
@@ -63,14 +72,14 @@ pub fn structure_change_kinds(driver: &str, new_table: bool) -> Vec<ffi::Structu
 }
 
 pub fn structure_types(driver: &str) -> Vec<String> {
-    structure_driver(driver)
-        .map(|driver| {
-            choscordb_driver_api::structure_types(driver)
-                .iter()
-                .map(|name| (*name).to_owned())
-                .collect()
-        })
-        .unwrap_or_default()
+    match structure_dialect(driver) {
+        Ok(dialect) => dialect
+            .column_types()
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 fn table(dto: &ffi::StructureTableDto) -> Result<StructureTable, String> {
@@ -131,8 +140,9 @@ fn planned(
     change_dtos: &[ffi::StructureChangeDto],
 ) -> Result<(Vec<StructureChange>, Vec<String>), String> {
     let table = table(table_dto)?;
+    let rules = structure_dialect(&table_dto.driver)?;
     let changes = changes(change_dtos)?;
-    let statements = plan_structure(&table, &changes).map_err(|error| error.to_string())?;
+    let statements = plan_structure(&table, rules, &changes).map_err(|error| error.to_string())?;
     Ok((changes, statements))
 }
 

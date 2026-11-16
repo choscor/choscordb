@@ -95,7 +95,8 @@ It does not start the Homebrew service.
    subprocess.run(['cargo', 'test', '-p', 'choscordb-driver-postgres', '--locked',
                    '--', '--include-ignored', '--test-threads=1'], env=env, check=True)
    subprocess.run(['cargo', 'test', '-p', 'choscordb-core',
-                   '--test', 'postgres_disconnect', '--locked', '--',
+                   '--test', 'postgres_disconnect', '--test', 'postgres_catalog',
+                   '--test', 'postgres_features', '--locked', '--',
                    '--include-ignored', '--test-threads=1'], env=env, check=True)
    subprocess.run(['ctest', '--preset', 'dev', '--output-on-failure'], env=env, check=True)
    PYTEST
@@ -193,7 +194,7 @@ The fixture has these properties:
 4. Run the core tests:
 
    ```sh
-   cargo test -p choscordb-core --test mysql --locked -- --include-ignored --test-threads=1
+   cargo test -p choscordb-core --test mysql --test mysql_features --locked -- --include-ignored --test-threads=1
    ```
 
 5. Run the native MySQL workspace tests:

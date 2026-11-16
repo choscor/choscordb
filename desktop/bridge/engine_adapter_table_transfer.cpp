@@ -130,8 +130,22 @@ TableExportRequest EngineAdapter::tableExportDefaults() {
     request.pattern = fromRust(dto.pattern);
     return request;
 }
-QString EngineAdapter::tableExportError(const TableExportRequest& request) {
-    return fromRust(table_export_error(requestDto(request)));
+TableExportProblem EngineAdapter::tableExportError(const TableExportRequest& request) {
+    const auto error = table_export_error(requestDto(request));
+    const auto field = [&error] {
+        switch (error.field) {
+        case TableExportFieldDto::Tables:
+            return TableExportField::Tables;
+        case TableExportFieldDto::Options:
+            return TableExportField::Options;
+        case TableExportFieldDto::Destination:
+            return TableExportField::Destination;
+        case TableExportFieldDto::None:
+            break;
+        }
+        return TableExportField::None;
+    }();
+    return {field, fromRust(error.message)};
 }
 std::optional<quint64>
 EngineAdapter::exportTables(quint64 connection, const TableExportRequest& request, QString* error) {

@@ -9,3 +9,30 @@ QFrame[frameShape="5"] {
   border: 0;
   background: @kumo-hairline;
 }
+
+QFrame[designRole="toneLine"] {
+  min-height: @focus-width;
+  max-height: @focus-width;
+  border: 0;
+  background: transparent;
+}
+
+QFrame[designRole="toneLine"][variant="neutral"] {
+  background: @text-kumo-subtle;
+}
+
+QFrame[designRole="toneLine"][variant="brand"] {
+  background: @kumo-brand;
+}
+
+QFrame[designRole="toneLine"][variant="success"] {
+  background: @text-kumo-success;
+}
+
+QFrame[designRole="toneLine"][variant="warning"] {
+  background: @text-kumo-warning;
+}
+
+QFrame[designRole="toneLine"][variant="danger"] {
+  background: @text-kumo-danger;
+}

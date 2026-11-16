@@ -330,6 +330,7 @@ PreferencesDialog::PreferencesDialog(EngineAdapter* adapter, QList<ShortcutDescr
                     return;
                 const QPointer<PreferencesDialog> guard(this);
                 queryToken_ = 0;
+                loadedQuery_ = value;
                 if (!saving_)
                     fillQuery(value);
                 else
@@ -483,7 +484,7 @@ void PreferencesDialog::apply() {
             statusLine_->showError(validation.message);
         return;
     }
-    QueryPreferences query;
+    auto query = loadedQuery_;
     query.pageSize = quint32(pageSize_->value());
     query.timeoutSeconds = quint32(timeout_->value());
     query.connectionTimeoutSeconds = quint32(connectionTimeout_->value());

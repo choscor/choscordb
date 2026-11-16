@@ -16,6 +16,7 @@
 #include <optional>
 class QAction;
 class QPushButton;
+class QFrame;
 class QLabel;
 class QPlainTextEdit;
 class QMenu;
@@ -79,6 +80,7 @@ class QueryWorkspace final : public QObject {
         QTabBar* statementResults = nullptr;
         QAction* stopOnFirstError = nullptr;
         QAction* explain = nullptr;
+        QFrame* connectionToneLine = nullptr;
     };
     struct LiveConnection {
         quint64 id = 0;
@@ -200,6 +202,7 @@ class QueryWorkspace final : public QObject {
         bool pinned = false;
     };
     void setupStatementResults();
+    void setupStopOnFirstError();
     void submitStatement();
     void finishStatement(const QString& outcome, const QString& error);
     void continueResultSets(const QString& outcome);

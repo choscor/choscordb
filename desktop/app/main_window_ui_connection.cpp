@@ -1,6 +1,7 @@
 #include "app/main_window_ui_connection.h"
 #include "design_system/button/button.h"
 #include "design_system/metrics/metrics.h"
+#include "design_system/separator/separator.h"
 #include "design_system/status_line/status_line.h"
 #include <QComboBox>
 #include <QCoreApplication>
@@ -8,6 +9,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QToolBar>
+#include <QVBoxLayout>
 
 namespace choscordb {
 namespace {
@@ -64,7 +66,13 @@ ConnectionToolbar buildConnectionToolbar(QToolBar* toolbar, QMenu* queryMenu) {
 ResultFooterRow buildResultFooterRow(design::StatusLine* footer) {
     auto* row = new QWidget;
     row->setObjectName("sqlResultFooterRow");
-    auto* layout = new QHBoxLayout(row);
+    auto* column = new QVBoxLayout(row);
+    column->setContentsMargins(0, 0, 0, 0);
+    column->setSpacing(0);
+    auto* line = design::createToneLine(row);
+    line->setObjectName("connectionToneLine");
+    column->addWidget(line);
+    auto* layout = new QHBoxLayout;
     layout->setContentsMargins(design::spacing(design::Spacing::Two), 0, 0, 0);
     layout->setSpacing(design::spacing(design::Spacing::Two));
     auto* tag = new QLabel(row);
@@ -73,6 +81,7 @@ ResultFooterRow buildResultFooterRow(design::StatusLine* footer) {
     tag->hide();
     layout->addWidget(tag);
     layout->addWidget(footer, 1);
-    return {row, tag};
+    column->addLayout(layout);
+    return {row, tag, line};
 }
 }

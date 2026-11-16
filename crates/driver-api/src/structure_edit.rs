@@ -194,7 +194,11 @@ impl StructureChangeKind {
         }
     }
 
-    pub fn unavailable(self, driver: GridEditDriver, new_table: bool) -> Option<&'static str> {
+    pub fn unavailable(
+        self,
+        dialect: &dyn StructureDialect,
+        new_table: bool,
+    ) -> Option<&'static str> {
         let creates = matches!(
             self,
             Self::AddColumn | Self::AddIndex | Self::PrimaryKey | Self::AddForeignKey
@@ -202,58 +206,18 @@ impl StructureChangeKind {
         if new_table && !creates {
             return Some("A new table has no columns, indexes or keys to change yet.");
         }
-        if !new_table
-            && driver == GridEditDriver::Sqlite
-            && matches!(self, Self::PrimaryKey | Self::AddForeignKey | Self::DropKey)
-        {
-            return Some("SQLite needs a table rebuild for this change.");
+        if new_table {
+            return None;
         }
-        None
+        dialect.rebuild_reason(self)
     }
 }
 
-pub fn structure_types(driver: GridEditDriver) -> &'static [&'static str] {
-    match driver {
-        GridEditDriver::Sqlite => &["INTEGER", "REAL", "TEXT", "BLOB", "NUMERIC"],
-        GridEditDriver::Postgres => &[
-            "integer",
-            "bigint",
-            "smallint",
-            "numeric(10,2)",
-            "real",
-            "double precision",
-            "boolean",
-            "text",
-            "varchar(255)",
-            "date",
-            "time",
-            "timestamp",
-            "timestamptz",
-            "uuid",
-            "json",
-            "jsonb",
-            "bytea",
-        ],
-        GridEditDriver::Mysql => &[
-            "INT",
-            "BIGINT",
-            "SMALLINT",
-            "TINYINT",
-            "DECIMAL(10,2)",
-            "FLOAT",
-            "DOUBLE",
-            "BOOLEAN",
-            "VARCHAR(255)",
-            "TEXT",
-            "LONGTEXT",
-            "DATE",
-            "TIME",
-            "DATETIME",
-            "TIMESTAMP",
-            "JSON",
-            "BLOB",
-        ],
-    }
+pub trait StructureDialect: Send + Sync {
+    fn column_types(&self) -> &'static [&'static str];
+    fn rebuild_reason(&self, kind: StructureChangeKind) -> Option<&'static str>;
+    fn column_alter_reason(&self) -> Option<&'static str>;
+    fn column_comment_reason(&self) -> Option<&'static str>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -455,6 +419,7 @@ fn split_qualified(name: &str, delimiter: char) -> Vec<String> {
 
 struct Planner<'a> {
     table: &'a StructureTable,
+    rules: &'a dyn StructureDialect,
     dialect: Dialect,
     columns: Vec<StructureColumn>,
     indexes: Vec<String>,
@@ -540,10 +505,7 @@ impl Planner<'_> {
     }
 
     fn apply(&mut self, change: &StructureChange) -> Checked<()> {
-        if let Some(reason) = change
-            .kind
-            .unavailable(self.table.driver, self.table.new_table)
-        {
+        if let Some(reason) = change.kind.unavailable(self.rules, self.table.new_table) {
             return Err(reason.into());
         }
         match change.kind {
@@ -621,8 +583,10 @@ impl Planner<'_> {
         let nullable = !change.flag("not_null");
         let default = change.text("default").map(|d| expression(&d)).transpose()?;
         let comment = change.text("comment");
-        if comment.is_some() && self.table.driver == GridEditDriver::Sqlite {
-            return Err("SQLite does not store column comments.".into());
+        if comment.is_some()
+            && let Some(reason) = self.rules.column_comment_reason()
+        {
+            return Err(reason.into());
         }
         let definition = self.column_definition(
             &name,
@@ -671,11 +635,8 @@ impl Planner<'_> {
         if rename.is_none() && !alters {
             return Err("Choose what to change in the column.".into());
         }
-        if alters && self.table.driver == GridEditDriver::Sqlite {
-            return Err(
-                "SQLite needs a table rebuild to change a column type, NULL rule, default or comment."
-                    .into(),
-            );
+        if alters && let Some(reason) = self.rules.column_alter_reason() {
+            return Err(reason.into());
         }
         if let Some(name) = &rename
             && self.columns.iter().any(|column| column.name == *name)
@@ -808,6 +769,7 @@ impl Planner<'_> {
 
 pub fn plan_structure(
     table: &StructureTable,
+    rules: &dyn StructureDialect,
     changes: &[StructureChange],
 ) -> Result<Vec<String>, StructureError> {
     let failure = |change: Option<usize>, message: String| StructureError { change, message };
@@ -822,6 +784,7 @@ pub fn plan_structure(
     }
     let mut planner = Planner {
         table,
+        rules,
         dialect: Dialect {
             driver: table.driver,
         },

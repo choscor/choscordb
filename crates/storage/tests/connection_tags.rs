@@ -143,3 +143,18 @@ fn each_safety_level_has_a_short_name_for_the_toolbar() {
         ["Silent", "Confirm writes", "Confirm all", "Read-only"]
     );
 }
+
+#[test]
+fn only_the_connection_can_set_read_only() {
+    assert_eq!(
+        SafetyLevel::ReadOnly.session_unavailable(),
+        Some("Edit the connection to set Read-only. The connection then rejects all writes.")
+    );
+    for level in [
+        SafetyLevel::Silent,
+        SafetyLevel::ConfirmWrites,
+        SafetyLevel::ConfirmAll,
+    ] {
+        assert_eq!(level.session_unavailable(), None);
+    }
+}

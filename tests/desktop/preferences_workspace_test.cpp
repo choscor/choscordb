@@ -301,6 +301,40 @@ class PreferencesWorkspaceTest : public QObject {
         QTRY_VERIFY(timeout->isEnabled());
         QCOMPARE(timeout->value(), 27);
     }
+    void stopOnFirstErrorSurvivesRestartAndAPreferencesSave() {
+        using namespace choscordb;
+        QTemporaryDir directory;
+        const auto path = directory.filePath("stop-on-first-error.sqlite");
+        {
+            MainWindow window(nullptr, path);
+            window.show();
+            auto* stop = window.findChild<QAction*>("stopOnFirstError");
+            QVERIFY(stop);
+            QTRY_VERIFY(stop->isEnabled());
+            QVERIFY(stop->isChecked());
+            stop->trigger();
+            QVERIFY(!stop->isChecked());
+            auto* workspace = window.findChild<QueryWorkspace*>();
+            QTRY_VERIFY(!workspace->queryPreferences().stopOnFirstError);
+            window.findChild<QAction*>("preferences")->trigger();
+            auto* dialog = window.findChild<QDialog*>("preferencesDialog");
+            QVERIFY(dialog);
+            auto* timeout = dialog->findChild<QSpinBox*>("connectionTimeoutSeconds");
+            QTRY_VERIFY(timeout->isEnabled());
+            timeout->setValue(31);
+            dialog->findChild<QPushButton*>("preferencesApply")->click();
+            QTRY_VERIFY(!window.findChild<QDialog*>("preferencesDialog"));
+            QTRY_COMPARE(workspace->queryPreferences().connectionTimeoutSeconds, quint32(31));
+            QVERIFY(!workspace->queryPreferences().stopOnFirstError);
+            QVERIFY(!stop->isChecked());
+            window.close();
+        }
+        MainWindow restarted(nullptr, path);
+        restarted.show();
+        auto* stop = restarted.findChild<QAction*>("stopOnFirstError");
+        QTRY_VERIFY(stop->isEnabled());
+        QVERIFY(!stop->isChecked());
+    }
     void themePopupRowsKeepTheirHeightAfterAThemeChange() {
         using namespace choscordb;
         MainWindow window;

@@ -45,6 +45,28 @@ void QueryWorkspace::setupStatementResults() {
     });
 }
 
+void QueryWorkspace::setupStopOnFirstError() {
+    auto* stop = widgets_.stopOnFirstError;
+    if (!stop)
+        return;
+    const auto sync = [this, stop] {
+        stop->setChecked(querySettings_->preferences().stopOnFirstError);
+        stop->setEnabled(querySettings_->isReady());
+    };
+    connect(querySettings_, &QuerySettingsController::preferencesChanged, stop, sync);
+    connect(querySettings_, &QuerySettingsController::readyChanged, stop, sync);
+    connect(querySettings_, &QuerySettingsController::failed, stop, sync);
+    connect(stop, &QAction::triggered, this, [this, sync](bool checked) {
+        auto preferences = querySettings_->preferences();
+        preferences.stopOnFirstError = checked;
+        const auto token = nextRequestToken();
+        querySettings_->trackSave(token);
+        if (!adapter_->setQueryPreferences(preferences, token))
+            sync();
+    });
+    sync();
+}
+
 void QueryWorkspace::submitStatement() {
     const auto next = statementQueue_.takeFirst();
     const auto connection = *queryConnection_;
@@ -127,10 +149,11 @@ void QueryWorkspace::finishStatement(const QString& outcome, const QString& erro
         resultSet_ = 1;
     }
     recordStatementResult(outcome, error);
-    if (!error.isEmpty() && !statementQueue_.isEmpty() && widgets_.stopOnFirstError &&
-        widgets_.stopOnFirstError->isChecked()) {
+    const auto step =
+        EngineAdapter::runAllStep(querySettings_->preferences().stopOnFirstError, !error.isEmpty());
+    if (step.stop && !statementQueue_.isEmpty()) {
         statementQueue_.clear();
-        message(tr("Run all stopped at the failed statement."));
+        message(step.message);
     }
     syncStatementTabs();
     if (!statementQueue_.isEmpty() && connectionAvailable(*queryConnection_))

@@ -383,6 +383,8 @@ Use `design::Icon` roles. Do not use Qt standard icons. Do not show icons in men
 - **Status tone:** `StatusTone` names a semantic tone: `Neutral`, `Brand`, `Success`, `Warning` or `Danger`.
   `statusToneColor` gives the text color of the tone. `statusToneBadgeVariant` gives its badge variant.
   A saved connection row paints a dot in the tone color. The connection tag in the result footer is a badge.
+- **Tone line:** `createToneLine` and `setToneLine` in `separator/` make a `toneLine` frame that is `focus-width` high.
+  It has the tone color, as the document tab indicator has the brand color. The result footer shows the tone line of the connection above the footer row. The line is hidden when the connection has no tone.
 - **Progress:** A progress bar is the Kumo `meter`. Its track is `kumo-fill` and `Progress` high, with full round ends.
   The indicator is `kumo-brand`.
 - **Spinner:** The spinner paints the Kumo `loader`: a track ring at 10% and a round-capped arc in `text-kumo-subtle`.

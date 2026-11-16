@@ -636,6 +636,7 @@ dependencies = [
 name = "choscordb-sql-language"
 version = "0.2.0"
 dependencies = [
+ "choscordb-driver-api",
  "regex",
  "tree-sitter",
  "tree-sitter-sequel",

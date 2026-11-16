@@ -603,10 +603,13 @@ void NavigatorSqlWorkspaceTest::exportTablesFromTheNavigator() {
         tables->item(row)->setCheckState(Qt::Unchecked);
     dialog->findChild<QLineEdit*>("tableExportPath")->setText(exports.filePath("none"));
     dialog->findChild<QPushButton*>("tableExportStart")->click();
-    QCOMPARE(dynamic_cast<design::FieldValidation*>(
-                 dialog->findChild<QLineEdit*>("tableExportPath")->parentWidget())
-                 ->error(),
-             QString("Choose one or more tables to export."));
+    auto* tablesValidation = dynamic_cast<design::FieldValidation*>(tables->parentWidget());
+    QVERIFY(tablesValidation);
+    QCOMPARE(tablesValidation->error(), QString("Choose one or more tables to export."));
+    QVERIFY(dynamic_cast<design::FieldValidation*>(
+                dialog->findChild<QLineEdit*>("tableExportPath")->parentWidget())
+                ->error()
+                .isEmpty());
     for (int row = 0; row < tables->count(); ++row)
         if (tables->item(row) != items)
             tables->item(row)->setCheckState(Qt::Checked);

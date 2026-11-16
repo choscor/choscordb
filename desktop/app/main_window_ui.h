@@ -4,6 +4,7 @@
 
 class QAction;
 class QDockWidget;
+class QFrame;
 class QLabel;
 class QTabBar;
 class QListWidget;
@@ -94,6 +95,7 @@ struct MainWindow::Ui {
     design::Button* safetyLevel{};
     QAction* explain{};
     QLabel* connectionTag{};
+    QFrame* connectionToneLine{};
     QPlainTextEdit* messages{};
     QList<QAction*> searchActions{};
     ToastRegion* toast{};

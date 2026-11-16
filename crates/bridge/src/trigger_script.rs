@@ -26,6 +26,7 @@ pub fn trigger_script(dto: &ffi::TriggerScriptDto) -> ffi::SqlPlanDto {
                     definition: dto.definition.clone(),
                 },
             )
+            .map_err(|error| error.message)
         });
     sql_plan(script)
 }

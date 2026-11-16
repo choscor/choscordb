@@ -4,10 +4,12 @@
 #include "bridge/engine_adapter.h"
 #include "confirmation_checks.h"
 #include "design_system/tabs/tabs_style.h"
+#include "design_system/theme.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
 #include <QDialog>
 #include <QFile>
+#include <QFrame>
 #include <QHelpEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -126,6 +128,23 @@ class ConnectionSafetyTest : public QObject {
         QVERIFY(tag && tag->isVisible());
         QCOMPARE(tag->text(), QString("Tagged"));
         QCOMPARE(tag->property("variant").toString(), QString("success"));
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto* line = window.findChild<QFrame*>("connectionToneLine");
+        QVERIFY(line);
+        QTRY_VERIFY(line->isVisible());
+        QVERIFY(line->height() > 0);
+        QVERIFY(line->width() > tag->width());
+        const auto success = choscordb::design::statusToneColor(
+            choscordb::design::resolvedThemeForWidget(*line).colors,
+            choscordb::design::StatusTone::Success);
+        QCOMPARE(line->grab().toImage().pixelColor(line->width() / 2, 0).rgb(), success.rgb());
+        window.findChild<QAction*>("newQuery")->trigger();
+        auto* untagged = qobject_cast<choscordb::SqlEditor*>(
+            window.findChild<QTabWidget*>("editorTabs")->currentWidget());
+        QVERIFY(untagged);
+        untagged->setConnectionTarget(std::nullopt);
+        QTRY_VERIFY(!line->isVisible());
     }
     void aSavedProfileEditUpdatesTheTagOfItsLiveConnection() {
         choscordb::MainWindow window;
@@ -145,6 +164,8 @@ class ConnectionSafetyTest : public QObject {
         auto* tag = window.findChild<QLabel*>("connectionTag");
         QCOMPARE(tag->text(), QString("Production"));
         QCOMPARE(tag->property("variant").toString(), QString("error"));
+        QCOMPARE(window.findChild<QFrame*>("connectionToneLine")->property("variant").toString(),
+                 QString("danger"));
     }
     void confirmAllAsksBeforeEachStatementUntilTheSessionIsSilent() {
         choscordb::MainWindow window;

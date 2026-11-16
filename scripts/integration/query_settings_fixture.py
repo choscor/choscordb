@@ -71,6 +71,7 @@ def main():
                     "timeout_seconds": 0,
                     "connection_timeout_seconds": 20,
                     "show_system_schemas": False,
+                    "stop_on_first_error": True,
                 }
                 if row is None or json.loads(row[0]) != expected:
                     raise AssertionError(

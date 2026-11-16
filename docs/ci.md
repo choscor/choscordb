@@ -268,6 +268,8 @@ Docs: none needed, <reason>
 
 All workflows have read-only permissions and do not keep checkout credentials.
 Each job has a timeout.
+`scripts/ci/test_workflows.py` finds each core test file with a live-server `#[ignore]` reason.
+The PostgreSQL, MySQL or MariaDB job of that server must run the file with `--test`.
 A new run cancels the older run for the same reference.
 Actions are pinned to full commits.
 

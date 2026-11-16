@@ -31,6 +31,7 @@ fn planned(dto: &ffi::DatabaseActionDto) -> Result<String, String> {
         collation: dto.collation.clone(),
         confirmation: dto.confirmation.clone(),
     })
+    .map_err(|error| error.message)
 }
 
 pub fn database_action_plan(dto: &ffi::DatabaseActionDto) -> ffi::SqlPlanDto {

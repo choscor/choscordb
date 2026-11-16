@@ -2014,23 +2014,39 @@ pub(crate) async fn run(
                 let event = match readers.get(&query).cloned() {
                     Some(reader) => {
                         let events = events.clone();
+                        let memory = memory.clone();
                         let max_bytes = MAX_VALUE_CHUNK_BYTES.min(memory.raw_limit());
-                        let closing = shutdown.clone();
-                        let stopped = move || *released.borrow() || *closing.borrow();
+                        let mut closing = shutdown.clone();
+                        let mut waiting = released.clone();
                         tokio::spawn(async move {
-                            let event =
-                                match reader.save(handle, destination, max_bytes, stopped).await {
-                                    Ok(bytes) => Event::ValueSaved {
-                                        query,
-                                        handle,
-                                        bytes,
-                                    },
-                                    Err(error) => Event::ValueSaveFailed {
-                                        query,
-                                        handle,
-                                        error,
-                                    },
-                                };
+                            let lease = wait_capacity(
+                                memory.acquire(query, false),
+                                Some(&mut waiting),
+                                &mut closing,
+                                None,
+                            )
+                            .await;
+                            let saved = match lease {
+                                Ok(lease) => {
+                                    let stopped = move || *released.borrow() || *closing.borrow();
+                                    reader
+                                        .save(handle, destination, max_bytes, stopped, lease)
+                                        .await
+                                }
+                                Err(error) => Err(error),
+                            };
+                            let event = match saved {
+                                Ok(bytes) => Event::ValueSaved {
+                                    query,
+                                    handle,
+                                    bytes,
+                                },
+                                Err(error) => Event::ValueSaveFailed {
+                                    query,
+                                    handle,
+                                    error,
+                                },
+                            };
                             send(&events, event).await;
                         });
                         None

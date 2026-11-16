@@ -29,8 +29,8 @@ pub use object_action::{
 };
 pub use table_export::{
     DEFAULT_TABLE_EXPORT_PATTERN, MAX_TABLE_EXPORT_OBJECTS, TableExportData,
-    TableExportDestination, TableExportFormat, TableExportObject, TableExportRequest,
-    TableExportTarget, plan_table_export,
+    TableExportDestination, TableExportError, TableExportField, TableExportFormat,
+    TableExportObject, TableExportRequest, TableExportTarget, plan_table_export,
 };
 pub use table_import::{
     CsvReadOptions, IMPORT_NEW_COLUMN_TYPE, IMPORT_PREVIEW_ROWS, ImportData, ImportEncoding,
@@ -61,6 +61,8 @@ pub use backup::{
     BackupRequest, BackupTarget, MAX_BACKUP_LINE_BYTES, MAX_BACKUP_OUTPUT_LINES, ToolCommand,
     backup_output_line, plan_backup,
 };
+mod run_all;
+pub use run_all::{RunAllStep, run_all_step};
 mod sql_file;
 pub use sql_file::{
     MAX_SQL_FILE_ERRORS, MAX_SQL_FILE_STATEMENT_BYTES, SQL_FILE_PROGRESS_STATEMENTS,
@@ -99,16 +101,16 @@ pub use choscordb_storage::{
     APPEARANCE_LAYOUT_VERSION, AppearanceLayout, ColumnLayoutError, ConnectionColor,
     ConnectionEnvironment, ConnectionProfile, ConnectionTags, ConnectionTone,
     DEFAULT_CONNECTION_TIMEOUT_SECONDS, DEFAULT_EDITOR_FONT_SIZE, DEFAULT_FORMAT_INDENT,
-    EDITOR_PREFERENCES_VERSION, EditorDocument, EditorPreferences, ExecutionGate, HistoryEntry,
-    HistoryPolicy, HistoryStatus, MAX_APPEARANCE_LAYOUT_BYTES, MAX_COLLECTION_BYTES,
-    MAX_CONNECTION_TIMEOUT_SECONDS, MAX_EDITOR_FONT_SIZE, MAX_ENVIRONMENT_LABEL_BYTES,
-    MAX_FONT_FAMILY_BYTES, MAX_FORMAT_INDENT, MAX_QUERY_TIMEOUT_SECONDS, MAX_SCREEN_NAME_BYTES,
-    MAX_SHORTCUT_SEQUENCE_BYTES, MAX_SQL_BYTES, MAX_WINDOW_DIMENSION, MAX_WORKSPACE_DOCUMENTS,
-    MIN_EDITOR_FONT_SIZE, MIN_FORMAT_INDENT, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, ObjectTab,
-    PostgresTls, ProfileConfiguration, QUERY_PREFERENCES_VERSION, QueryPreferences,
-    ResultColumnWidth, SafetyLevel, ShortcutCommand, ShortcutOverride, SidebarTab, ThemeMode,
-    WindowGeometry, WorkspaceLayout, WorkspaceSnapshot, WorkspaceTab, result_columns_context,
-    toggle_hidden_column,
+    DEFAULT_STOP_ON_FIRST_ERROR, EDITOR_PREFERENCES_VERSION, EditorDocument, EditorPreferences,
+    ExecutionGate, HistoryEntry, HistoryPolicy, HistoryStatus, MAX_APPEARANCE_LAYOUT_BYTES,
+    MAX_COLLECTION_BYTES, MAX_CONNECTION_TIMEOUT_SECONDS, MAX_EDITOR_FONT_SIZE,
+    MAX_ENVIRONMENT_LABEL_BYTES, MAX_FONT_FAMILY_BYTES, MAX_FORMAT_INDENT,
+    MAX_QUERY_TIMEOUT_SECONDS, MAX_SCREEN_NAME_BYTES, MAX_SHORTCUT_SEQUENCE_BYTES, MAX_SQL_BYTES,
+    MAX_WINDOW_DIMENSION, MAX_WORKSPACE_DOCUMENTS, MIN_EDITOR_FONT_SIZE, MIN_FORMAT_INDENT,
+    MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, ObjectTab, PostgresTls, ProfileConfiguration,
+    QUERY_PREFERENCES_VERSION, QueryPreferences, ResultColumnWidth, SafetyLevel, ShortcutCommand,
+    ShortcutOverride, SidebarTab, ThemeMode, WindowGeometry, WorkspaceLayout, WorkspaceSnapshot,
+    WorkspaceTab, result_columns_context, toggle_hidden_column,
 };
 mod store;
 use choscordb_diagnostics::{EngineBoundaryEvent, Service as DiagnosticsService};

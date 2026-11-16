@@ -2,6 +2,7 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
 #include "design_system/menu/menu.h"
+#include "design_system/separator/separator.h"
 #include <QActionGroup>
 #include <QLabel>
 #include <QMenu>
@@ -65,16 +66,15 @@ void QueryWorkspace::syncConnectionTag() {
     const auto connection = selectedConnection();
     const auto tag = connection ? connectionTags_.value(*connection) : ConnectionTag{};
     if (widgets_.safetyLevel && safetyMenu_) {
-        const auto locked =
-            tag.profileSafety == EngineAdapter::profileTagOptions().sessionLockedSafety;
+        const auto& unavailable = EngineAdapter::profileTagOptions().sessionSafetyUnavailable;
+        const auto locked = !unavailable.value(tag.profileSafety).isEmpty();
         widgets_.safetyLevel->setEnabled(connection.has_value() && !locked);
         const auto actions = safetyMenu_->actions();
-        for (auto* action : actions)
-            if (action->data() == EngineAdapter::profileTagOptions().sessionLockedSafety) {
-                action->setEnabled(false);
-                action->setToolTip(tr("Edit the connection to set Read-only. The connection then "
-                                      "rejects all writes."));
-            }
+        for (auto* action : actions) {
+            const auto reason = unavailable.value(action->data().toString());
+            action->setEnabled(reason.isEmpty());
+            action->setToolTip(reason);
+        }
         const auto current =
             std::find_if(actions.cbegin(), actions.cend(),
                          [&tag](const QAction* action) { return action->data() == tag.safety; });
@@ -89,9 +89,11 @@ void QueryWorkspace::syncConnectionTag() {
             widgets_.safetyLevel->setText(name != names.cend() ? name->label : shown->text());
         }
     }
+    const auto tone = connectionTone(tag.tone);
+    if (widgets_.connectionToneLine)
+        design::setToneLine(widgets_.connectionToneLine, connection ? tone : std::nullopt);
     if (!widgets_.connectionTag)
         return;
-    const auto tone = connectionTone(tag.tone);
     widgets_.connectionTag->setVisible(connection.has_value() && !tag.label.isEmpty());
     widgets_.connectionTag->setText(tag.label);
     const QString variant =

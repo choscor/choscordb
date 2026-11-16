@@ -70,6 +70,7 @@ QueryWorkspace::QueryWorkspace(Widgets widgets, QObject* parent)
     setupStatementResults();
     setupColumnChooser();
     querySettings_ = new QuerySettingsController(adapter_, this);
+    setupStopOnFirstError();
     setupCellEditor();
     connect(querySettings_, &QuerySettingsController::readyChanged, this,
             [this](bool) { updateActions(); });

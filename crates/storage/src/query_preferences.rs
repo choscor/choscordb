@@ -15,9 +15,15 @@ pub struct QueryPreferences {
     pub connection_timeout_seconds: u32,
     #[serde(default)]
     pub show_system_schemas: bool,
+    #[serde(default = "default_stop_on_first_error")]
+    pub stop_on_first_error: bool,
 }
+pub const DEFAULT_STOP_ON_FIRST_ERROR: bool = true;
 fn default_connection_timeout_seconds() -> u32 {
     DEFAULT_CONNECTION_TIMEOUT_SECONDS
+}
+fn default_stop_on_first_error() -> bool {
+    DEFAULT_STOP_ON_FIRST_ERROR
 }
 impl Default for QueryPreferences {
     fn default() -> Self {
@@ -27,6 +33,7 @@ impl Default for QueryPreferences {
             timeout_seconds: 0,
             connection_timeout_seconds: DEFAULT_CONNECTION_TIMEOUT_SECONDS,
             show_system_schemas: false,
+            stop_on_first_error: DEFAULT_STOP_ON_FIRST_ERROR,
         }
     }
 }

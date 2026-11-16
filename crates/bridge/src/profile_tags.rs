@@ -105,7 +105,13 @@ pub fn profile_tag_options() -> ffi::ProfileTagOptionsDto {
         safety_levels: choices(&SafetyLevel::ALL, SafetyLevel::code, SafetyLevel::label),
         safety_names: choices(&SafetyLevel::ALL, SafetyLevel::code, SafetyLevel::name),
         labelled_environment: ConnectionEnvironment::Custom.code().into(),
-        session_locked_safety: SafetyLevel::ReadOnly.code().into(),
+        session_safety: SafetyLevel::ALL
+            .into_iter()
+            .map(|level| ffi::SessionSafetyDto {
+                code: level.code().into(),
+                unavailable: level.session_unavailable().unwrap_or("").into(),
+            })
+            .collect(),
         max_environment_label_bytes: MAX_ENVIRONMENT_LABEL_BYTES as u32,
     }
 }

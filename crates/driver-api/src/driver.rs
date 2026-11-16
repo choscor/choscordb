@@ -279,6 +279,9 @@ pub trait DatabaseDriver: Send + Sync {
     async fn reconnect(&self, options: ConnectionOptions) -> Result<Box<dyn Connection>> {
         self.connect(options).await
     }
+    fn structure_dialect(&self) -> Option<&'static dyn crate::StructureDialect> {
+        None
+    }
 }
 #[async_trait]
 pub trait CancelHandle: Send + Sync {

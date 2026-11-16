@@ -7,6 +7,7 @@
 #include "bridge/value_preview.h"
 #include "models/result_table_model.h"
 #include <QDateTime>
+#include <QHash>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -162,6 +163,11 @@ struct QueryPreferences {
     QueryPreferences();
     quint32 version, pageSize, timeoutSeconds, connectionTimeoutSeconds;
     bool showSystemSchemas = false;
+    bool stopOnFirstError;
+};
+struct RunAllStep {
+    bool stop = false;
+    QString message;
 };
 enum class CellFilterOperator : uint8_t {
     Equals,
@@ -193,7 +199,7 @@ struct ProfileDatabase {
 struct ProfileTagOptions {
     QList<CodeLabel> environments, colors, safetyLevels, safetyNames;
     QString labelledEnvironment;
-    QString sessionLockedSafety;
+    QHash<QString, QString> sessionSafetyUnavailable;
     int maxEnvironmentLabelBytes = 0;
 };
 struct CellFilterComposition {
@@ -709,7 +715,7 @@ class EngineAdapter final : public QObject {
     static QList<TableExportFormatChoice> tableExportFormats();
     static QList<CodeLabel> tableExportLineBreaks();
     static TableExportRequest tableExportDefaults();
-    static QString tableExportError(const TableExportRequest& request);
+    static TableExportProblem tableExportError(const TableExportRequest& request);
     std::optional<quint64> exportTables(quint64 connection, const TableExportRequest& request,
                                         QString* error);
     static QString tableImportUnavailableReason(const QString& kind, const QString& subtype);
@@ -859,6 +865,7 @@ class EngineAdapter final : public QObject {
     static bool systemSchemaNode(const QString& kind, const QString& name);
     static QString sqlExportTableError(const QStringList& table);
     static bool systemSchemasHidden(const QString& driver, bool showSystemSchemas);
+    static RunAllStep runAllStep(bool stopOnFirstError, bool failed);
     static bool appearanceThemeValid(const QString& theme);
     static QString newDocumentId();
     static QString objectTabContext(const QString& profileId, quint64 connection);

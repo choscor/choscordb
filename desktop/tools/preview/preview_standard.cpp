@@ -344,6 +344,10 @@ void populateStandard(const QString& id, QWidget* host, QVBoxLayout* layout) {
         line->setFrameShape(QFrame::HLine);
         layout->addWidget(line);
         layout->addWidget(createToolbarSeparator(host));
+        auto* tone = createToneLine(host);
+        tone->setObjectName("previewToneLine");
+        setToneLine(tone, StatusTone::Danger);
+        layout->addWidget(tone);
     } else if (id == "button-groups") {
         for (const auto orientation : {Qt::Horizontal, Qt::Vertical}) {
             auto* group = new ButtonGroup(orientation, host);

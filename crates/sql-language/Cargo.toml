@@ -8,6 +8,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+choscordb-driver-api = { path = "../driver-api" }
 tree-sitter = "0.26"
 tree-sitter-sequel = "=0.3.11"
 regex = "1"

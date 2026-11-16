@@ -140,7 +140,7 @@ jobs:
       - name: Run ignored driver integration suites sequentially
         run: cargo test -p choscordb-driver-postgres --locked -- --include-ignored --test-threads=1
       - name: Run ignored core integration suite sequentially
-        run: cargo test -p choscordb-core --test postgres_disconnect --locked -- --include-ignored --test-threads=1
+        run: cargo test -p choscordb-core --test postgres_disconnect --test postgres_catalog --test postgres_features --locked -- --include-ignored --test-threads=1
       - name: Run native PostgreSQL coverage sequentially
         run: python scripts/ci/quality.py native-tests
       - name: Preserve PostgreSQL failure logs
@@ -169,7 +169,7 @@ jobs:
       - name: Run MySQL driver integration tests
         run: cargo test -p choscordb-driver-mysql --lib --test live --test editing --test driver_contract --locked -- --include-ignored --test-threads=1
       - name: Run MySQL core integration tests
-        run: cargo test -p choscordb-core --test mysql --locked -- --include-ignored --test-threads=1
+        run: cargo test -p choscordb-core --test mysql --test mysql_features --locked -- --include-ignored --test-threads=1
       - name: Preserve MySQL failure logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -199,7 +199,7 @@ jobs:
       - name: Run MariaDB driver integration tests
         run: cargo test -p choscordb-driver-mysql --lib --test live --test editing --test driver_contract --test mariadb --locked -- --include-ignored --test-threads=1
       - name: Run MariaDB core integration tests
-        run: cargo test -p choscordb-core --test mysql --test mariadb --locked -- --include-ignored --test-threads=1
+        run: cargo test -p choscordb-core --test mysql --test mariadb --test mysql_features --locked -- --include-ignored --test-threads=1
       - name: Preserve MariaDB failure logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

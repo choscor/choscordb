@@ -18,8 +18,9 @@ pub use preferences::{
     MIN_EDITOR_FONT_SIZE, MIN_FORMAT_INDENT, ShortcutCommand, ShortcutOverride,
 };
 pub use query_preferences::{
-    DEFAULT_CONNECTION_TIMEOUT_SECONDS, MAX_CONNECTION_TIMEOUT_SECONDS, MAX_QUERY_TIMEOUT_SECONDS,
-    QUERY_PREFERENCES_VERSION, QueryPreferences,
+    DEFAULT_CONNECTION_TIMEOUT_SECONDS, DEFAULT_STOP_ON_FIRST_ERROR,
+    MAX_CONNECTION_TIMEOUT_SECONDS, MAX_QUERY_TIMEOUT_SECONDS, QUERY_PREFERENCES_VERSION,
+    QueryPreferences,
 };
 pub use result_columns::{
     ColumnLayoutError, MAX_HIDDEN_COLUMN_CONTEXT_BYTES, MAX_HIDDEN_COLUMN_CONTEXTS,
@@ -261,6 +262,11 @@ impl SafetyLevel {
             Self::ConfirmAll => "Confirm each statement",
             Self::ReadOnly => "Read-only",
         }
+    }
+    pub fn session_unavailable(self) -> Option<&'static str> {
+        (self == Self::ReadOnly).then_some(
+            "Edit the connection to set Read-only. The connection then rejects all writes.",
+        )
     }
     pub fn name(self) -> &'static str {
         match self {

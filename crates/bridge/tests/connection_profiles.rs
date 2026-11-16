@@ -483,3 +483,25 @@ fn a_profile_keeps_a_listed_row_limit_and_rejects_another() {
         "Invalid connection options. The row limit is not one of the listed choices."
     );
 }
+
+#[test]
+fn tag_options_name_the_safety_levels_a_session_cannot_choose() {
+    let options = choscordb_bridge::profile_tag_options();
+    let reasons: Vec<_> = options
+        .session_safety
+        .iter()
+        .map(|rule| (rule.code.as_str(), rule.unavailable.as_str()))
+        .collect();
+    assert_eq!(
+        reasons,
+        [
+            ("silent", ""),
+            ("confirm_writes", ""),
+            ("confirm_all", ""),
+            (
+                "read_only",
+                "Edit the connection to set Read-only. The connection then rejects all writes."
+            ),
+        ]
+    );
+}

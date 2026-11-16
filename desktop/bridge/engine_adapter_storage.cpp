@@ -38,6 +38,7 @@ QueryPreferences::QueryPreferences() {
     pageSize = limits.default_page_size;
     timeoutSeconds = 0;
     connectionTimeoutSeconds = limits.default_connection_timeout_seconds;
+    stopOnFirstError = limits.default_stop_on_first_error;
 }
 HistoryPolicy::HistoryPolicy() {
     const auto defaults = history_policy_default();
@@ -118,6 +119,7 @@ bool EngineAdapter::setQueryPreferences(const QueryPreferences& preferences, qui
         dto.timeout_seconds = preferences.timeoutSeconds;
         dto.connection_timeout_seconds = preferences.connectionTimeoutSeconds;
         dto.show_system_schemas = preferences.showSystemSchemas;
+        dto.stop_on_first_error = preferences.stopOnFirstError;
         return query_preferences_set(*d_->engine, dto, token);
     });
 }

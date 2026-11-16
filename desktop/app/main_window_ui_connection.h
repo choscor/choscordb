@@ -2,6 +2,7 @@
 
 class QAction;
 class QComboBox;
+class QFrame;
 class QLabel;
 class QMenu;
 class QToolBar;
@@ -25,6 +26,7 @@ ConnectionToolbar buildConnectionToolbar(QToolBar* toolbar, QMenu* queryMenu);
 struct ResultFooterRow {
     QWidget* row;
     QLabel* connectionTag;
+    QFrame* connectionToneLine;
 };
 
 ResultFooterRow buildResultFooterRow(design::StatusLine* footer);

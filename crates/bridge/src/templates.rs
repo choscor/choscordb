@@ -74,9 +74,10 @@ pub fn create_template_policy(
     parent_qualified: &str,
 ) -> ffi::SqlTemplateResultDto {
     let result = language::CreateTemplate::from_code(object)
-        .ok_or("Unknown object template.")
+        .ok_or_else(|| "Unknown object template.".to_string())
         .and_then(|template| {
             language::create_template(template, driver, parent_kind, parent_qualified)
+                .map_err(|error| error.message)
         });
     match result {
         Ok(sql) => ffi::SqlTemplateResultDto {
@@ -85,7 +86,7 @@ pub fn create_template_policy(
             error: String::new(),
         },
         Err(error) => ffi::SqlTemplateResultDto {
-            error: error.into(),
+            error,
             ..Default::default()
         },
     }

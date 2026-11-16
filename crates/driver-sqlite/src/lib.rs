@@ -1,3 +1,5 @@
+mod structure;
+pub use structure::SqliteStructure;
 mod metadata;
 mod object_data;
 mod spool;
@@ -122,6 +124,9 @@ struct Cursor {
 impl DatabaseDriver for SqliteDriver {
     fn id(&self) -> &'static str {
         "sqlite"
+    }
+    fn structure_dialect(&self) -> Option<&'static dyn StructureDialect> {
+        Some(&SqliteStructure)
     }
     fn capabilities(&self) -> DriverCapabilities {
         DriverCapabilities {

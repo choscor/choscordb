@@ -1,7 +1,7 @@
 use crate::{BridgeEngine, code_label, ffi, pack, submit, unpack};
 use choscordb_core::{
-    CsvOptions, DEFAULT_TABLE_EXPORT_PATTERN, LineBreak, TableExportDestination, TableExportFormat,
-    TableExportObject, TableExportRequest, plan_table_export,
+    CsvOptions, DEFAULT_TABLE_EXPORT_PATTERN, LineBreak, TableExportDestination, TableExportError,
+    TableExportField, TableExportFormat, TableExportObject, TableExportRequest, plan_table_export,
 };
 
 pub fn table_export_formats() -> Vec<ffi::TableExportFormatDto> {
@@ -45,15 +45,19 @@ pub fn table_export_defaults() -> ffi::TableExportRequestDto {
     }
 }
 
-fn single(value: &str, field: &str) -> Result<char, String> {
+fn single(value: &str, field: &str) -> Result<char, TableExportError> {
     let mut chars = value.chars();
     match (chars.next(), chars.next()) {
         (Some(c), None) => Ok(c),
-        _ => Err(format!("Enter one character for the {field}.")),
+        _ => Err(TableExportError::new(
+            TableExportField::Options,
+            format!("Enter one character for the {field}."),
+        )),
     }
 }
 
-fn request(dto: &ffi::TableExportRequestDto) -> Result<TableExportRequest, String> {
+fn request(dto: &ffi::TableExportRequestDto) -> Result<TableExportRequest, TableExportError> {
+    let options = |message: &str| TableExportError::new(TableExportField::Options, message);
     let format = match dto.format.as_str() {
         "csv" => TableExportFormat::Csv(CsvOptions {
             delimiter: single(&dto.delimiter, "delimiter")?,
@@ -61,7 +65,7 @@ fn request(dto: &ffi::TableExportRequestDto) -> Result<TableExportRequest, Strin
             line_break: match dto.line_break.as_str() {
                 "crlf" => LineBreak::Crlf,
                 "lf" => LineBreak::Lf,
-                _ => return Err("Choose a supported line break.".into()),
+                _ => return Err(options("Choose a supported line break.")),
             },
             null_text: dto.null_text.clone(),
             header: dto.header,
@@ -74,10 +78,13 @@ fn request(dto: &ffi::TableExportRequestDto) -> Result<TableExportRequest, Strin
             drop: dto.drop,
             data: dto.data,
         },
-        _ => return Err("Choose a supported format.".into()),
+        _ => return Err(options("Choose a supported format.")),
     };
     if dto.path.is_empty() {
-        return Err("Choose a destination.".into());
+        return Err(TableExportError::new(
+            TableExportField::Destination,
+            "Choose a destination.",
+        ));
     }
     Ok(TableExportRequest {
         driver: dto.driver.clone(),
@@ -103,10 +110,20 @@ fn request(dto: &ffi::TableExportRequestDto) -> Result<TableExportRequest, Strin
     })
 }
 
-pub fn table_export_error(dto: &ffi::TableExportRequestDto) -> String {
+pub fn table_export_error(dto: &ffi::TableExportRequestDto) -> ffi::TableExportErrorDto {
     match request(dto).and_then(|request| plan_table_export(&request)) {
-        Ok(_) => String::new(),
-        Err(error) => error,
+        Ok(_) => ffi::TableExportErrorDto {
+            field: ffi::TableExportFieldDto::None,
+            message: String::new(),
+        },
+        Err(error) => ffi::TableExportErrorDto {
+            field: match error.field {
+                TableExportField::Tables => ffi::TableExportFieldDto::Tables,
+                TableExportField::Options => ffi::TableExportFieldDto::Options,
+                TableExportField::Destination => ffi::TableExportFieldDto::Destination,
+            },
+            message: error.message,
+        },
     }
 }
 
@@ -115,7 +132,9 @@ pub fn export_tables(
     connection: u64,
     dto: &ffi::TableExportRequestDto,
 ) -> ffi::Submit {
-    let targets = request(dto).and_then(|request| plan_table_export(&request));
+    let targets = request(dto)
+        .and_then(|request| plan_table_export(&request))
+        .map_err(|error| error.message);
     submit(engine, |e| {
         e.export_tables(unpack(connection), targets?)
             .map(pack)

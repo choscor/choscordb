@@ -53,18 +53,21 @@ fn defaults_and_choices_come_from_the_engine() {
 
 #[test]
 fn request_errors_name_the_field() {
-    assert_eq!(table_export_error(&people()), "");
+    assert_eq!(table_export_error(&people()).message, "");
     let lf = ffi::TableExportRequestDto {
         line_break: "lf".into(),
         delimiter: "\t".into(),
         ..people()
     };
-    assert_eq!(table_export_error(&lf), "");
+    assert_eq!(
+        table_export_error(&lf).field,
+        ffi::TableExportFieldDto::None
+    );
     let excel = ffi::TableExportRequestDto {
         format: "xlsx".into(),
         ..people()
     };
-    assert_eq!(table_export_error(&excel), "");
+    assert_eq!(table_export_error(&excel).message, "");
     let cases = [
         (
             ffi::TableExportRequestDto {
@@ -72,6 +75,7 @@ fn request_errors_name_the_field() {
                 ..people()
             },
             "Enter one character for the delimiter.",
+            ffi::TableExportFieldDto::Options,
         ),
         (
             ffi::TableExportRequestDto {
@@ -79,6 +83,7 @@ fn request_errors_name_the_field() {
                 ..people()
             },
             "Enter one character for the quote.",
+            ffi::TableExportFieldDto::Options,
         ),
         (
             ffi::TableExportRequestDto {
@@ -86,6 +91,7 @@ fn request_errors_name_the_field() {
                 ..people()
             },
             "Choose a destination.",
+            ffi::TableExportFieldDto::Destination,
         ),
         (
             ffi::TableExportRequestDto {
@@ -93,6 +99,7 @@ fn request_errors_name_the_field() {
                 ..people()
             },
             "Choose a supported format.",
+            ffi::TableExportFieldDto::Options,
         ),
         (
             ffi::TableExportRequestDto {
@@ -100,9 +107,12 @@ fn request_errors_name_the_field() {
                 ..people()
             },
             "Choose one or more tables to export.",
+            ffi::TableExportFieldDto::Tables,
         ),
     ];
-    for (request, message) in cases {
-        assert_eq!(table_export_error(&request), message);
+    for (request, message, field) in cases {
+        let error = table_export_error(&request);
+        assert_eq!(error.message, message);
+        assert_eq!(error.field, field);
     }
 }

@@ -473,7 +473,7 @@ MainWindow::Ui MainWindow::buildUi() {
     auto* stopOnFirstError = runMenu->addAction(tr("Stop on first error"));
     stopOnFirstError->setObjectName("stopOnFirstError");
     stopOnFirstError->setCheckable(true);
-    stopOnFirstError->setChecked(true);
+    stopOnFirstError->setEnabled(false);
     runMode->setMenu(runMenu);
     runGroup->addButton(runButton);
     runGroup->addButton(runMode);
@@ -991,6 +991,7 @@ MainWindow::Ui MainWindow::buildUi() {
         .safetyLevel = connectionToolbar.safetyLevel,
         .explain = connectionToolbar.explain,
         .connectionTag = footerRow.connectionTag,
+        .connectionToneLine = footerRow.connectionToneLine,
         .messages = messages,
         .searchActions = searchActions,
         .toast = toast,

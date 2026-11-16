@@ -46,7 +46,8 @@ void QuerySettingsController::apply(const QueryPreferences& value) {
     if (value.version == preferences_.version && value.pageSize == preferences_.pageSize &&
         value.timeoutSeconds == preferences_.timeoutSeconds &&
         value.connectionTimeoutSeconds == preferences_.connectionTimeoutSeconds &&
-        value.showSystemSchemas == preferences_.showSystemSchemas)
+        value.showSystemSchemas == preferences_.showSystemSchemas &&
+        value.stopOnFirstError == preferences_.stopOnFirstError)
         return;
     preferences_ = value;
     emit preferencesChanged(preferences_);

@@ -1,3 +1,5 @@
+use choscordb_driver_api::{DriverError, ErrorKind};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreateTemplate {
     Table,
@@ -65,14 +67,15 @@ pub fn create_template(
     driver: &str,
     parent_kind: &str,
     parent_qualified: &str,
-) -> Result<String, &'static str> {
+) -> Result<String, DriverError> {
     if let Some(reason) = create_template_unavailable(template, driver) {
-        return Err(reason);
+        return Err(DriverError::new(ErrorKind::Unsupported, reason));
     }
+    let invalid = |message| DriverError::new(ErrorKind::InvalidInput, message);
     let qualify = create_template_parent(parent_kind)
-        .ok_or("Select a connection, database or schema to create an object.")?;
+        .ok_or_else(|| invalid("Select a connection, database or schema to create an object."))?;
     if qualify && (parent_qualified.is_empty() || parent_qualified.contains('\0')) {
-        return Err("The selected schema has an invalid name.");
+        return Err(invalid("The selected schema has an invalid name."));
     }
     let prefix = if qualify && template != CreateTemplate::Schema {
         format!("{parent_qualified}.")

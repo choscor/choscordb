@@ -18,6 +18,11 @@ struct TableExportRequest {
     bool header = true, structure = true, drop = false, data = true, folder = true;
     QString path, pattern;
 };
+enum class TableExportField { None, Tables, Options, Destination };
+struct TableExportProblem {
+    TableExportField field = TableExportField::None;
+    QString message;
+};
 struct TableImportMapping {
     QString target;
     int source = -1;

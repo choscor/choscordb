@@ -755,11 +755,13 @@ const ProfileTagOptions& EngineAdapter::profileTagOptions() {
                 output.append({fromRust(value.code), fromRust(value.label)});
             return output;
         };
-        return ProfileTagOptions{
-            choices(dto.environments),           choices(dto.colors),
-            choices(dto.safety_levels),          choices(dto.safety_names),
-            fromRust(dto.labelled_environment),  fromRust(dto.session_locked_safety),
-            int(dto.max_environment_label_bytes)};
+        QHash<QString, QString> sessionSafety;
+        for (const auto& rule : dto.session_safety)
+            sessionSafety.insert(fromRust(rule.code), fromRust(rule.unavailable));
+        return ProfileTagOptions{choices(dto.environments),           choices(dto.colors),
+                                 choices(dto.safety_levels),          choices(dto.safety_names),
+                                 fromRust(dto.labelled_environment),  sessionSafety,
+                                 int(dto.max_environment_label_bytes)};
     }();
     return options;
 }
@@ -810,6 +812,10 @@ bool EngineAdapter::systemSchemaNode(const QString& kind, const QString& name) {
 bool EngineAdapter::systemSchemasHidden(const QString& driver, bool showSystemSchemas) {
     const auto bytes = driver.toUtf8();
     return system_schemas_hidden_policy(utf8View(bytes), showSystemSchemas);
+}
+RunAllStep EngineAdapter::runAllStep(bool stopOnFirstError, bool failed) {
+    const auto step = run_all_step_policy(stopOnFirstError, failed);
+    return {step.stop, fromRust(step.message)};
 }
 QString EngineAdapter::sqlExportTableError(const QStringList& table) {
     rust::Vec<rust::String> parts;

@@ -1,4 +1,9 @@
 use crate::object_action::{identity, quoted};
+use choscordb_driver_api::{DriverError, ErrorKind};
+
+fn invalid(message: &str) -> DriverError {
+    DriverError::new(ErrorKind::InvalidInput, message)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TriggerScript {
@@ -46,12 +51,15 @@ enum Dialect {
     Sqlite,
 }
 
-fn dialect(driver: &str) -> Result<Dialect, String> {
+fn dialect(driver: &str) -> Result<Dialect, DriverError> {
     match driver {
         "postgres" => Ok(Dialect::Postgres),
         "mysql" | "mariadb" => Ok(Dialect::Mysql),
         "sqlite" => Ok(Dialect::Sqlite),
-        _ => Err("This connection cannot manage triggers.".into()),
+        _ => Err(DriverError::new(
+            ErrorKind::Unsupported,
+            "This connection cannot manage triggers.",
+        )),
     }
 }
 
@@ -107,15 +115,15 @@ fn create_template(dialect: &Dialect, schema: &str, table: &str) -> String {
 pub fn trigger_script(
     script: TriggerScript,
     request: &TriggerScriptRequest,
-) -> Result<String, String> {
+) -> Result<String, DriverError> {
     let dialect = dialect(&request.driver)?;
     let (schema, table) = identity(&request.driver, &request.table_id, &request.table_name)
-        .ok_or_else(|| "The selected table has an invalid identity.".to_string())?;
+        .ok_or_else(|| invalid("The selected table has an invalid identity."))?;
     if script == TriggerScript::Create {
         return Ok(create_template(&dialect, &schema, &table));
     }
     if request.trigger.is_empty() {
-        return Err("Choose a trigger.".into());
+        return Err(invalid("Choose a trigger."));
     }
     let drop = drop_statement(&dialect, &schema, &table, &request.trigger);
     if script == TriggerScript::Drop {
@@ -123,7 +131,7 @@ pub fn trigger_script(
     }
     let definition = request.definition.trim().trim_end_matches(';').trim_end();
     if definition.is_empty() {
-        return Err("The trigger definition is unavailable.".into());
+        return Err(invalid("The trigger definition is unavailable."));
     }
     Ok(format!("{drop}\n\n{definition};"))
 }

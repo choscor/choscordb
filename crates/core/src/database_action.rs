@@ -1,4 +1,12 @@
-use choscordb_driver_api::{GridEditDriver, quote_import_identifier};
+use choscordb_driver_api::{DriverError, ErrorKind, GridEditDriver, quote_import_identifier};
+
+fn invalid(message: impl Into<String>) -> DriverError {
+    DriverError::new(ErrorKind::InvalidInput, message)
+}
+
+fn unsupported(message: &str) -> DriverError {
+    DriverError::new(ErrorKind::Unsupported, message)
+}
 
 const SWITCH_FIRST: &str = "Switch to another database before you rename or drop this one.";
 const SETTING_RULE: &str =
@@ -61,30 +69,29 @@ pub struct DatabaseActionRequest {
     pub confirmation: String,
 }
 
-fn driver(name: &str) -> Result<GridEditDriver, String> {
+fn driver(name: &str) -> Result<GridEditDriver, DriverError> {
     match name {
         "postgres" => Ok(GridEditDriver::Postgres),
         "mysql" | "mariadb" => Ok(GridEditDriver::Mysql),
-        "sqlite" => Err(
-            "SQLite keeps each database in its own file. Create, rename or delete the file instead."
-                .into(),
-        ),
-        _ => Err("This connection cannot manage databases.".into()),
+        "sqlite" => Err(unsupported(
+            "SQLite keeps each database in its own file. Create, rename or delete the file instead.",
+        )),
+        _ => Err(unsupported("This connection cannot manage databases.")),
     }
 }
 
-fn name(driver: GridEditDriver, text: &str) -> Result<String, String> {
+fn name(driver: GridEditDriver, text: &str) -> Result<String, DriverError> {
     if text.trim().is_empty() {
-        return Err("Enter a database name.".into());
+        return Err(invalid("Enter a database name."));
     }
     if text.len() > 63 {
-        return Err("A database name has at most 63 bytes.".into());
+        return Err(invalid("A database name has at most 63 bytes."));
     }
     quote_import_identifier(driver, text)
-        .map_err(|_| "A database name cannot contain a NUL character.".into())
+        .map_err(|_| invalid("A database name cannot contain a NUL character."))
 }
 
-fn setting(text: &str) -> Result<Option<&str>, String> {
+fn setting(text: &str) -> Result<Option<&str>, DriverError> {
     let text = text.trim();
     if text.is_empty() {
         return Ok(None);
@@ -95,10 +102,10 @@ fn setting(text: &str) -> Result<Option<&str>, String> {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '@'));
     valid
         .then_some(Some(text))
-        .ok_or_else(|| SETTING_RULE.into())
+        .ok_or_else(|| invalid(SETTING_RULE))
 }
 
-pub fn plan_database_action(request: &DatabaseActionRequest) -> Result<String, String> {
+pub fn plan_database_action(request: &DatabaseActionRequest) -> Result<String, DriverError> {
     let driver = driver(&request.driver)?;
     let quoted = name(driver, &request.name)?;
     match request.kind {
@@ -132,26 +139,28 @@ pub fn plan_database_action(request: &DatabaseActionRequest) -> Result<String, S
         }
         DatabaseActionKind::Rename => {
             if driver == GridEditDriver::Mysql {
-                return Err("MySQL and MariaDB cannot rename a database.".into());
+                return Err(unsupported("MySQL and MariaDB cannot rename a database."));
             }
             if request.name == request.current {
-                return Err(SWITCH_FIRST.into());
+                return Err(invalid(SWITCH_FIRST));
             }
             let new_name = name(driver, &request.new_name)?;
             if request.new_name == request.name {
-                return Err("Enter a new name that is different from the old name.".into());
+                return Err(invalid(
+                    "Enter a new name that is different from the old name.",
+                ));
             }
             Ok(format!("ALTER DATABASE {quoted} RENAME TO {new_name};"))
         }
         DatabaseActionKind::Drop => {
             if request.name == request.current {
-                return Err(SWITCH_FIRST.into());
+                return Err(invalid(SWITCH_FIRST));
             }
             if request.confirmation != request.name {
-                return Err(format!(
+                return Err(invalid(format!(
                     "Type the database name {} to drop it.",
                     request.name
-                ));
+                )));
             }
             Ok(format!("DROP DATABASE {quoted};"))
         }

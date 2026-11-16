@@ -1,3 +1,5 @@
+mod structure;
+pub use structure::PostgresStructure;
 mod graph;
 mod idle_transaction;
 mod metadata;
@@ -355,6 +357,9 @@ struct Cursor {
 impl DatabaseDriver for PostgresDriver {
     fn id(&self) -> &'static str {
         "postgres"
+    }
+    fn structure_dialect(&self) -> Option<&'static dyn StructureDialect> {
+        Some(&PostgresStructure)
     }
     fn capabilities(&self) -> DriverCapabilities {
         DriverCapabilities {

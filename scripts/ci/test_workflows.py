@@ -136,6 +136,27 @@ def validate_ci(ci):
         )
 
 
+LIVE_SERVER_JOBS = {
+    "PostgreSQL": ("postgres-integration",),
+    "MySQL": ("mysql-integration", "mariadb-integration"),
+    "MariaDB": ("mariadb-integration",),
+}
+
+
+def validate_live_core_suites(ci, suites):
+    for stem, text in suites.items():
+        for server, jobs in LIVE_SERVER_JOBS.items():
+            if not re.search(
+                rf'#\[ignore = "requires [^"]*disposable {server}\b', text
+            ):
+                continue
+            for job in jobs:
+                if not re.search(
+                    rf"--test {re.escape(stem)}\b", yaml_block(ci, job, 2)
+                ):
+                    raise AssertionError(f"{job} must run the live suite {stem}")
+
+
 def validate_security(security):
     validate_change_triggers(security)
     dependency = yaml_block(security, "dependency-review", 2)
@@ -169,6 +190,31 @@ class WorkflowPolicyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.files = {path.name: path.read_text() for path in WORKFLOWS.glob("*.yml")}
+
+    def test_each_live_core_suite_runs_in_its_server_jobs(self):
+        suites = {
+            path.stem: path.read_text()
+            for path in (ROOT / "crates" / "core" / "tests").glob("*.rs")
+        }
+        validate_live_core_suites(self.files["ci.yml"], suites)
+
+    def test_a_live_core_suite_missing_from_its_job_fails(self):
+        ci = (
+            "jobs:\n"
+            "  postgres-integration:\n"
+            "    run: cargo test -p choscordb-core --test postgres_disconnect\n"
+            "  mysql-integration:\n"
+            "    run: cargo test -p choscordb-core --test mysql_features\n"
+            "  mariadb-integration:\n"
+            "    run: cargo test -p choscordb-core --test mariadb\n"
+        )
+        postgres = '#[ignore = "requires disposable PostgreSQL fixture environment"]'
+        with self.assertRaisesRegex(AssertionError, "postgres_catalog"):
+            validate_live_core_suites(ci, {"postgres_catalog": postgres})
+        mysql = '#[ignore = "requires disposable MySQL server on localhost:33306"]'
+        with self.assertRaisesRegex(AssertionError, "mariadb-integration"):
+            validate_live_core_suites(ci, {"mysql_features": mysql})
+        validate_live_core_suites(ci, {"postgres_disconnect": postgres})
 
     def test_every_action_is_pinned_to_a_full_commit(self):
         for name, text in self.files.items():

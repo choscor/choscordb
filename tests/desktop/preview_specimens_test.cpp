@@ -478,6 +478,10 @@ void PreviewTest::componentFamiliesAreRendered() {
         QVERIFY(host->findChild<QDockWidget*>("previewResizableSidebar"));
         auto* separator = host->findChild<QFrame*>("toolbarSeparator");
         QVERIFY(separator && separator->frameShape() == QFrame::VLine);
+        auto* tone = host->findChild<QFrame*>("previewToneLine");
+        QVERIFY(tone && tone->property("designRole") == "toneLine");
+        QCOMPARE(tone->property("variant").toString(), QString("danger"));
+        QVERIFY(!tone->isHidden());
     }
     QVERIFY(window.selectSpecimen("tabs"));
     for (const auto* name : {"previewLight", "previewDark"}) {

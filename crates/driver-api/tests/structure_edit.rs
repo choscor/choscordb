@@ -1,6 +1,6 @@
 use choscordb_driver_api::{
-    GridEditDriver, StructureChange, StructureChangeKind, StructureColumn, StructureKey,
-    StructurePane, StructureTable, plan_structure, structure_change_summary,
+    GridEditDriver, StructureChange, StructureChangeKind, StructureColumn, StructureDialect,
+    StructureKey, StructurePane, StructureTable, plan_structure, structure_change_summary,
 };
 use std::collections::BTreeMap;
 
@@ -45,12 +45,54 @@ fn table(driver: GridEditDriver, qualified_name: &str) -> StructureTable {
     }
 }
 
+struct InPlace;
+impl StructureDialect for InPlace {
+    fn column_types(&self) -> &'static [&'static str] {
+        &[]
+    }
+    fn rebuild_reason(&self, _: StructureChangeKind) -> Option<&'static str> {
+        None
+    }
+    fn column_alter_reason(&self) -> Option<&'static str> {
+        None
+    }
+    fn column_comment_reason(&self) -> Option<&'static str> {
+        None
+    }
+}
+
+struct Limited;
+impl StructureDialect for Limited {
+    fn column_types(&self) -> &'static [&'static str] {
+        &[]
+    }
+    fn rebuild_reason(&self, kind: StructureChangeKind) -> Option<&'static str> {
+        (kind == StructureChangeKind::DropKey).then_some("Limited rebuild reason.")
+    }
+    fn column_alter_reason(&self) -> Option<&'static str> {
+        Some("Limited alter reason.")
+    }
+    fn column_comment_reason(&self) -> Option<&'static str> {
+        Some("Limited comment reason.")
+    }
+}
+
+fn rules(table: &StructureTable) -> &'static dyn StructureDialect {
+    if table.driver == GridEditDriver::Sqlite {
+        &Limited
+    } else {
+        &InPlace
+    }
+}
+
 fn plan(table: &StructureTable, changes: &[StructureChange]) -> Vec<String> {
-    plan_structure(table, changes).unwrap()
+    plan_structure(table, rules(table), changes).unwrap()
 }
 
 fn error(table: &StructureTable, changes: &[StructureChange]) -> String {
-    plan_structure(table, changes).unwrap_err().to_string()
+    plan_structure(table, rules(table), changes)
+        .unwrap_err()
+        .to_string()
 }
 
 use StructureChangeKind as K;
@@ -91,7 +133,7 @@ fn add_column_builds_the_definition_and_the_comment_for_each_driver() {
             &table(GridEditDriver::Sqlite, "\"main\".\"people\""),
             &[add]
         ),
-        "Change 1: SQLite does not store column comments."
+        "Change 1: Limited comment reason."
     );
 }
 
@@ -128,7 +170,7 @@ fn change_column_uses_separate_alters_on_postgres_and_modify_on_mysql() {
 }
 
 #[test]
-fn sqlite_renames_and_drops_columns_but_needs_a_rebuild_for_other_changes() {
+fn a_limited_dialect_renames_and_drops_columns_and_names_its_reason_for_other_changes() {
     let sqlite = table(GridEditDriver::Sqlite, "\"main\".\"people\"");
     assert_eq!(
         plan(
@@ -151,14 +193,22 @@ fn sqlite_renames_and_drops_columns_but_needs_a_rebuild_for_other_changes() {
                 &[("column", "name"), ("type", "TEXT")]
             )]
         ),
-        "Change 1: SQLite needs a table rebuild to change a column type, NULL rule, default or comment."
+        "Change 1: Limited alter reason."
     );
-    for kind in [K::PrimaryKey, K::AddForeignKey, K::DropKey] {
-        assert_eq!(
-            error(&sqlite, &[change(kind, &[])]),
-            "Change 1: SQLite needs a table rebuild for this change."
-        );
-    }
+    assert_eq!(
+        error(&sqlite, &[change(K::DropKey, &[("key", "people_team")])]),
+        "Change 1: Limited rebuild reason."
+    );
+    assert_eq!(
+        error(
+            &StructureTable {
+                new_table: true,
+                ..sqlite.clone()
+            },
+            &[change(K::DropKey, &[])]
+        ),
+        "Change 1: A new table has no columns, indexes or keys to change yet."
+    );
 }
 
 #[test]

@@ -112,7 +112,7 @@ pub use result_columns::{
 };
 mod query_preferences;
 pub use query_preferences::{
-    query_preference_limits, query_preferences_get, query_preferences_set,
+    query_preference_limits, query_preferences_get, query_preferences_set, run_all_step_policy,
 };
 mod templates;
 pub use templates::*;
@@ -607,8 +607,12 @@ pub mod ffi {
         safety_levels: Vec<ProfileChoiceDto>,
         safety_names: Vec<ProfileChoiceDto>,
         labelled_environment: String,
-        session_locked_safety: String,
+        session_safety: Vec<SessionSafetyDto>,
         max_environment_label_bytes: u32,
+    }
+    struct SessionSafetyDto {
+        code: String,
+        unavailable: String,
     }
     #[derive(Default)]
     struct ProfileSecretDraftsDto {
@@ -1172,6 +1176,7 @@ pub mod ffi {
         timeout_seconds: u32,
         connection_timeout_seconds: u32,
         show_system_schemas: bool,
+        stop_on_first_error: bool,
     }
     #[derive(Default)]
     struct AppearanceLayoutDto {
@@ -1201,6 +1206,11 @@ pub mod ffi {
         max_timeout_seconds: u32,
         default_connection_timeout_seconds: u32,
         max_connection_timeout_seconds: u32,
+        default_stop_on_first_error: bool,
+    }
+    struct RunAllStepDto {
+        stop: bool,
+        message: String,
     }
     #[derive(Default)]
     struct EditorPreferencesDto {
@@ -1474,6 +1484,17 @@ pub mod ffi {
         names: String,
         required: bool,
         choices: Vec<CodeLabelDto>,
+    }
+    #[derive(Debug)]
+    enum TableExportFieldDto {
+        None,
+        Tables,
+        Options,
+        Destination,
+    }
+    struct TableExportErrorDto {
+        field: TableExportFieldDto,
+        message: String,
     }
     #[derive(Debug)]
     enum StructurePaneDto {
@@ -2211,6 +2232,7 @@ pub mod ffi {
             token: u64,
         ) -> Submit;
         fn query_preference_limits() -> QueryPreferenceLimitsDto;
+        fn run_all_step_policy(stop_on_first_error: bool, failed: bool) -> RunAllStepDto;
         fn appearance_layout_get(engine: &mut BridgeEngine, token: u64) -> Submit;
         fn appearance_layout_set(
             engine: &mut BridgeEngine,
@@ -2546,7 +2568,7 @@ pub mod ffi {
         fn table_export_formats() -> Vec<TableExportFormatDto>;
         fn table_export_line_breaks() -> Vec<CodeLabelDto>;
         fn table_export_defaults() -> TableExportRequestDto;
-        fn table_export_error(request: &TableExportRequestDto) -> String;
+        fn table_export_error(request: &TableExportRequestDto) -> TableExportErrorDto;
         fn export_tables(
             engine: &mut BridgeEngine,
             connection: u64,
@@ -2692,6 +2714,14 @@ pub fn new_engine_with_storage(path: &str) -> Box<BridgeEngine> {
         ..Default::default()
     })
 }
+pub(crate) fn drivers() -> Vec<Arc<dyn choscordb_driver_api::DatabaseDriver>> {
+    vec![
+        Arc::new(choscordb_driver_sqlite::SqliteDriver),
+        Arc::new(choscordb_driver_postgres::PostgresDriver),
+        Arc::new(choscordb_driver_mysql::MysqlDriver::new()),
+        Arc::new(choscordb_driver_mysql::MariadbDriver),
+    ]
+}
 fn make_engine(config: EngineConfig) -> Box<BridgeEngine> {
     let result = catch_unwind(|| {
         let credentials: Arc<dyn choscordb_credentials::CredentialStore> =
@@ -2700,16 +2730,7 @@ fn make_engine(config: EngineConfig) -> Box<BridgeEngine> {
             } else {
                 Arc::new(choscordb_credentials::UnavailableStore)
             };
-        Engine::new_with_credentials(
-            config,
-            vec![
-                Arc::new(choscordb_driver_sqlite::SqliteDriver),
-                Arc::new(choscordb_driver_postgres::PostgresDriver),
-                Arc::new(choscordb_driver_mysql::MysqlDriver::new()),
-                Arc::new(choscordb_driver_mysql::MariadbDriver),
-            ],
-            credentials,
-        )
+        Engine::new_with_credentials(config, drivers(), credentials)
     });
     match result {
         Ok(Ok(engine)) => {

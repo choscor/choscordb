@@ -39,14 +39,16 @@ impl From<DriverError> for SaveError {
     }
 }
 impl Reader {
-    pub async fn save(
+    pub async fn save<T: Send + 'static>(
         self,
         handle: Handle,
         destination: std::path::PathBuf,
         max_bytes: usize,
         stopped: impl Fn() -> bool + Send + 'static,
+        lease: T,
     ) -> Result<u64> {
         tokio::task::spawn_blocking(move || {
+            let _lease = lease;
             let reader = self.0.as_ref().expect("reader ownership");
             let mut written = 0;
             crate::document_io::write_atomically_with(&destination, |file| {
@@ -164,5 +166,67 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+    struct FailsAfterFirstChunk;
+    impl DeferredReader for FailsAfterFirstChunk {
+        fn read_chunk(&self, _: Handle, offset: u64, _: usize) -> Result<ValueChunk> {
+            if offset > 0 {
+                return Err(DriverError::new(
+                    ErrorKind::Query,
+                    "server closed the value",
+                ));
+            }
+            Ok(ValueChunk {
+                bytes: vec![1, 2, 3],
+                offset,
+                total_bytes: 9,
+                kind: DeferredKind::Binary,
+            })
+        }
+    }
+    #[tokio::test]
+    async fn a_save_that_fails_after_the_first_chunk_leaves_no_file() {
+        let memory = crate::memory::Memory::new(Default::default()).unwrap();
+        let id = QueryId {
+            slot: 0,
+            generation: 0,
+        };
+        let lease = memory.acquire(id, false).await;
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("value.bin");
+        let error = Reader::new(Arc::new(FailsAfterFirstChunk))
+            .save(id, destination.clone(), 3, || false, lease)
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Query);
+        assert_eq!(error.message, "server closed the value");
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        assert_eq!(memory.usage().used_bytes, 0);
+    }
+    #[tokio::test]
+    async fn a_save_keeps_its_memory_reserved_until_the_worker_ends() {
+        let memory = crate::memory::Memory::new(Default::default()).unwrap();
+        let id = QueryId {
+            slot: 0,
+            generation: 0,
+        };
+        let lease = memory.acquire(id, false).await;
+        let reserved = lease.reserved_bytes();
+        let (started, started_rx) = tokio::sync::oneshot::channel();
+        let (proceed, proceed_rx) = std::sync::mpsc::channel();
+        let reader = Reader::new(Arc::new(Blocking {
+            started: std::sync::Mutex::new(Some(started)),
+            proceed: std::sync::Mutex::new(proceed_rx),
+        }));
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("value.bin");
+        let save = tokio::spawn(reader.save(id, destination.clone(), 1, || false, lease));
+        started_rx.await.unwrap();
+        assert_eq!(memory.usage().used_bytes, reserved);
+        proceed.send(()).unwrap();
+        assert_eq!(save.await.unwrap().unwrap(), 1);
+        assert_eq!(std::fs::read(&destination).unwrap(), [7]);
+        assert_eq!(memory.usage().used_bytes, 0);
     }
 }

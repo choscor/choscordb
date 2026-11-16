@@ -68,6 +68,7 @@ class PreferencesDialog final : public DialogShell {
     QDoubleSpinBox *historyDays_, *historyRecords_;
     QCheckBox* recordHistory_;
     QCheckBox* showSystemSchemas_;
+    QueryPreferences loadedQuery_;
     SqlEditor* preview_;
     QWidget* pages_;
     QLabel* appearanceStatus_ = nullptr;

@@ -1,3 +1,5 @@
+mod structure;
+pub use structure::MysqlStructure;
 mod connection;
 mod editing;
 mod flavor;
@@ -225,6 +227,9 @@ impl DatabaseDriver for MysqlDriver {
     fn id(&self) -> &'static str {
         Flavor::Mysql.id()
     }
+    fn structure_dialect(&self) -> Option<&'static dyn StructureDialect> {
+        Some(&MysqlStructure)
+    }
     fn capabilities(&self) -> DriverCapabilities {
         capabilities()
     }
@@ -239,6 +244,9 @@ impl DatabaseDriver for MysqlDriver {
 impl DatabaseDriver for MariadbDriver {
     fn id(&self) -> &'static str {
         Flavor::Mariadb.id()
+    }
+    fn structure_dialect(&self) -> Option<&'static dyn StructureDialect> {
+        Some(&MysqlStructure)
     }
     fn capabilities(&self) -> DriverCapabilities {
         capabilities()

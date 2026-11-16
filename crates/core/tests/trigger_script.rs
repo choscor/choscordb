@@ -1,4 +1,5 @@
 use choscordb_core::{TriggerScript, TriggerScriptRequest, trigger_script};
+use choscordb_driver_api::ErrorKind;
 
 fn request(driver: &str, table_id: &str, table_name: &str) -> TriggerScriptRequest {
     TriggerScriptRequest {
@@ -44,7 +45,9 @@ fn edit_drops_the_trigger_and_recreates_it_from_its_definition() {
         ..sqlite.clone()
     };
     assert_eq!(
-        trigger_script(TriggerScript::Edit, &missing).unwrap_err(),
+        trigger_script(TriggerScript::Edit, &missing)
+            .unwrap_err()
+            .message,
         "The trigger definition is unavailable."
     );
     let unnamed = TriggerScriptRequest {
@@ -52,7 +55,9 @@ fn edit_drops_the_trigger_and_recreates_it_from_its_definition() {
         ..sqlite
     };
     assert_eq!(
-        trigger_script(TriggerScript::Drop, &unnamed).unwrap_err(),
+        trigger_script(TriggerScript::Drop, &unnamed)
+            .unwrap_err()
+            .message,
         "Choose a trigger."
     );
 }
@@ -83,17 +88,35 @@ fn create_opens_a_template_for_the_table() {
 }
 
 #[test]
-fn invalid_tables_and_drivers_return_a_reason() {
+fn invalid_tables_and_drivers_return_a_typed_error() {
+    assert_eq!(
+        trigger_script(TriggerScript::Create, &request("oracle", "x", "y"))
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
     assert_eq!(
         trigger_script(
             TriggerScript::Create,
             &request("postgres", r#"["main","orders"]"#, "orders")
         )
-        .unwrap_err(),
+        .unwrap_err()
+        .kind,
+        ErrorKind::InvalidInput
+    );
+    assert_eq!(
+        trigger_script(
+            TriggerScript::Create,
+            &request("postgres", r#"["main","orders"]"#, "orders")
+        )
+        .unwrap_err()
+        .message,
         "The selected table has an invalid identity."
     );
     assert_eq!(
-        trigger_script(TriggerScript::Create, &request("oracle", "x", "y")).unwrap_err(),
+        trigger_script(TriggerScript::Create, &request("oracle", "x", "y"))
+            .unwrap_err()
+            .message,
         "This connection cannot manage triggers."
     );
     assert_eq!(TriggerScript::from_code("edit"), Some(TriggerScript::Edit));

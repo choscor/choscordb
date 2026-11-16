@@ -1,6 +1,6 @@
 use choscordb_core::{
-    CsvOptions, ExportFormat, SqlDialect, TableExportDestination, TableExportFormat,
-    TableExportObject, TableExportRequest, plan_table_export,
+    CsvOptions, ExportFormat, SqlDialect, TableExportDestination, TableExportField,
+    TableExportFormat, TableExportObject, TableExportRequest, plan_table_export,
 };
 use std::path::PathBuf;
 
@@ -120,6 +120,7 @@ fn invalid_requests_return_the_reason() {
         (
             request("sqlite", vec![], csv(), folder("{table}")),
             "Choose one or more tables to export.",
+            TableExportField::Tables,
         ),
         (
             request(
@@ -132,6 +133,7 @@ fn invalid_requests_return_the_reason() {
                 folder("{table}"),
             ),
             "Only tables and views can be exported.",
+            TableExportField::Tables,
         ),
         (
             request(
@@ -141,14 +143,17 @@ fn invalid_requests_return_the_reason() {
                 TableExportDestination::File(PathBuf::from("/exports/all.csv")),
             ),
             "Choose a folder to export several tables as CSV, JSON or Excel.",
+            TableExportField::Destination,
         ),
         (
             request("sqlite", two(), csv(), folder("export")),
             "Two tables would write the same file. Add {table} or {schema} to the file name pattern.",
+            TableExportField::Destination,
         ),
         (
             request("sqlite", two(), csv(), folder("x/{table}")),
             "The file name pattern cannot contain a folder.",
+            TableExportField::Destination,
         ),
         (
             request(
@@ -162,6 +167,7 @@ fn invalid_requests_return_the_reason() {
                 folder("{table}"),
             ),
             "Choose structure, drop or data for the SQL export.",
+            TableExportField::Options,
         ),
         (
             request(
@@ -174,10 +180,13 @@ fn invalid_requests_return_the_reason() {
                 folder("{table}"),
             ),
             "The delimiter and the quote must be different.",
+            TableExportField::Options,
         ),
     ];
-    for (request, message) in cases {
-        assert_eq!(plan_table_export(&request).unwrap_err(), message);
+    for (request, message, field) in cases {
+        let error = plan_table_export(&request).unwrap_err();
+        assert_eq!(error.message, message);
+        assert_eq!(error.field, field);
     }
 }
 

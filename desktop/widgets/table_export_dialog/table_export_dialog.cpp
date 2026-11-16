@@ -83,10 +83,11 @@ TableExportDialog::TableExportDialog(EngineAdapter* adapter, quint64 connection,
         item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
         item->setCheckState(Qt::Checked);
     }
-    connect(tables_, &QListWidget::itemChanged, this, [this] { validation_->setError({}); });
+    tablesValidation_ = new design::FieldValidation(tables_, this);
+    connect(tables_, &QListWidget::itemChanged, this, [this] { tablesValidation_->setError({}); });
 
     auto* form = sections->addForm();
-    sections->addFormRow(form, tr("Tables"), tables_);
+    sections->addFormRow(form, tr("Tables"), tablesValidation_);
     sections->addFormRow(form, tr("Format"), format_);
     auto* csvLayout = new QVBoxLayout(csvFields_);
     csvLayout->setContentsMargins(0, 0, 0, 0);
@@ -195,8 +196,9 @@ void TableExportDialog::start() {
         return;
     const auto current = request();
     const auto error = EngineAdapter::tableExportError(current);
-    if (!error.isEmpty()) {
-        validation_->setError(error);
+    if (!error.message.isEmpty()) {
+        (error.field == TableExportField::Tables ? tablesValidation_ : validation_)
+            ->setError(error.message);
         return;
     }
     if (!apply(ExportEvent::Submit, tr("Starting export…")))

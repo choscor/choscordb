@@ -232,6 +232,7 @@ EngineAdapter::EngineAdapter(QObject* parent, const QString& storagePath)
             preferences.connectionTimeoutSeconds =
                 event.query_preferences.connection_timeout_seconds;
             preferences.showSystemSchemas = event.query_preferences.show_system_schemas;
+            preferences.stopOnFirstError = event.query_preferences.stop_on_first_error;
             d_->connectionTimeoutSeconds = preferences.connectionTimeoutSeconds;
             emit queryPreferencesReady(event.request_token, preferences);
         } else if (kind == "databases") {

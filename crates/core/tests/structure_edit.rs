@@ -1,7 +1,7 @@
 use choscordb_core::{Engine, Event, structure_edit_unavailable};
 use choscordb_driver_api::{
-    ConnectionOptions, GridEditDriver, StructureChange, StructureChangeKind, StructureColumn,
-    StructureTable, plan_structure,
+    ConnectionOptions, DatabaseDriver, GridEditDriver, StructureChange, StructureChangeKind,
+    StructureColumn, StructureTable, plan_structure,
 };
 use choscordb_driver_sqlite::SqliteDriver;
 use std::collections::BTreeMap;
@@ -83,8 +83,23 @@ fn planned_structure_changes_apply_in_order_and_name_the_failed_statement() {
         indexes: vec![],
         keys: vec![],
     };
+    let sqlite = SqliteDriver.structure_dialect().unwrap();
+    assert_eq!(
+        plan_structure(
+            &table,
+            sqlite,
+            &[change(
+                StructureChangeKind::PrimaryKey,
+                &[("columns", "id")]
+            )],
+        )
+        .unwrap_err()
+        .to_string(),
+        "Change 1: SQLite needs a table rebuild for this change."
+    );
     let statements = plan_structure(
         &table,
+        sqlite,
         &[
             change(
                 StructureChangeKind::AddColumn,
