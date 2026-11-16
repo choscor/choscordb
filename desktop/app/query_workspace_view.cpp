@@ -201,6 +201,8 @@ void QueryWorkspace::setupResultViewControls() {
                               .toString();
         connect(menu.addAction(tr("Copy column name")), &QAction::triggered, this,
                 [name] { QGuiApplication::clipboard()->setText(name); });
+        connect(menu.addAction(tr("Hide column")), &QAction::triggered, this,
+                [this, name] { setColumnHidden(name, true); });
         auto* columns = menu.addMenu(tr("Columns"));
         columns->setObjectName("resultColumnsMenu");
         populateColumnMenu(*columns);

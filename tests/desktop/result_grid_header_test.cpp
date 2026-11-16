@@ -4,6 +4,8 @@
 #include "models/result_table_model.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
+#include <QApplication>
+#include <QContextMenuEvent>
 #include <QHeaderView>
 #include <QMenu>
 #include <QPlainTextEdit>
@@ -110,6 +112,30 @@ class ResultGridHeaderTest : public QObject {
                     .contains("The result must show at least one column"));
         chooseColumn(grid, "Show all columns");
         QVERIFY(!header->isSectionHidden(1));
+    }
+    void headerMenuHidesTheClickedColumn() {
+        choscordb::MainWindow window;
+        auto* grid = runQuery(window, "SELECT 1 AS a, 2 AS b");
+        QVERIFY(grid);
+        QTRY_COMPARE(grid->model()->rowCount(), 1);
+        auto* header = grid->horizontalHeader();
+        QTimer pick;
+        connect(&pick, &QTimer::timeout, grid, [] {
+            auto* menu = qobject_cast<QMenu*>(choscordb::design::detail::activeEmbeddedPopup());
+            if (!menu || menu->objectName() != "resultHeaderMenu")
+                return;
+            for (auto* action : menu->actions())
+                if (action->text() == "Hide column")
+                    action->trigger();
+            menu->close();
+        });
+        pick.start(10);
+        const QPoint point(header->sectionViewportPosition(1) + 10, 5);
+        QContextMenuEvent event(QContextMenuEvent::Mouse, point,
+                                header->viewport()->mapToGlobal(point));
+        QApplication::sendEvent(header->viewport(), &event);
+        QTRY_VERIFY(header->isSectionHidden(1));
+        QVERIFY(!header->isSectionHidden(0));
     }
 };
 
