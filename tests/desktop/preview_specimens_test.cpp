@@ -770,6 +770,33 @@ void PreviewTest::modalSpecimenNamesTheDialogSurface() {
     QCOMPARE(selector->currentText(), QString("Modal dialog"));
 }
 
+void PreviewTest::documentTabScrollButtonsAreSquareOnTheBaseSurface() {
+    choscordb::design::PreviewWindow window;
+    QVERIFY(window.selectSpecimen("tabs"));
+    window.resize(720, window.height());
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    for (const auto* theme : {"previewLight", "previewDark"}) {
+        auto* host = window.findChild<QWidget*>(theme);
+        QVERIFY(host);
+        auto* bar = host->findChild<QTabWidget*>()->tabBar();
+        QList<QToolButton*> scrollers;
+        for (auto* button : bar->findChildren<QToolButton*>())
+            if (button->isVisible())
+                scrollers << button;
+        QCOMPARE(scrollers.size(), 2);
+        const auto colors = choscordb::design::resolvedThemeForWidget(*bar).colors;
+        for (auto* button : std::as_const(scrollers)) {
+            QCOMPARE(button->width(),
+                     choscordb::design::dimension(choscordb::design::Dimension::DocumentTab));
+            QCOMPARE(button->height(), bar->height());
+            const auto pixels = button->grab().toImage();
+            QCOMPARE(pixels.pixelColor(button->width() / 2, 2), colors.base);
+            QVERIFY(pixels.pixelColor(0, button->height() / 2) != colors.base);
+        }
+    }
+}
+
 void PreviewTest::documentTabSpecimenShowsFixedWidthTabsInBothThemes() {
     choscordb::design::PreviewWindow window;
     QVERIFY(window.selectSpecimen("tabs"));

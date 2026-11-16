@@ -65,6 +65,24 @@ QTabBar[designTabVariant="document"]::tab:hover {
   background: @kumo-tint;
 }
 
+QTabBar[designTabVariant="document"] QToolButton {
+  min-height: @document-tab-height;
+  max-height: none;
+  border: 0;
+  border-left: 1px solid @kumo-line;
+  border-radius: 0;
+  padding: 0;
+  background: @kumo-base;
+}
+
+QTabBar[designTabVariant="document"] QToolButton:hover {
+  background: @kumo-tint;
+}
+
+QTabBar[designTabVariant="document"] QToolButton:disabled {
+  background: @kumo-base;
+}
+
 QTabBar::tab:hover {
   color: @text-kumo-default;
 }

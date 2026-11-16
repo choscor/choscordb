@@ -165,6 +165,8 @@ Each `::item` rule of a list, tree or table view sets `border: none`. Qt 6.8 ign
 Desktop tests measure the rendered text inset of a table cell, a list row and a tree row.
 Document tabs are Kumo `underline` tabs on `kumo-base`, with `Body` text at weight 500.
 The current document tab has a 2px `kumo-brand` bottom indicator. A hovered tab is `kumo-tint`.
+When the tabs overflow, the scroll buttons are squares of `DocumentTab` size on `kumo-base`, with a `kumo-line` left border.
+A hovered scroll button is `kumo-tint`. The scroll buttons hide the tab text below them.
 Pane tabs are a Kumo `segmented` control, with `Body` text at weight 500.
 The track is `kumo-recessed` at `Large`, and it has the size of its tabs.
 The selected tab is a `kumo-base` segment at `Medium` with a `kumo-line` ring and an inset of `Half`.

@@ -15,6 +15,7 @@ class PreviewTest final : public QObject {
     void recentHistoryRowsUseSharedDelegateInBothThemes();
     void sectionLabelSpecimenUsesTheKumoGroupLabelInBothThemes();
     void editorResultsSplitUsesEqualPanesInBothThemes();
+    void documentTabScrollButtonsAreSquareOnTheBaseSurface();
     void documentTabSpecimenShowsFixedWidthTabsInBothThemes();
     void documentTabContentsSitAtVerticalCenterInBothThemes();
     void documentTabsShowKeyboardFocusInBothThemes();
