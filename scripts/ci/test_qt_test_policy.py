@@ -90,6 +90,28 @@ class QtTestPolicyTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_rejects_a_completion_request_before_the_editor_has_focus(self):
+        result = self.check(
+            "editor->setFocus();\n"
+            "auto* popup = completion->popup();\n"
+            "completion->requestCompletion();\n"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "tests/desktop/sample_test.cpp:3: requestCompletion needs the editor focus "
+            "(wait with QTRY_VERIFY(editor->hasFocus()) after setFocus)",
+            result.stderr,
+        )
+
+    def test_accepts_a_completion_request_after_a_focus_wait(self):
+        result = self.check(
+            "editor->setFocus();\n"
+            "QTRY_VERIFY(editor->hasFocus());\n"
+            "completion->requestCompletion();\n"
+            "completion->requestCompletion();\n"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

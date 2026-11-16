@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[2]
 PARTIAL_READ = re.compile(r"\bwaitForReadyRead\s*\(")
 SPINNER_TURN = re.compile(r"\bisTurning\s*\(")
 MOTION_POLICY = re.compile(r"\b(?:setReducedMotion|reducedMotion)\b")
+FOCUS_REQUEST = re.compile(r"\b(\w+)\s*(?:\.|->)\s*setFocus\s*\(")
+FOCUS_WAIT = re.compile(r"\bhasFocus\s*\(")
+COMPLETION_REQUEST = re.compile(r"\brequestCompletion\s*\(")
 FILE_CALL = re.compile(r"\b(\w+)\s*(?:\.|->)\s*(write|flush|close|setFileTime)\s*\(")
 
 
@@ -24,7 +27,18 @@ def violations(root):
         lines = text.splitlines()
         sets_motion_policy = MOTION_POLICY.search(text) is not None
         unflushed = set()
+        unfocused = None
         for line_number, line in enumerate(lines, 1):
+            if focus := FOCUS_REQUEST.search(line):
+                unfocused = focus.group(1)
+            elif FOCUS_WAIT.search(line):
+                unfocused = None
+            elif COMPLETION_REQUEST.search(line) and unfocused:
+                problems.append(
+                    f"{path.relative_to(root).as_posix()}:{line_number}: requestCompletion "
+                    f"needs the editor focus (wait with QTRY_VERIFY({unfocused}->hasFocus()) "
+                    "after setFocus)"
+                )
             if SPINNER_TURN.search(line) and not sets_motion_policy:
                 problems.append(
                     f"{path.relative_to(root).as_posix()}:{line_number}: isTurning depends on "

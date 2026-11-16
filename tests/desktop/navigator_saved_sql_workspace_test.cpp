@@ -350,6 +350,7 @@ void NavigatorSqlWorkspaceTest::savedQueryFoldersSortAndKeywordSnippets() {
     editor->setText("pick");
     editor->SendScintilla(QsciScintilla::SCI_GOTOPOS, 4L);
     editor->setFocus();
+    QTRY_VERIFY(editor->hasFocus());
     auto* completion = window.findChild<choscordb::EditorCompletionController*>();
     QVERIFY(completion);
     auto* popup = completion->findChild<QCompleter*>()->popup();
