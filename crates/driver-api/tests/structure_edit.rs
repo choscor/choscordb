@@ -355,7 +355,7 @@ fn changes_are_validated_before_any_sql_is_built() {
                     ("default", "1; DROP TABLE people"),
                 ],
             ),
-            "The default expression cannot contain ;, --, /*, # or a backslash. A $ must be in a string, and a comma in a string or parentheses.",
+            "The default expression cannot contain ;, --, /*, # or a backslash. Its strings and parentheses must close. A $ must be in a string, and a comma in a string or parentheses.",
         ),
         (
             change(
@@ -373,7 +373,7 @@ fn changes_are_validated_before_any_sql_is_built() {
                     ("default", "1, DROP COLUMN name"),
                 ],
             ),
-            "The default expression cannot contain ;, --, /*, # or a backslash. A $ must be in a string, and a comma in a string or parentheses.",
+            "The default expression cannot contain ;, --, /*, # or a backslash. Its strings and parentheses must close. A $ must be in a string, and a comma in a string or parentheses.",
         ),
         (
             change(K::AddColumn, &[("type", "int")]),
@@ -401,6 +401,9 @@ fn changes_are_validated_before_any_sql_is_built() {
         "0 # hidden",
         "\"'\", DROP COLUMN name, ADD COLUMN z INT DEFAULT \"'\"",
         "$$'$$, DROP COLUMN name, ADD COLUMN z text DEFAULT $$'$$",
+        "(1",
+        "1)",
+        "'open",
     ] {
         assert_eq!(
             error(
@@ -410,7 +413,7 @@ fn changes_are_validated_before_any_sql_is_built() {
                     &[("name", "x"), ("type", "int"), ("default", default)],
                 )]
             ),
-            "Change 1: The default expression cannot contain ;, --, /*, # or a backslash. A $ must be in a string, and a comma in a string or parentheses.",
+            "Change 1: The default expression cannot contain ;, --, /*, # or a backslash. Its strings and parentheses must close. A $ must be in a string, and a comma in a string or parentheses.",
             "{default}"
         );
     }

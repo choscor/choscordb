@@ -366,13 +366,14 @@ fn hides_more_sql(text: &str) -> bool {
             (Some(_), _) => {}
             (None, '\'' | '"') => quote = Some(c),
             (None, '(') => depth += 1,
-            (None, ')') => depth = depth.saturating_sub(1),
+            (None, ')') if depth == 0 => return true,
+            (None, ')') => depth -= 1,
             (None, ',') if depth == 0 => return true,
             (None, '$') => return true,
             _ => {}
         }
     }
-    false
+    depth > 0 || quote.is_some()
 }
 
 fn data_type(text: &str) -> Checked<String> {
@@ -399,7 +400,7 @@ fn expression(text: &str) -> Checked<String> {
         || hides_more_sql(text)
     {
         return Err(
-            "The default expression cannot contain ;, --, /*, # or a backslash. A $ must be in a string, and a comma in a string or parentheses."
+            "The default expression cannot contain ;, --, /*, # or a backslash. Its strings and parentheses must close. A $ must be in a string, and a comma in a string or parentheses."
                 .into(),
         );
     }
