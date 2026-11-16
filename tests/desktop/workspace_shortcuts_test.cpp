@@ -64,7 +64,7 @@ class WorkspaceShortcutsTest : public QObject {
             {"new_query", {"Ctrl+N"}}, {"open_sql_file", {"Ctrl+O"}}, {"save_sql_file", {"Ctrl+S"}},
             {"find", {"Ctrl+F"}},      {"preferences", {}},
         };
-        const Bindings unix = {
+        const Bindings unixLike = {
             {"close_tab", {"Ctrl+W"}},
             {"quit", {"Ctrl+Q"}},
             {"undo", {"Ctrl+Z", "F14"}},
@@ -94,11 +94,11 @@ class WorkspaceShortcutsTest : public QObject {
                                   {"find_next", {"F3", "Ctrl+G"}},
                                   {"find_previous", {"Shift+F3", "Ctrl+Shift+G"}},
                                   {"replace", {"Ctrl+H"}}})},
-            {"X11", with(unix, {})},
-            {"KDE", with(unix, {{"replace", {"Ctrl+H"}}})},
-            {"GNOME", with(unix, {{"find_next", {"Ctrl+G", "F3"}},
-                                  {"find_previous", {"Ctrl+Shift+G", "Shift+F3"}},
-                                  {"replace", {"Ctrl+H"}}})},
+            {"X11", with(unixLike, {})},
+            {"KDE", with(unixLike, {{"replace", {"Ctrl+H"}}})},
+            {"GNOME", with(unixLike, {{"find_next", {"Ctrl+G", "F3"}},
+                                      {"find_previous", {"Ctrl+Shift+G", "Shift+F3"}},
+                                      {"replace", {"Ctrl+H"}}})},
             {"macOS", with({}, {{"close_tab", {"Ctrl+W", "Ctrl+F4"}},
                                 {"quit", {"Ctrl+Q"}},
                                 {"undo", {"Ctrl+Z"}},

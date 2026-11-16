@@ -30,7 +30,7 @@ To run one stage, give its name, for example `python3 scripts/ci/quality.py ui-p
 | --- | --- |
 | `cpp-format` | `clang-format --dry-run --Werror` on the C, C++ and Objective-C++ files in `desktop/` and `tests/`. Needs LLVM 23. |
 | `cpp-size` | Each of these files has 1,000 lines or fewer. |
-| `qt-test-policy` | A C++ test does not use `waitForReadyRead`. A test that checks `isTurning()` sets the motion policy (`scripts/ci/qt_test_policy.py`). |
+| `qt-test-policy` | A C++ test does not use `waitForReadyRead`. A test that checks `isTurning()` sets the motion policy. A test flushes a file before `setFileTime` (`scripts/ci/qt_test_policy.py`). |
 | `cpp-ownership` | The Rust and C++ ownership boundary. |
 | `qss-lint` | Qt stylesheet rules (`scripts/ci/qss_policy.py`). An `::item` rule of a list, tree or table view with padding must also set a border or a background. Qt 6.8 ignores the padding of a table item without one. |
 | `ui-policy` | Visual constants, stylesheets, icons and ad-hoc empty or failed labels in screen code. Also mnemonics outside menu bar titles, em dash separators, generic `Success` toast titles, error text that starts with `Failed to`, that has `Unable to`, or that has `failed.` or `failed:`, the terms that `docs/style-guide.md` does not permit, placeholders that give an instruction, search placeholders without a final `…`, `metrics.h` and `fonts.h` enum values with no caller outside their definition files, a member read from `value<T>()` of a temporary `QVariant`, a header other than a `tools/` header in a `CHOSCORDB_DEVELOPMENT_PREVIEW` block, and stock buttons or literal sizes in the gallery (`scripts/ci/ui_policy.py`). |
@@ -209,6 +209,8 @@ It also rejects an `isTurning()` check in a file that does not set the motion po
 The platform monitor reads the reduced-motion setting of the host.
 The hosted macOS and Windows runners turn on reduced motion, and a spinner does not turn then.
 Call `ThemeManager::setReducedMotion` or set the `reducedMotion` field of the theme before the check.
+It also rejects `setFileTime` after a `write` on the same file without `flush()` between them.
+QFile keeps the written bytes in a buffer. The later flush sets the modification time to the current time again.
 
 There is no exception list.
 If a file becomes too large, split it by responsibility.
@@ -391,6 +393,10 @@ cmake --preset iwyu && cmake --build --preset iwyu --target choscordb-iwyu
 `CHOSCORDB_ENABLE_STRICT_WARNINGS` is on by default.
 Strict compilation uses `/W4 /WX` on MSVC.
 On GCC and Clang, it uses `-Wall -Wextra -Wpedantic -Werror`.
+Clang also uses `-Wmissing-designated-field-initializers`. GCC reports a designated initializer that skips a field, but `-Wextra` on Clang does not.
+Thus a macOS build finds the error before the Linux build does.
+On macOS, the build also defines the `unix` and `linux` macros, as GCC on Linux does.
+Thus a name that collides with these macros fails on macOS too.
 The clang-tidy profile in `.clang-tidy` uses analyzer, bugprone, performance and portability checks.
 It also uses reviewed modernize and core-guideline checks.
 

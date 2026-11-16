@@ -288,7 +288,8 @@ void NavigatorSqlWorkspaceTest::savedQueryFoldersSortAndKeywordSnippets() {
     const auto write = [&](const char* name, const char* sql, int ageSeconds) {
         QFile file(storage.filePath(QStringLiteral("sql/") + name));
         QVERIFY(file.open(QIODevice::WriteOnly));
-        file.write(sql);
+        QCOMPARE(file.write(sql), qint64(qstrlen(sql)));
+        QVERIFY(file.flush());
         QVERIFY(file.setFileTime(QDateTime::currentDateTime().addSecs(-ageSeconds),
                                  QFileDevice::FileModificationTime));
     };

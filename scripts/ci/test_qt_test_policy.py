@@ -64,6 +64,32 @@ class QtTestPolicyTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_rejects_a_file_time_set_before_the_buffered_write_reaches_the_file(self):
+        result = self.check(
+            "QFile file(path);\n"
+            "QVERIFY(file.open(QIODevice::WriteOnly));\n"
+            "file.write(sql);\n"
+            "QVERIFY(file.setFileTime(old, QFileDevice::FileModificationTime));\n"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            result.stderr.splitlines(),
+            [
+                "tests/desktop/sample_test.cpp:4: setFileTime after an unflushed write "
+                "is lost when QFile flushes its buffer (call file.flush() first)"
+            ],
+        )
+
+    def test_accepts_a_file_time_set_after_a_flush(self):
+        result = self.check(
+            "file.write(sql);\n"
+            "QVERIFY(file.flush());\n"
+            "QVERIFY(file.setFileTime(old, QFileDevice::FileModificationTime));\n"
+            "other.write(sql);\n"
+            "QVERIFY(file.setFileTime(old, QFileDevice::FileModificationTime));\n"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

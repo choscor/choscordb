@@ -6,7 +6,7 @@
 namespace choscordb {
 
 struct ObjectActionRequest {
-    QString action, driver, kind, objectId, qualifiedName, newName, relationSubtype;
+    QString action{}, driver{}, kind{}, objectId{}, qualifiedName{}, newName{}, relationSubtype{};
     bool cascade = false, restartIdentity = false, withData = false;
 };
 
