@@ -341,6 +341,26 @@ class EditorCompletionTest : public QObject {
         editor.undo();
         QCOMPARE(editor.text(), QString("SELECT * FROM main.é"));
     }
+    void catalogRefreshKeepsTheRequestedCompletion() {
+        choscordb::SqlEditor editor;
+        editor.show();
+        editor.setFocus();
+        QTRY_VERIFY(editor.hasFocus());
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
+        controller.setEditor(&editor);
+        editor.setText("pick");
+        editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 4L);
+        QCoreApplication::processEvents();
+        controller.requestCompletion();
+        controller.setCatalog(choscordb::CompletionService({{"pick_a", "SELECT 'a';", "snippet"}}));
+        auto* completer = controller.findChild<QCompleter*>();
+        QTRY_VERIFY(completer->popup()->isVisible());
+        QVERIFY(completer->completionModel()->index(0, 0).data().toString().startsWith("pick_a"));
+        controller.setCatalog(choscordb::CompletionService({{"pick_b", "SELECT 'b';", "snippet"}}));
+        QTRY_VERIFY(
+            completer->popup()->isVisible() &&
+            completer->completionModel()->index(0, 0).data().toString().startsWith("pick_b"));
+    }
 };
 QTEST_MAIN(EditorCompletionTest)
 #include "editor_completion_test.moc"

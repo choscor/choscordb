@@ -69,11 +69,14 @@ void EditorCompletionController::setEditor(SqlEditor* editor) {
     }));
 }
 void EditorCompletionController::setCatalog(CompletionService service) {
+    const bool active = pending_ || completer_->popup()->isVisible();
     dismiss();
     timer_->stop();
     pending_ = false;
     service_ = std::move(service);
     emit partialCatalog(false);
+    if (active)
+        requestCompletion(requested_);
 }
 void EditorCompletionController::requestCompletion(bool requested) {
     dismiss();

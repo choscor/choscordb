@@ -355,7 +355,13 @@ void NavigatorSqlWorkspaceTest::savedQueryFoldersSortAndKeywordSnippets() {
     QVERIFY(completion);
     auto* popup = completion->findChild<QCompleter*>()->popup();
     completion->requestCompletion();
-    QTRY_VERIFY(popup->isVisible());
+    QTRY_VERIFY2(popup->isVisible(),
+                 qPrintable(QString("focus=%1 cursor=%2 anchor=%3 rows=%4 text=%5")
+                                .arg(editor->hasFocus())
+                                .arg(editor->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS))
+                                .arg(editor->SendScintilla(QsciScintilla::SCI_GETANCHOR))
+                                .arg(popup->model()->rowCount())
+                                .arg(editor->text())));
     QVERIFY2(popup->model()->index(0, 0).data().toString().startsWith("pick_a"),
              qPrintable(popup->model()->index(0, 0).data().toString()));
     QTest::keyClick(popup, Qt::Key_Return);
