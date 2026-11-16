@@ -1,7 +1,7 @@
 use choscordb_core::{Engine, Event, structure_edit_unavailable};
 use choscordb_driver_api::{
-    ConnectionOptions, DatabaseDriver, GridEditDriver, StructureChange, StructureChangeKind,
-    StructureColumn, StructureTable, plan_structure,
+    ConnectionOptions, DatabaseDriver, StructureChange, StructureChangeKind, StructureColumn,
+    StructureTable, plan_structure,
 };
 use choscordb_driver_sqlite::SqliteDriver;
 use std::collections::BTreeMap;
@@ -65,7 +65,6 @@ fn planned_structure_changes_apply_in_order_and_name_the_failed_statement() {
         matches!(event, Event::Connected { .. })
     });
     let table = StructureTable {
-        driver: GridEditDriver::Sqlite,
         qualified_name: "\"main\".\"people\"".into(),
         new_table: false,
         columns: vec![

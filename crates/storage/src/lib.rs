@@ -268,6 +268,9 @@ impl SafetyLevel {
             "Edit the connection to set Read-only. The connection then rejects all writes.",
         )
     }
+    pub fn locks_session(self) -> bool {
+        self == Self::ReadOnly
+    }
     pub fn name(self) -> &'static str {
         match self {
             Self::Silent => "Silent",

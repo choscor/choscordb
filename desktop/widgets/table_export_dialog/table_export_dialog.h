@@ -61,6 +61,7 @@ class TableExportDialog final : public DialogShell {
     QLineEdit* pattern_;
     QListWidget* tables_;
     design::FieldValidation* tablesValidation_ = nullptr;
+    design::FieldValidation* optionsValidation_ = nullptr;
     design::FieldValidation* validation_;
     design::StatusLine* statusLine_ = nullptr;
     design::Button* cancel_ = nullptr;

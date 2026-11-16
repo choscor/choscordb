@@ -1,7 +1,10 @@
-use choscordb_driver_api::{StructureChangeKind, StructureDialect};
+use choscordb_driver_api::{GridEditDriver, StructureChangeKind, StructureDialect};
 
 pub struct PostgresStructure;
 impl StructureDialect for PostgresStructure {
+    fn sql(&self) -> GridEditDriver {
+        GridEditDriver::Postgres
+    }
     fn column_types(&self) -> &'static [&'static str] {
         &[
             "integer",

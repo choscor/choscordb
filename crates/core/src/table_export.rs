@@ -1,5 +1,5 @@
 use crate::object_action::{ObjectAction, object_display_identity, prepare_object_action};
-use choscordb_driver_api::ObjectId;
+use choscordb_driver_api::{GridEditDriver, ObjectId};
 use choscordb_export::{CsvOptions, ExportFormat, SqlDialect};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -71,12 +71,9 @@ pub struct TableExportTarget {
 }
 
 fn sql_dialect(driver: &str) -> Result<SqlDialect, String> {
-    match driver {
-        "sqlite" => Ok(SqlDialect::Sqlite),
-        "postgres" => Ok(SqlDialect::Postgres),
-        "mysql" | "mariadb" => Ok(SqlDialect::Mysql),
-        _ => Err("This connection cannot export tables as SQL.".into()),
-    }
+    GridEditDriver::from_id(driver)
+        .map(SqlDialect::from)
+        .ok_or_else(|| "This connection cannot export tables as SQL.".into())
 }
 
 fn file_name_part(value: &str) -> String {

@@ -70,13 +70,12 @@ pub struct DatabaseActionRequest {
 }
 
 fn driver(name: &str) -> Result<GridEditDriver, DriverError> {
-    match name {
-        "postgres" => Ok(GridEditDriver::Postgres),
-        "mysql" | "mariadb" => Ok(GridEditDriver::Mysql),
-        "sqlite" => Err(unsupported(
+    match GridEditDriver::from_id(name) {
+        Some(GridEditDriver::Sqlite) => Err(unsupported(
             "SQLite keeps each database in its own file. Create, rename or delete the file instead.",
         )),
-        _ => Err(unsupported("This connection cannot manage databases.")),
+        Some(driver) => Ok(driver),
+        None => Err(unsupported("This connection cannot manage databases.")),
     }
 }
 

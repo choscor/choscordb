@@ -12,6 +12,22 @@ type ForeignKeyCatalogRow = (
     Option<String>,
 );
 
+async fn only_duplicates_skipped(
+    tx: &mut mysql_async::Transaction<'_>,
+    affected: u64,
+) -> Result<()> {
+    const DUPLICATE_KEY: u32 = 1062;
+    let warnings: Vec<(String, u32, String)> =
+        tx.query("SHOW WARNINGS").await.map_err(normalize)?;
+    match warnings
+        .into_iter()
+        .find(|(_, code, _)| affected > 0 || *code != DUPLICATE_KEY)
+    {
+        None => Ok(()),
+        Some((_, _, message)) => Err(error(ErrorKind::Query, &message)),
+    }
+}
+
 pub(crate) async fn inspect_target(
     conn: &mut Conn,
     flavor: Flavor,
@@ -400,10 +416,16 @@ pub(crate) async fn apply_stream(
                 let index = affected_rows.len();
                 let (sql, params, expected) =
                     edit_statement(edit).map_err(|failure| failure.at_statement(index))?;
+                let ignores_duplicates = sql.starts_with("INSERT IGNORE ");
                 tx.exec_drop(sql, mysql_async::Params::Positional(params))
                     .await
                     .map_err(|failure| normalize(failure).at_statement(index))?;
                 let count = tx.affected_rows();
+                if ignores_duplicates && tx.get_warnings() > 0 {
+                    only_duplicates_skipped(&mut tx, count)
+                        .await
+                        .map_err(|failure| failure.at_statement(index))?;
+                }
                 if expected.is_some_and(|expected| expected != count) {
                     return Err(error(
                         ErrorKind::Query,

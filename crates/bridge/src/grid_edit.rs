@@ -5,12 +5,7 @@ use choscordb_driver_api::{
 };
 
 pub(crate) fn grid_driver(name: &str) -> Result<GridEditDriver, GridEditError> {
-    match name {
-        "sqlite" => Ok(GridEditDriver::Sqlite),
-        "postgres" | "postgresql" => Ok(GridEditDriver::Postgres),
-        "mysql" | "mariadb" => Ok(GridEditDriver::Mysql),
-        _ => Err(GridEditError::UnsupportedTarget),
-    }
+    GridEditDriver::from_id(name).ok_or(GridEditError::UnsupportedTarget)
 }
 
 pub fn grid_binary_column_policy(database_type: &str) -> bool {

@@ -756,11 +756,19 @@ const ProfileTagOptions& EngineAdapter::profileTagOptions() {
             return output;
         };
         QHash<QString, QString> sessionSafety;
-        for (const auto& rule : dto.session_safety)
+        QSet<QString> sessionLocking;
+        for (const auto& rule : dto.session_safety) {
             sessionSafety.insert(fromRust(rule.code), fromRust(rule.unavailable));
-        return ProfileTagOptions{choices(dto.environments),           choices(dto.colors),
-                                 choices(dto.safety_levels),          choices(dto.safety_names),
-                                 fromRust(dto.labelled_environment),  sessionSafety,
+            if (rule.locks_session)
+                sessionLocking.insert(fromRust(rule.code));
+        }
+        return ProfileTagOptions{choices(dto.environments),
+                                 choices(dto.colors),
+                                 choices(dto.safety_levels),
+                                 choices(dto.safety_names),
+                                 fromRust(dto.labelled_environment),
+                                 sessionSafety,
+                                 sessionLocking,
                                  int(dto.max_environment_label_bytes)};
     }();
     return options;

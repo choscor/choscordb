@@ -1,7 +1,10 @@
-use choscordb_driver_api::{StructureChangeKind, StructureDialect};
+use choscordb_driver_api::{GridEditDriver, StructureChangeKind, StructureDialect};
 
 pub struct MysqlStructure;
 impl StructureDialect for MysqlStructure {
+    fn sql(&self) -> GridEditDriver {
+        GridEditDriver::Mysql
+    }
     fn column_types(&self) -> &'static [&'static str] {
         &[
             "INT",

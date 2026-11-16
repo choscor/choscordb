@@ -1611,17 +1611,63 @@ async fn table_children_list_triggers_with_timing_event_and_definition() {
                 "after".to_string(),
                 "AFTER".to_string(),
                 "UPDATE".to_string(),
-                "CREATE TRIGGER \"after\" AFTER UPDATE OF total ON orders BEGIN INSERT INTO audit VALUES (NEW.id); END".to_string()
+                "CREATE TRIGGER \"main\".\"after\" AFTER UPDATE OF total ON orders BEGIN INSERT INTO audit VALUES (NEW.id); END".to_string()
             ),
             (
                 r#"["main","orders","trigger","guard"]"#.to_string(),
                 "guard".to_string(),
                 "BEFORE".to_string(),
                 "DELETE".to_string(),
-                "CREATE TRIGGER guard BEFORE DELETE ON orders BEGIN SELECT RAISE(ABORT, 'no'); END".to_string()
+                "CREATE TRIGGER \"main\".\"guard\" BEFORE DELETE ON orders BEGIN SELECT RAISE(ABORT, 'no'); END".to_string()
             ),
         ]
     );
+}
+#[tokio::test]
+async fn a_trigger_in_an_attached_schema_is_recreated_in_that_schema_from_its_definition() {
+    let mut c = connect().await;
+    for sql in [
+        "ATTACH ':memory:' AS aux",
+        "CREATE TABLE main.orders (id INTEGER)",
+        "CREATE TABLE aux.orders (id INTEGER)",
+        "CREATE TRIGGER IF NOT EXISTS aux.[odd \"name] AFTER INSERT ON orders BEGIN SELECT 1; END",
+    ] {
+        run(&mut c, sql, false).await;
+    }
+    let children = c
+        .load_metadata(Some(ObjectId(r#"["aux","orders"]"#.into())))
+        .await
+        .unwrap();
+    let trigger = children
+        .iter()
+        .find(|child| child.kind == ObjectKind::Trigger)
+        .unwrap();
+    let definition = trigger
+        .properties
+        .iter()
+        .find(|property| property.name == "Definition")
+        .map(|property| property.value.to_string())
+        .unwrap();
+    assert_eq!(
+        definition,
+        "CREATE TRIGGER \"aux\".\"odd \"\"name\" AFTER INSERT ON orders BEGIN SELECT 1; END"
+    );
+    run(&mut c, "DROP TRIGGER aux.[odd \"name]", false).await;
+    run(&mut c, &definition, false).await;
+    let after = c
+        .load_metadata(Some(ObjectId(r#"["aux","orders"]"#.into())))
+        .await
+        .unwrap();
+    assert!(
+        after
+            .iter()
+            .any(|child| child.kind == ObjectKind::Trigger && child.name == "odd \"name")
+    );
+    let main = c
+        .load_metadata(Some(ObjectId(r#"["main","orders"]"#.into())))
+        .await
+        .unwrap();
+    assert!(!main.iter().any(|child| child.kind == ObjectKind::Trigger));
 }
 #[tokio::test]
 async fn schema_graph_lists_every_table_and_foreign_key() {

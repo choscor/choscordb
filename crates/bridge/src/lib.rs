@@ -613,6 +613,7 @@ pub mod ffi {
     struct SessionSafetyDto {
         code: String,
         unavailable: String,
+        locks_session: bool,
     }
     #[derive(Default)]
     struct ProfileSecretDraftsDto {

@@ -147,3 +147,28 @@ fn folders_are_created_inside_the_root_only() {
         "The parent folder is not in the saved SQL folder."
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_file_that_cannot_be_opened_stays_in_the_tree_and_reports_its_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let locked = root.join("locked.sql");
+    fs::write(&locked, "SELECT 1;").unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    let tree = saved_sql_tree(root, SavedSqlSort::Modified).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o600)).unwrap();
+    let names: Vec<_> = tree
+        .nodes
+        .iter()
+        .map(|node| node.relative_path.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["locked.sql"]);
+    assert_eq!(tree.errors.len(), 1);
+    assert!(
+        tree.errors[0].starts_with("locked.sql: "),
+        "{:?}",
+        tree.errors
+    );
+}

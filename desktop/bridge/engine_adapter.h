@@ -10,6 +10,7 @@
 #include <QHash>
 #include <QList>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <functional>
@@ -164,6 +165,7 @@ struct QueryPreferences {
     quint32 version, pageSize, timeoutSeconds, connectionTimeoutSeconds;
     bool showSystemSchemas = false;
     bool stopOnFirstError;
+    bool operator==(const QueryPreferences&) const = default;
 };
 struct RunAllStep {
     bool stop = false;
@@ -200,6 +202,7 @@ struct ProfileTagOptions {
     QList<CodeLabel> environments, colors, safetyLevels, safetyNames;
     QString labelledEnvironment;
     QHash<QString, QString> sessionSafetyUnavailable;
+    QSet<QString> sessionLockingSafety;
     int maxEnvironmentLabelBytes = 0;
 };
 struct CellFilterComposition {

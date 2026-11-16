@@ -77,6 +77,7 @@ The gate can run the statement, ask for confirmation, or reject a statement that
 The toolbar safety button shows the short name of the level from `SafetyLevel::name`. Its menu changes the level for the session.
 The menu cannot select Read-only for an open session. Only the profile can select it, because Read-only needs the locked session.
 `SafetyLevel::session_unavailable` gives this rule and its reason. `profile_tag_options` sends the reason of each level in `session_safety`, and the menu disables a level that has a reason.
+`SafetyLevel::locks_session` tells if a profile level locks the session button. The flag goes in `locks_session` of each `session_safety` row.
 `SELECT` statements get the row limit of the connection. `apply_row_limit` in `sql-language` adds or caps the `LIMIT`.
 The toolbar choice is stored in `ConnectionProfile::row_limit` through `Engine::profile_set_row_limit`. It must be one of `ROW_LIMIT_CHOICES`.
 
@@ -214,6 +215,8 @@ On PostgreSQL, the Definition starts with the `CREATE OR REPLACE FUNCTION` state
 MySQL and MariaDB read the columns and the triggers in one paged query, thus the page offsets stay correct.
 The Triggers pane of an object tab shows these children. The navigator does not show them.
 `trigger_script` in `core` makes the SQL to create, edit or drop a trigger. Edit gives a `DROP TRIGGER` statement and the definition.
+The SQLite and MySQL drivers put the schema name in each trigger definition. Thus Edit makes the trigger again in the schema of its table.
+Edit refuses a SQLite or MySQL definition that does not start with `CREATE TRIGGER` and the schema of the table.
 A driver that cannot manage triggers gets a `DriverError` of kind `Unsupported`. A bad request gets `InvalidInput`.
 The desktop frontend opens the SQL in a new query tab. The user reads the SQL and then runs it.
 The SQL scanner keeps a `BEGIN ... END` trigger body in one statement. It counts `BEGIN`, `CASE` and the MySQL `END IF`, `END LOOP`, `END WHILE` and `END REPEAT` blocks.
@@ -232,13 +235,14 @@ The export also fails when the file gets to 4 GiB. Then the destination file doe
 
 The export dialog shows a check box for each table or view. Only the selected objects go into the request.
 `plan_table_export` in `core` makes one target for each table or view: the `SELECT` that Rust builds, the destination file and the export format.
-A failed plan returns `TableExportError` with its `TableExportField`: tables, options or destination. The dialog shows the error below that field.
+A failed plan returns `TableExportError` with its `TableExportField`: tables, options or destination. The dialog shows the error below that field. An options error shows below the Format field.
 A folder destination uses a file name pattern with `{schema}` and `{table}`. Rust adds the extension and rejects two tables that write the same file.
 Several tables go to one file only for the SQL format.
 CSV options are part of `ExportFormat::Csv`: delimiter, quote, line break, NULL text and header row. `CsvOptions::validate` rejects options that make the file ambiguous.
 `Engine::export_tables` sends one `ExportTables` command to the connection actor.
 The actor closes the open SQL cursor, runs each `SELECT` and streams the rows through `choscordb_export::export`.
 For the SQL format, the actor writes the `DROP` statement and the DDL from `Connection::object_ddl` before the rows.
+The DDL names the schema of the table. Thus the script makes the table again in its own database from a session on another database.
 The actor sends `TableExportProgress` after each table, then `TableExportFinished` or `TableExportFailed` with the name of the failed table.
 A failed or cancelled file is not written. Files of earlier tables stay.
 
@@ -255,11 +259,13 @@ Limits: 64 MiB, 100,000 rows and 1,000 columns for each file.
 | Policy | SQLite and PostgreSQL | MySQL and MariaDB |
 | --- | --- | --- |
 | Stop | `INSERT` | `INSERT` |
-| Skip | `ON CONFLICT DO NOTHING` | `ON DUPLICATE KEY UPDATE` of the first column to itself |
+| Skip | `ON CONFLICT DO NOTHING` | `INSERT IGNORE` |
 | Update | `ON CONFLICT (key) DO UPDATE` | `ON DUPLICATE KEY UPDATE` |
 | Replace | `REPLACE INTO` (SQLite only) | `REPLACE INTO` |
 
 `Update` needs all primary key columns in the mapping. PostgreSQL does not show `Replace`.
+`INSERT IGNORE` also changes bad values into warnings. Thus the MySQL driver reads `SHOW WARNINGS` after a statement with a warning. It accepts only a duplicate key on a skipped row. Each other warning stops the import.
+`TableImportFinished` counts each row statement that changed one or more rows. Thus an update or a replace counts one row on each driver.
 Before the import, the dialog shows the SQL for each row from `table_import_review`. It uses the same plan as the import.
 `Engine::import_table` sends one `ImportTable` command to the connection actor.
 The actor inspects the table with `Connection::inspect_edit_target`. Then it reads the file again on a blocking thread.
@@ -329,6 +335,7 @@ The safety level applies to a restore like a SQL file run. A backup only reads d
 
 The Saved queries panel shows the `.sql` files in the `sql` folder beside the application database.
 `saved_sql_tree` in `core` reads the folder without symlinks. It gives folders first, then files, in name order or newest first.
+A file that it cannot open or read stays in the tree, and its error goes in `errors`.
 The panel shows the rows in this order. "Sort by name" and "Sort by date modified" are in the context menu.
 "New folder…" calls `create_saved_sql_folder`. A folder name has no slash and does not start with a dot.
 A first line `-- keyword: name` gives the file a keyword. "Set keyword…" adds, changes or removes this line with `set_saved_sql_keyword`.
@@ -349,9 +356,12 @@ The changes add, change or drop a column, add or drop an index, set the primary 
 `StructureChangeKind::pane` gives the pane of each change: Columns, Indexes or Keys. The "Add change" menu of the mode shows only the changes of the current pane.
 `StructureChangeKind::unavailable` gives the reason when a driver cannot do a change. A new table permits only the changes that create columns, indexes and keys.
 Each driver gives its `StructureDialect` through `DatabaseDriver::structure_dialect`. The dialect gives the column types and the changes that need a table rebuild.
+`StructureDialect::sql` gives the SQL family for quotes and syntax. Thus one lookup gives the rules and the SQL of a driver.
+`GridEditDriver::from_id` is the one map from a driver id to its SQL family. Grid edits, imports, exports, database actions and trigger scripts use it.
+A type or a default cannot have a comma outside parentheses. A MySQL column comment cannot have a backslash, because the SQL mode changes its meaning.
 It also gives a reason when a column cannot change in place or keep a comment.
 The SQLite dialect needs a table rebuild for a primary key, a foreign key or a dropped key. The PostgreSQL and MySQL dialects change each item in place.
-The bridge finds the dialect of a driver in the same driver list that makes the engine. `plan_structure` gets the dialect and returns its reasons.
+The bridge finds the dialect of a driver in the same driver list that makes the engine. It makes this list one time. `plan_structure` gets the dialect and returns its reasons.
 The editor makes one form for each change from the field descriptors. It does not know the SQL rules.
 `plan_structure` makes the SQL for each driver. A new table gets one `CREATE TABLE` with its columns and constraints, then the comments and the indexes.
 The editor shows the SQL before Apply. The SQL comes from `structure_plan` in the bridge, and `apply_structure` makes the same plan again in Rust.

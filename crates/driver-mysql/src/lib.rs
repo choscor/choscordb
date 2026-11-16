@@ -785,8 +785,10 @@ impl Connection for MysqlConnection {
             ))
             .await
             .map_err(normalize)?;
-        row.and_then(|r| r.get(1))
-            .ok_or_else(|| error(ErrorKind::Query, "MySQL object DDL is unavailable"))
+        let ddl: String = row
+            .and_then(|r| r.get(1))
+            .ok_or_else(|| error(ErrorKind::Query, "MySQL object DDL is unavailable"))?;
+        schema_ddl(&db, &table, &ddl)
     }
     async fn commit(&mut self) -> Result<()> {
         let idle = self.idle.clone();
@@ -1044,6 +1046,17 @@ fn read_page(
 fn quote(s: &str) -> String {
     format!("`{}`", s.replace('`', "``"))
 }
+fn schema_ddl(schema: &str, object: &str, ddl: &str) -> Result<String> {
+    let name = quote(object);
+    [format!("CREATE TABLE {name}"), format!(" VIEW {name}")]
+        .iter()
+        .find_map(|head| {
+            ddl.find(head.as_str())
+                .map(|at| at + head.len() - name.len())
+        })
+        .map(|at| format!("{}{}.{}", &ddl[..at], quote(schema), &ddl[at..]))
+        .ok_or_else(|| error(ErrorKind::Query, "The MySQL DDL does not name the object."))
+}
 fn id(parts: &[&str]) -> ObjectId {
     ObjectId(serde_json::to_string(parts).expect("string encoding cannot fail"))
 }
@@ -1059,10 +1072,19 @@ fn parse_table(object: &ObjectId) -> Result<(String, String)> {
     Ok((parts[0].clone(), parts[1].clone()))
 }
 type RelationChildRow = (i64, i64, String, String, String, String, String, String);
-fn trigger_definition(name: &str, timing: &str, event: &str, table: &str, body: &str) -> String {
+fn trigger_definition(
+    schema: &str,
+    name: &str,
+    timing: &str,
+    event: &str,
+    table: &str,
+    body: &str,
+) -> String {
     format!(
-        "CREATE TRIGGER {} {timing} {event} ON {} FOR EACH ROW {body}",
+        "CREATE TRIGGER {}.{} {timing} {event} ON {}.{} FOR EACH ROW {body}",
+        quote(schema),
         quote(name),
+        quote(schema),
         quote(table)
     )
 }
@@ -1102,8 +1124,9 @@ async fn metadata(
                 let qualified_name =
                     format!("{}.{}.{}", quote(&parts[0]), quote(&parts[1]), quote(&name));
                 if kind == 1 {
-                    let definition =
-                        trigger_definition(&name, &timing, &event, &parts[1], &statement);
+                    let definition = trigger_definition(
+                        &parts[0], &name, &timing, &event, &parts[1], &statement,
+                    );
                     out.push(SchemaObject {
                         id: id(&[&parts[0], &parts[1], "trigger", &name]),
                         parent: Some(parent.clone()),
@@ -1160,10 +1183,32 @@ async fn metadata(
 mod tests {
     use super::*;
     #[test]
+    fn object_ddl_names_the_database_of_the_table_or_view() {
+        assert_eq!(
+            schema_ddl("shop", "a`b", "CREATE TABLE `a``b` (\n  `id` int\n)").unwrap(),
+            "CREATE TABLE `shop`.`a``b` (\n  `id` int\n)"
+        );
+        assert_eq!(
+            schema_ddl(
+                "shop",
+                "v",
+                "CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`%` SQL SECURITY DEFINER VIEW `v` AS select 1 AS `v`"
+            )
+            .unwrap(),
+            "CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`%` SQL SECURITY DEFINER VIEW `shop`.`v` AS select 1 AS `v`"
+        );
+        assert_eq!(
+            schema_ddl("shop", "t", "CREATE TABLE `other` (`id` int)")
+                .unwrap_err()
+                .message,
+            "The MySQL DDL does not name the object."
+        );
+    }
+    #[test]
     fn trigger_definitions_are_create_statements() {
         assert_eq!(
-            trigger_definition("a`b", "BEFORE", "INSERT", "orders", "SET NEW.x = 1"),
-            "CREATE TRIGGER `a``b` BEFORE INSERT ON `orders` FOR EACH ROW SET NEW.x = 1"
+            trigger_definition("shop", "a`b", "BEFORE", "INSERT", "orders", "SET NEW.x = 1"),
+            "CREATE TRIGGER `shop`.`a``b` BEFORE INSERT ON `shop`.`orders` FOR EACH ROW SET NEW.x = 1"
         );
     }
     #[test]

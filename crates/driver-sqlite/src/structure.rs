@@ -1,7 +1,10 @@
-use choscordb_driver_api::{StructureChangeKind, StructureDialect};
+use choscordb_driver_api::{GridEditDriver, StructureChangeKind, StructureDialect};
 
 pub struct SqliteStructure;
 impl StructureDialect for SqliteStructure {
+    fn sql(&self) -> GridEditDriver {
+        GridEditDriver::Sqlite
+    }
     fn column_types(&self) -> &'static [&'static str] {
         &["INTEGER", "REAL", "TEXT", "BLOB", "NUMERIC"]
     }

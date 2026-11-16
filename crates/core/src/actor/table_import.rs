@@ -156,7 +156,11 @@ async fn write_rows(
         (summary, _, Ok(())) => summary,
     }?;
     send(events, report(progress.statements())).await;
-    Ok(summary.affected_rows.iter().sum())
+    Ok(summary
+        .affected_rows
+        .iter()
+        .filter(|affected| **affected > 0)
+        .count() as u64)
 }
 
 async fn import(

@@ -7,6 +7,17 @@ pub enum GridEditDriver {
     Mysql,
 }
 
+impl GridEditDriver {
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "sqlite" => Some(Self::Sqlite),
+            "postgres" => Some(Self::Postgres),
+            "mysql" | "mariadb" => Some(Self::Mysql),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct GridEditColumn {
     pub name: String,

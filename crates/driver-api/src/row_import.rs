@@ -116,20 +116,20 @@ pub fn row_import_sql(
     let values: Vec<String> = (1..=columns.len())
         .map(|position| placeholder(driver, position))
         .collect();
-    let verb = if conflict == ImportConflict::Replace {
-        "REPLACE"
-    } else {
-        "INSERT"
+    let mysql = driver == GridEditDriver::Mysql;
+    let verb = match conflict {
+        ImportConflict::Replace => "REPLACE",
+        ImportConflict::Skip if mysql => "INSERT IGNORE",
+        _ => "INSERT",
     };
     let insert = format!(
         "{verb} INTO {qualified_name} ({}) VALUES ({})",
         names.join(", "),
         values.join(", ")
     );
-    let mysql = driver == GridEditDriver::Mysql;
     let suffix = match conflict {
         ImportConflict::Stop | ImportConflict::Replace => String::new(),
-        ImportConflict::Skip if mysql => format!(" ON DUPLICATE KEY UPDATE {0} = {0}", names[0]),
+        ImportConflict::Skip if mysql => String::new(),
         ImportConflict::Skip => " ON CONFLICT DO NOTHING".into(),
         ImportConflict::Update => {
             if key_columns.is_empty()

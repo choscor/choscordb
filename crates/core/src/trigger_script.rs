@@ -1,5 +1,5 @@
 use crate::object_action::{identity, quoted};
-use choscordb_driver_api::{DriverError, ErrorKind};
+use choscordb_driver_api::{DriverError, ErrorKind, GridEditDriver};
 
 fn invalid(message: &str) -> DriverError {
     DriverError::new(ErrorKind::InvalidInput, message)
@@ -45,38 +45,29 @@ pub struct TriggerScriptRequest {
     pub definition: String,
 }
 
-enum Dialect {
-    Postgres,
-    Mysql,
-    Sqlite,
-}
-
-fn dialect(driver: &str) -> Result<Dialect, DriverError> {
-    match driver {
-        "postgres" => Ok(Dialect::Postgres),
-        "mysql" | "mariadb" => Ok(Dialect::Mysql),
-        "sqlite" => Ok(Dialect::Sqlite),
-        _ => Err(DriverError::new(
+fn dialect(driver: &str) -> Result<GridEditDriver, DriverError> {
+    GridEditDriver::from_id(driver).ok_or_else(|| {
+        DriverError::new(
             ErrorKind::Unsupported,
             "This connection cannot manage triggers.",
-        )),
-    }
+        )
+    })
 }
 
-fn drop_statement(dialect: &Dialect, schema: &str, table: &str, trigger: &str) -> String {
+fn drop_statement(dialect: &GridEditDriver, schema: &str, table: &str, trigger: &str) -> String {
     match dialect {
-        Dialect::Postgres => format!(
+        GridEditDriver::Postgres => format!(
             "DROP TRIGGER {} ON {}.{};",
             quoted(trigger, '"'),
             quoted(schema, '"'),
             quoted(table, '"')
         ),
-        Dialect::Mysql => format!(
+        GridEditDriver::Mysql => format!(
             "DROP TRIGGER {}.{};",
             quoted(schema, '`'),
             quoted(trigger, '`')
         ),
-        Dialect::Sqlite => format!(
+        GridEditDriver::Sqlite => format!(
             "DROP TRIGGER {}.{};",
             quoted(schema, '"'),
             quoted(trigger, '"')
@@ -84,10 +75,10 @@ fn drop_statement(dialect: &Dialect, schema: &str, table: &str, trigger: &str) -
     }
 }
 
-fn create_template(dialect: &Dialect, schema: &str, table: &str) -> String {
+fn create_template(dialect: &GridEditDriver, schema: &str, table: &str) -> String {
     let trigger = format!("{table}_trigger");
     match dialect {
-        Dialect::Postgres => {
+        GridEditDriver::Postgres => {
             let function = format!("{}.{}", quoted(schema, '"'), quoted(&trigger, '"'));
             format!(
                 "CREATE OR REPLACE FUNCTION {function}() RETURNS trigger\nLANGUAGE plpgsql AS $$\nBEGIN\n  RETURN NEW;\nEND;\n$$;\n\nCREATE TRIGGER {} BEFORE INSERT OR UPDATE ON {}.{}\nFOR EACH ROW EXECUTE FUNCTION {function}();",
@@ -96,14 +87,14 @@ fn create_template(dialect: &Dialect, schema: &str, table: &str) -> String {
                 quoted(table, '"')
             )
         }
-        Dialect::Mysql => format!(
+        GridEditDriver::Mysql => format!(
             "CREATE TRIGGER {}.{} BEFORE INSERT ON {}.{}\nFOR EACH ROW\nBEGIN\n  SET @changed_at = NOW();\nEND;",
             quoted(schema, '`'),
             quoted(&trigger, '`'),
             quoted(schema, '`'),
             quoted(table, '`')
         ),
-        Dialect::Sqlite => format!(
+        GridEditDriver::Sqlite => format!(
             "CREATE TRIGGER {}.{} AFTER INSERT ON {}\nFOR EACH ROW\nBEGIN\n  SELECT NEW.rowid;\nEND;",
             quoted(schema, '"'),
             quoted(&trigger, '"'),
@@ -132,6 +123,18 @@ pub fn trigger_script(
     let definition = request.definition.trim().trim_end_matches(';').trim_end();
     if definition.is_empty() {
         return Err(invalid("The trigger definition is unavailable."));
+    }
+    let delimiter = match dialect {
+        GridEditDriver::Postgres => None,
+        GridEditDriver::Mysql => Some('`'),
+        GridEditDriver::Sqlite => Some('"'),
+    };
+    if let Some(delimiter) = delimiter
+        && !definition.starts_with(&format!("CREATE TRIGGER {}.", quoted(&schema, delimiter)))
+    {
+        return Err(invalid(
+            "The trigger definition does not name the schema of its table.",
+        ));
     }
     Ok(format!("{drop}\n\n{definition};"))
 }

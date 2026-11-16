@@ -66,8 +66,9 @@ void QueryWorkspace::syncConnectionTag() {
     const auto connection = selectedConnection();
     const auto tag = connection ? connectionTags_.value(*connection) : ConnectionTag{};
     if (widgets_.safetyLevel && safetyMenu_) {
-        const auto& unavailable = EngineAdapter::profileTagOptions().sessionSafetyUnavailable;
-        const auto locked = !unavailable.value(tag.profileSafety).isEmpty();
+        const auto& options = EngineAdapter::profileTagOptions();
+        const auto& unavailable = options.sessionSafetyUnavailable;
+        const auto locked = options.sessionLockingSafety.contains(tag.profileSafety);
         widgets_.safetyLevel->setEnabled(connection.has_value() && !locked);
         const auto actions = safetyMenu_->actions();
         for (auto* action : actions) {

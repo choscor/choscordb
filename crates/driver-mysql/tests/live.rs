@@ -630,7 +630,7 @@ async fn metadata_ddl_and_independent_object_cursor() {
         [
             "BEFORE",
             "INSERT",
-            "CREATE TRIGGER `browse_guard` BEFORE INSERT ON `mysql``browse` FOR EACH ROW BEGIN IF NEW.id < 0 THEN SET NEW.id = 0; END IF; END"
+            "CREATE TRIGGER `choscordb_test`.`browse_guard` BEFORE INSERT ON `choscordb_test`.`mysql``browse` FOR EACH ROW BEGIN IF NEW.id < 0 THEN SET NEW.id = 0; END IF; END"
         ]
     );
     assert_eq!(fields.len(), 2);

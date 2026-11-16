@@ -5,6 +5,16 @@ pub enum SqlDialect {
     Postgres,
     Mysql,
 }
+
+impl From<GridEditDriver> for SqlDialect {
+    fn from(driver: GridEditDriver) -> Self {
+        match driver {
+            GridEditDriver::Sqlite => Self::Sqlite,
+            GridEditDriver::Postgres => Self::Postgres,
+            GridEditDriver::Mysql => Self::Mysql,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LineBreak {
     #[default]

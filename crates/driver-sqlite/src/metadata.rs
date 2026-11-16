@@ -1337,7 +1337,8 @@ fn load_inner(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObj
             let mut rows = q.query([table]).map_err(normalize)?;
             while let Some(r) = rows.next().map_err(normalize)? {
                 let name: String = r.get(0).map_err(normalize)?;
-                let definition: String = r.get(1).map_err(normalize)?;
+                let stored: String = r.get(1).map_err(normalize)?;
+                let definition = schema_trigger_sql(schema, &name, &stored).unwrap_or(stored);
                 let (timing, event) = trigger_timing_and_event(&definition);
                 let mut obj = budget.object(
                     &[schema, table, "trigger", &name],
@@ -1449,6 +1450,61 @@ fn load_inner(db: &Connection, parent: Option<ObjectId>) -> Result<Vec<SchemaObj
         _ => Ok(vec![]),
     }
 }
+fn keyword<'a>(text: &'a str, words: &[&str]) -> Option<&'a str> {
+    let end = text
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(text.len());
+    words
+        .iter()
+        .any(|word| text[..end].eq_ignore_ascii_case(word))
+        .then(|| text[end..].trim_start())
+}
+
+fn trigger_name_end(text: &str, name: &str) -> Option<usize> {
+    let close = match text.chars().next()? {
+        '"' => '"',
+        '`' => '`',
+        '\'' => '\'',
+        '[' => ']',
+        _ => {
+            let end = text
+                .find(|c: char| c.is_whitespace() || c == '(')
+                .unwrap_or(text.len());
+            return text[..end].eq_ignore_ascii_case(name).then_some(end);
+        }
+    };
+    let mut unquoted = String::new();
+    let mut characters = text.char_indices().skip(1).peekable();
+    while let Some((index, character)) = characters.next() {
+        if character != close {
+            unquoted.push(character);
+        } else if close != ']' && characters.peek().is_some_and(|(_, next)| *next == close) {
+            unquoted.push(close);
+            characters.next();
+        } else {
+            return (unquoted == name).then_some(index + 1);
+        }
+    }
+    None
+}
+
+fn schema_trigger_sql(schema: &str, name: &str, sql: &str) -> Option<String> {
+    let rest = keyword(sql.trim_start(), &["CREATE"])?;
+    let rest = keyword(rest, &["TEMP", "TEMPORARY"]).unwrap_or(rest);
+    let rest = keyword(rest, &["TRIGGER"])?;
+    let rest = keyword(rest, &["IF"])
+        .and_then(|rest| keyword(rest, &["NOT"]))
+        .and_then(|rest| keyword(rest, &["EXISTS"]))
+        .unwrap_or(rest);
+    let end = trigger_name_end(rest, name)?;
+    Some(format!(
+        "CREATE TRIGGER {}.{}{}",
+        quote(schema),
+        quote(name),
+        &rest[end..]
+    ))
+}
+
 fn trigger_timing_and_event(definition: &str) -> (&'static str, &'static str) {
     let mut timing = "BEFORE";
     let mut quote: Option<char> = None;

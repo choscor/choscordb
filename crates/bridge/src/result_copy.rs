@@ -1,5 +1,6 @@
 use crate::{convert, ffi};
 use choscordb_core::{ClipboardFormat, SqlDialect, render_clipboard};
+use choscordb_driver_api::GridEditDriver;
 use choscordb_result_store::{
     CopyCell, CopyError, CopyRequest, render_copy_tsv, resolve_copy_rows,
 };
@@ -25,12 +26,7 @@ pub fn copy_format_options() -> Vec<ffi::CodeLabelDto> {
 }
 
 pub(crate) fn sql_dialect(driver: &str) -> Option<SqlDialect> {
-    match driver {
-        "sqlite" => Some(SqlDialect::Sqlite),
-        "postgres" | "postgresql" => Some(SqlDialect::Postgres),
-        "mysql" | "mariadb" => Some(SqlDialect::Mysql),
-        _ => None,
-    }
+    GridEditDriver::from_id(driver).map(SqlDialect::from)
 }
 
 enum Rendered {

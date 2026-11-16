@@ -156,5 +156,7 @@ fn only_the_connection_can_set_read_only() {
         SafetyLevel::ConfirmAll,
     ] {
         assert_eq!(level.session_unavailable(), None);
+        assert!(!level.locks_session());
     }
+    assert!(SafetyLevel::ReadOnly.locks_session());
 }

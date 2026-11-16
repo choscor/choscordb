@@ -149,7 +149,7 @@ void QueryWorkspace::saveCellFile(const QPersistentModelIndex& index) {
     if (path.isEmpty())
         return;
     if (deferred) {
-        if (!query_ || !queryAvailable()) {
+        if (!query_) {
             message(tr("Save value: the result is no longer available."));
             return;
         }
@@ -167,7 +167,7 @@ void QueryWorkspace::saveCellFile(const QPersistentModelIndex& index) {
                 watcher->deleteLater();
                 const auto result = watcher->result();
                 message(result.error.isEmpty()
-                            ? tr("Saved %n bytes to %1.", nullptr, int(size)).arg(path)
+                            ? tr("Saved %1 bytes to %2.").arg(QLocale().toString(size), path)
                             : tr("Save value: %1").arg(result.error));
             });
     watcher->setFuture(DocumentIo().writeCell(path, *bytes));

@@ -66,6 +66,6 @@ fn mysql_mode_and_the_tab_limit_apply() {
     assert_eq!(error, StatementPlanError::TooMany);
     assert_eq!(
         error.to_string(),
-        "Run all can show up to 64 results. Run fewer statements at a time."
+        "Run all can show up to 64 results. To run a longer script, use File > Run SQL file."
     );
 }

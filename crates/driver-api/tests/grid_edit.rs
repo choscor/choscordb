@@ -563,3 +563,25 @@ fn review_text_aligns_parameter_labels_past_nine_values() {
     assert_eq!(lines[9], "  $9  = 9");
     assert_eq!(lines[10], "  $10 = 10");
 }
+
+#[test]
+fn each_driver_id_names_one_sql_dialect() {
+    use choscordb_driver_api::GridEditDriver;
+    assert_eq!(
+        GridEditDriver::from_id("sqlite"),
+        Some(GridEditDriver::Sqlite)
+    );
+    assert_eq!(
+        GridEditDriver::from_id("postgres"),
+        Some(GridEditDriver::Postgres)
+    );
+    assert_eq!(
+        GridEditDriver::from_id("mysql"),
+        Some(GridEditDriver::Mysql)
+    );
+    assert_eq!(
+        GridEditDriver::from_id("mariadb"),
+        Some(GridEditDriver::Mysql)
+    );
+    assert_eq!(GridEditDriver::from_id("oracle"), None);
+}

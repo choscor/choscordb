@@ -1,22 +1,21 @@
 use crate::table_import::new_table_name;
 use crate::{BridgeEngine, ffi, submit, unpack};
 use choscordb_core::structure_edit_unavailable;
-use choscordb_driver_api::GridEditDriver;
+use choscordb_driver_api::DatabaseDriver;
 use choscordb_driver_api::{
     StructureChange, StructureChangeKind, StructureColumn, StructureDialect, StructureKey,
     StructurePane, StructureTable, plan_structure, structure_change_summary,
 };
 use std::collections::BTreeMap;
+use std::sync::{Arc, OnceLock};
 
 const NO_STRUCTURE: &str = "This connection cannot edit table structures.";
 
-fn structure_driver(name: &str) -> Result<GridEditDriver, String> {
-    crate::grid_edit::grid_driver(name).map_err(|_| NO_STRUCTURE.into())
-}
-
 fn structure_dialect(name: &str) -> Result<&'static dyn StructureDialect, String> {
-    crate::drivers()
-        .into_iter()
+    static DRIVERS: OnceLock<Vec<Arc<dyn DatabaseDriver>>> = OnceLock::new();
+    DRIVERS
+        .get_or_init(crate::drivers)
+        .iter()
         .find(|driver| driver.id() == name)
         .and_then(|driver| driver.structure_dialect())
         .ok_or_else(|| NO_STRUCTURE.into())
@@ -82,15 +81,16 @@ pub fn structure_types(driver: &str) -> Vec<String> {
     }
 }
 
-fn table(dto: &ffi::StructureTableDto) -> Result<StructureTable, String> {
-    let driver = structure_driver(&dto.driver)?;
+fn table(
+    dto: &ffi::StructureTableDto,
+    rules: &dyn StructureDialect,
+) -> Result<StructureTable, String> {
     Ok(StructureTable {
-        driver,
         qualified_name: if dto.existing {
             dto.qualified_name.clone()
         } else {
             new_table_name(
-                driver,
+                rules.sql(),
                 &dto.parent_kind,
                 &dto.parent_qualified,
                 &dto.table_name,
@@ -138,23 +138,31 @@ fn changes(dtos: &[ffi::StructureChangeDto]) -> Result<Vec<StructureChange>, Str
 fn planned(
     table_dto: &ffi::StructureTableDto,
     change_dtos: &[ffi::StructureChangeDto],
-) -> Result<(Vec<StructureChange>, Vec<String>), String> {
-    let table = table(table_dto)?;
+) -> Result<Vec<String>, String> {
     let rules = structure_dialect(&table_dto.driver)?;
+    let table = table(table_dto, rules)?;
     let changes = changes(change_dtos)?;
-    let statements = plan_structure(&table, rules, &changes).map_err(|error| error.to_string())?;
-    Ok((changes, statements))
+    plan_structure(&table, rules, &changes).map_err(|error| error.to_string())
 }
 
 pub fn structure_plan(
     table: &ffi::StructureTableDto,
     changes: Vec<ffi::StructureChangeDto>,
 ) -> ffi::StructurePlanDto {
-    let summaries = self::changes(&changes)
-        .map(|changes| changes.iter().map(structure_change_summary).collect())
-        .unwrap_or_default();
+    let parsed = match self::changes(&changes) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            return ffi::StructurePlanDto {
+                valid: false,
+                error,
+                summaries: Vec::new(),
+                statements: Vec::new(),
+            };
+        }
+    };
+    let summaries = parsed.iter().map(structure_change_summary).collect();
     match planned(table, &changes) {
-        Ok((_, statements)) => ffi::StructurePlanDto {
+        Ok(statements) => ffi::StructurePlanDto {
             valid: true,
             error: String::new(),
             summaries,
@@ -176,7 +184,7 @@ pub fn apply_structure(
     changes: Vec<ffi::StructureChangeDto>,
     request_token: u64,
 ) -> ffi::Submit {
-    let statements = planned(table, &changes).map(|(_, statements)| statements);
+    let statements = planned(table, &changes);
     submit(engine, |e| {
         e.apply_ddl(unpack(connection), statements?, request_token)
             .map(|()| connection)

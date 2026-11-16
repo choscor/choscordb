@@ -152,21 +152,33 @@ fn scan(root: &Path) -> Result<(Vec<Entry>, bool), DocumentIoError> {
             } else if file_type.is_file() && is_sql_path(&relative_path) {
                 let mut options = cap_std::fs::OpenOptions::new();
                 options.read(true).follow(FollowSymlinks::No).nonblock(true);
-                let Ok(file) = directory.open_with(&name, &options) else {
-                    continue;
-                };
-                let Ok(metadata) = file.metadata() else {
-                    continue;
+                let opened = directory
+                    .open_with(&name, &options)
+                    .and_then(|file| file.metadata().map(|metadata| (file, metadata)));
+                let (file, metadata) = match opened {
+                    Ok(opened) => opened,
+                    Err(error) => {
+                        entries.push(Entry {
+                            relative_path,
+                            folder: false,
+                            modified: None,
+                            head: Some(Err(error.to_string())),
+                        });
+                        continue;
+                    }
                 };
                 if !metadata.is_file() {
                     continue;
                 }
-                let modified = metadata.modified().ok().map(|time| time.into_std());
+                let (modified, head) = match metadata.modified() {
+                    Ok(time) => (Some(time.into_std()), read_head(file, metadata.len())),
+                    Err(error) => (None, Some(Err(error.to_string()))),
+                };
                 entries.push(Entry {
                     relative_path,
                     folder: false,
                     modified,
-                    head: read_head(file, metadata.len()),
+                    head,
                 });
             }
         }

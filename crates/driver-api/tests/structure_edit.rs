@@ -14,83 +14,87 @@ fn change(kind: StructureChangeKind, values: &[(&str, &str)]) -> StructureChange
     StructureChange { kind, values: map }
 }
 
-fn table(driver: GridEditDriver, qualified_name: &str) -> StructureTable {
-    StructureTable {
-        driver,
-        qualified_name: qualified_name.into(),
-        new_table: false,
-        columns: vec![
-            StructureColumn {
-                name: "id".into(),
-                data_type: "integer".into(),
-                nullable: false,
-            },
-            StructureColumn {
-                name: "name".into(),
-                data_type: "varchar(50)".into(),
-                nullable: true,
-            },
-        ],
-        indexes: vec!["people_name".into()],
-        keys: vec![
-            StructureKey {
-                name: "people_pkey".into(),
-                kind: "primarykey".into(),
-            },
-            StructureKey {
-                name: "people_team".into(),
-                kind: "foreignkey".into(),
-            },
-        ],
+fn table(driver: GridEditDriver, qualified_name: &str) -> Case {
+    Case {
+        rules: Fake(driver),
+        table: StructureTable {
+            qualified_name: qualified_name.into(),
+            new_table: false,
+            columns: vec![
+                StructureColumn {
+                    name: "id".into(),
+                    data_type: "integer".into(),
+                    nullable: false,
+                },
+                StructureColumn {
+                    name: "name".into(),
+                    data_type: "varchar(50)".into(),
+                    nullable: true,
+                },
+            ],
+            indexes: vec!["people_name".into()],
+            keys: vec![
+                StructureKey {
+                    name: "people_pkey".into(),
+                    kind: "primarykey".into(),
+                },
+                StructureKey {
+                    name: "people_team".into(),
+                    kind: "foreignkey".into(),
+                },
+            ],
+        },
     }
 }
 
-struct InPlace;
-impl StructureDialect for InPlace {
-    fn column_types(&self) -> &'static [&'static str] {
-        &[]
-    }
-    fn rebuild_reason(&self, _: StructureChangeKind) -> Option<&'static str> {
-        None
-    }
-    fn column_alter_reason(&self) -> Option<&'static str> {
-        None
-    }
-    fn column_comment_reason(&self) -> Option<&'static str> {
-        None
+#[derive(Clone)]
+struct Case {
+    table: StructureTable,
+    rules: Fake,
+}
+
+impl Case {
+    fn with(&self, table: StructureTable) -> Case {
+        Case {
+            table,
+            rules: self.rules,
+        }
     }
 }
 
-struct Limited;
-impl StructureDialect for Limited {
+#[derive(Clone, Copy)]
+struct Fake(GridEditDriver);
+impl StructureDialect for Fake {
+    fn sql(&self) -> GridEditDriver {
+        self.0
+    }
     fn column_types(&self) -> &'static [&'static str] {
         &[]
     }
     fn rebuild_reason(&self, kind: StructureChangeKind) -> Option<&'static str> {
-        (kind == StructureChangeKind::DropKey).then_some("Limited rebuild reason.")
+        (self.limited() && kind == StructureChangeKind::DropKey)
+            .then_some("Limited rebuild reason.")
     }
     fn column_alter_reason(&self) -> Option<&'static str> {
-        Some("Limited alter reason.")
+        self.limited().then_some("Limited alter reason.")
     }
     fn column_comment_reason(&self) -> Option<&'static str> {
-        Some("Limited comment reason.")
+        self.limited().then_some("Limited comment reason.")
     }
 }
 
-fn rules(table: &StructureTable) -> &'static dyn StructureDialect {
-    if table.driver == GridEditDriver::Sqlite {
-        &Limited
-    } else {
-        &InPlace
+impl Fake {
+    fn limited(&self) -> bool {
+        self.0 == GridEditDriver::Sqlite
     }
 }
 
-fn plan(table: &StructureTable, changes: &[StructureChange]) -> Vec<String> {
-    plan_structure(table, rules(table), changes).unwrap()
+fn plan(case: &Case, changes: &[StructureChange]) -> Vec<String> {
+    plan_structure(&case.table, &case.rules, changes).unwrap()
 }
 
-fn error(table: &StructureTable, changes: &[StructureChange]) -> String {
-    plan_structure(table, rules(table), changes)
+fn error(case: &Case, changes: &[StructureChange]) -> String {
+    plan_structure(&case.table, &case.rules, changes)
         .unwrap_err()
         .to_string()
 }
@@ -201,10 +205,10 @@ fn a_limited_dialect_renames_and_drops_columns_and_names_its_reason_for_other_ch
     );
     assert_eq!(
         error(
-            &StructureTable {
+            &sqlite.with(StructureTable {
                 new_table: true,
-                ..sqlite.clone()
-            },
+                ..sqlite.table.clone()
+            }),
             &[change(K::DropKey, &[])]
         ),
         "Change 1: A new table has no columns, indexes or keys to change yet."
@@ -283,13 +287,14 @@ fn keys_add_and_drop_with_the_syntax_of_each_driver() {
 
 #[test]
 fn a_new_table_collects_columns_keys_and_indexes_into_create_statements() {
-    let new_table = StructureTable {
+    let teams = table(GridEditDriver::Postgres, "\"public\".\"teams\"");
+    let new_table = teams.with(StructureTable {
         new_table: true,
         columns: vec![],
         indexes: vec![],
         keys: vec![],
-        ..table(GridEditDriver::Postgres, "\"public\".\"teams\"")
-    };
+        ..teams.table.clone()
+    });
     let changes = [
         change(
             K::AddColumn,
@@ -350,7 +355,25 @@ fn changes_are_validated_before_any_sql_is_built() {
                     ("default", "1; DROP TABLE people"),
                 ],
             ),
-            "The default expression cannot contain ;, -- or /*.",
+            "The default expression cannot contain ;, -- or /*, or a comma outside parentheses.",
+        ),
+        (
+            change(
+                K::AddColumn,
+                &[("name", "x"), ("type", "int, DROP COLUMN name")],
+            ),
+            "The type \"int, DROP COLUMN name\" is not valid.",
+        ),
+        (
+            change(
+                K::AddColumn,
+                &[
+                    ("name", "x"),
+                    ("type", "int"),
+                    ("default", "1, DROP COLUMN name"),
+                ],
+            ),
+            "The default expression cannot contain ;, -- or /*, or a comma outside parentheses.",
         ),
         (
             change(K::AddColumn, &[("type", "int")]),
@@ -375,6 +398,22 @@ fn changes_are_validated_before_any_sql_is_built() {
     for (changed, message) in cases {
         assert_eq!(error(&people, &[changed]), format!("Change 1: {message}"));
     }
+    assert_eq!(
+        plan(
+            &people,
+            &[change(
+                K::AddColumn,
+                &[
+                    ("name", "price"),
+                    ("type", "numeric(10, 2)"),
+                    ("default", "coalesce(NULL, 'a, b')"),
+                ],
+            )]
+        ),
+        [
+            "ALTER TABLE \"people\" ADD COLUMN \"price\" numeric(10, 2) DEFAULT coalesce(NULL, 'a, b')"
+        ]
+    );
     assert_eq!(error(&people, &[]), "Add one or more changes.");
 }
 
@@ -436,6 +475,28 @@ fn each_change_kind_belongs_to_one_structure_pane() {
             ("primary_key", StructurePane::Keys),
             ("add_foreign_key", StructurePane::Keys),
             ("drop_key", StructurePane::Keys),
+        ]
+    );
+}
+
+#[test]
+fn a_mysql_comment_with_a_backslash_is_refused_because_the_sql_mode_changes_its_meaning() {
+    let comment = change(
+        K::AddColumn,
+        &[("name", "path"), ("type", "text"), ("comment", "C:\\temp")],
+    );
+    assert_eq!(
+        error(
+            &table(GridEditDriver::Mysql, "`people`"),
+            std::slice::from_ref(&comment)
+        ),
+        "Change 1: A MySQL column comment cannot contain a backslash."
+    );
+    assert_eq!(
+        plan(&table(GridEditDriver::Postgres, "\"people\""), &[comment]),
+        [
+            "ALTER TABLE \"people\" ADD COLUMN \"path\" text",
+            "COMMENT ON COLUMN \"people\".\"path\" IS 'C:\\temp'",
         ]
     );
 }

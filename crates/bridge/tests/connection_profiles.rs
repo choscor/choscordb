@@ -490,17 +490,24 @@ fn tag_options_name_the_safety_levels_a_session_cannot_choose() {
     let reasons: Vec<_> = options
         .session_safety
         .iter()
-        .map(|rule| (rule.code.as_str(), rule.unavailable.as_str()))
+        .map(|rule| {
+            (
+                rule.code.as_str(),
+                rule.unavailable.as_str(),
+                rule.locks_session,
+            )
+        })
         .collect();
     assert_eq!(
         reasons,
         [
-            ("silent", ""),
-            ("confirm_writes", ""),
-            ("confirm_all", ""),
+            ("silent", "", false),
+            ("confirm_writes", "", false),
+            ("confirm_all", "", false),
             (
                 "read_only",
-                "Edit the connection to set Read-only. The connection then rejects all writes."
+                "Edit the connection to set Read-only. The connection then rejects all writes.",
+                true
             ),
         ]
     );

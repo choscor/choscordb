@@ -214,6 +214,7 @@ impl StructureChangeKind {
 }
 
 pub trait StructureDialect: Send + Sync {
+    fn sql(&self) -> GridEditDriver;
     fn column_types(&self) -> &'static [&'static str];
     fn rebuild_reason(&self, kind: StructureChangeKind) -> Option<&'static str>;
     fn column_alter_reason(&self) -> Option<&'static str>;
@@ -235,7 +236,6 @@ pub struct StructureKey {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StructureTable {
-    pub driver: GridEditDriver,
     pub qualified_name: String,
     pub new_table: bool,
     pub columns: Vec<StructureColumn>,
@@ -349,19 +349,32 @@ impl Dialect {
         self.joined(&name.split('.').map(str::to_owned).collect::<Vec<_>>(), ".")
     }
 
-    fn literal(&self, text: &str) -> String {
-        let text = text.replace('\'', "''");
-        let text = if self.mysql() {
-            text.replace('\\', "\\\\")
-        } else {
-            text
-        };
-        format!("'{text}'")
+    fn literal(&self, text: &str) -> Checked<String> {
+        if self.mysql() && text.contains('\\') {
+            return Err("A MySQL column comment cannot contain a backslash.".into());
+        }
+        Ok(format!("'{}'", text.replace('\'', "''")))
     }
+}
+
+fn top_level_comma(text: &str) -> bool {
+    let mut depth = 0usize;
+    let mut quoted = false;
+    for c in text.chars() {
+        match c {
+            '\'' => quoted = !quoted,
+            '(' if !quoted => depth += 1,
+            ')' if !quoted => depth = depth.saturating_sub(1),
+            ',' if !quoted && depth == 0 => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 fn data_type(text: &str) -> Checked<String> {
     let valid = text.len() <= 128
+        && !top_level_comma(text)
         && text
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '(' | ')' | ',' | '.'));
@@ -378,8 +391,12 @@ fn expression(text: &str) -> Checked<String> {
         || text.contains('\0')
         || text.contains("--")
         || text.contains("/*")
+        || top_level_comma(text)
     {
-        return Err("The default expression cannot contain ;, -- or /*.".into());
+        return Err(
+            "The default expression cannot contain ;, -- or /*, or a comma outside parentheses."
+                .into(),
+        );
     }
     Ok(text.to_owned())
 }
@@ -461,7 +478,7 @@ impl Planner<'_> {
             "COMMENT ON COLUMN {}.{} IS {}",
             self.table.qualified_name,
             self.dialect.name(column)?,
-            self.dialect.literal(comment)
+            self.dialect.literal(comment)?
         );
         if self.table.new_table {
             self.after.push(statement);
@@ -485,7 +502,7 @@ impl Planner<'_> {
             definition.push_str(&format!(" DEFAULT {default}"));
         }
         if let (true, Some(comment)) = (self.dialect.mysql(), comment) {
-            definition.push_str(&format!(" COMMENT {}", self.dialect.literal(comment)));
+            definition.push_str(&format!(" COMMENT {}", self.dialect.literal(comment)?));
         }
         Ok(definition)
     }
@@ -493,7 +510,7 @@ impl Planner<'_> {
     fn table_parts(&self) -> Vec<String> {
         split_qualified(
             &self.table.qualified_name,
-            identifier_delimiter(self.table.driver),
+            identifier_delimiter(self.dialect.driver),
         )
     }
 
@@ -712,7 +729,7 @@ impl Planner<'_> {
         }
         let columns = self.existing_columns(change.list("columns"))?;
         let unique = if change.flag("unique") { "UNIQUE " } else { "" };
-        let statement = if self.table.driver == GridEditDriver::Sqlite {
+        let statement = if self.dialect.driver == GridEditDriver::Sqlite {
             let parts = self.table_parts();
             let table = parts.last().cloned().unwrap_or_default();
             format!(
@@ -775,7 +792,7 @@ pub fn plan_structure(
     let failure = |change: Option<usize>, message: String| StructureError { change, message };
     if !valid_qualified(
         &table.qualified_name,
-        identifier_delimiter(table.driver) as u8,
+        identifier_delimiter(rules.sql()) as u8,
     ) {
         return Err(failure(None, "The table name is not valid.".into()));
     }
@@ -786,7 +803,7 @@ pub fn plan_structure(
         table,
         rules,
         dialect: Dialect {
-            driver: table.driver,
+            driver: rules.sql(),
         },
         columns: table.columns.clone(),
         indexes: table.indexes.clone(),

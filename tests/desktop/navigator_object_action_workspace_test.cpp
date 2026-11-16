@@ -616,6 +616,29 @@ void NavigatorSqlWorkspaceTest::exportTablesFromTheNavigator() {
     format = dialog->findChild<QComboBox*>("tableExportFormat");
     format->setCurrentIndex(format->findData("sql"));
     QVERIFY(dialog->findChild<QCheckBox*>("tableExportStructure")->isVisibleTo(dialog));
+    {
+        const QList<QCheckBox*> parts{dialog->findChild<QCheckBox*>("tableExportStructure"),
+                                      dialog->findChild<QCheckBox*>("tableExportDrop"),
+                                      dialog->findChild<QCheckBox*>("tableExportData")};
+        QList<bool> checked;
+        for (auto* part : parts) {
+            QVERIFY(part);
+            checked.append(part->isChecked());
+            part->setChecked(false);
+        }
+        dialog->findChild<QPushButton*>("tableExportStart")->click();
+        auto* optionsValidation = dynamic_cast<design::FieldValidation*>(format->parentWidget());
+        QVERIFY(optionsValidation);
+        QCOMPARE(optionsValidation->error(),
+                 QString("Choose structure, drop or data for the SQL export."));
+        QVERIFY(dynamic_cast<design::FieldValidation*>(
+                    dialog->findChild<QLineEdit*>("tableExportPath")->parentWidget())
+                    ->error()
+                    .isEmpty());
+        for (int index = 0; index < parts.size(); ++index)
+            parts[index]->setChecked(checked[index]);
+        QVERIFY(optionsValidation->error().isEmpty());
+    }
     auto* target = dialog->findChild<QComboBox*>("tableExportTarget");
     target->setCurrentIndex(target->findData(false));
     dialog->findChild<QLineEdit*>("tableExportPath")->setText(exports.filePath("all.sql"));

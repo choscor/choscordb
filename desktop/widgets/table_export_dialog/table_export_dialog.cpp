@@ -88,7 +88,8 @@ TableExportDialog::TableExportDialog(EngineAdapter* adapter, quint64 connection,
 
     auto* form = sections->addForm();
     sections->addFormRow(form, tr("Tables"), tablesValidation_);
-    sections->addFormRow(form, tr("Format"), format_);
+    optionsValidation_ = new design::FieldValidation(format_, this);
+    sections->addFormRow(form, tr("Format"), optionsValidation_);
     auto* csvLayout = new QVBoxLayout(csvFields_);
     csvLayout->setContentsMargins(0, 0, 0, 0);
     auto* csvForm = sections->addForm(csvLayout);
@@ -136,8 +137,14 @@ TableExportDialog::TableExportDialog(EngineAdapter* adapter, quint64 connection,
 
     for (auto* box : {format_, target_})
         connect(box, &QComboBox::currentIndexChanged, this, &TableExportDialog::updateActions);
-    for (auto* field : {delimiter_, quote_, nullText_, path_, pattern_})
+    for (auto* field : {path_, pattern_})
         connect(field, &QLineEdit::textChanged, this, [this] { validation_->setError({}); });
+    for (auto* field : {delimiter_, quote_, nullText_})
+        connect(field, &QLineEdit::textChanged, this, [this] { optionsValidation_->setError({}); });
+    for (auto* option : {header_, structure_, drop_, data_})
+        connect(option, &QCheckBox::toggled, this, [this] { optionsValidation_->setError({}); });
+    connect(format_, &QComboBox::currentIndexChanged, this,
+            [this] { optionsValidation_->setError({}); });
     connect(start_, &QPushButton::clicked, this, &TableExportDialog::start);
     connect(cancel_, &QPushButton::clicked, this, &TableExportDialog::reject);
     connect(browse_, &QPushButton::clicked, this, [this] {
@@ -197,8 +204,10 @@ void TableExportDialog::start() {
     const auto current = request();
     const auto error = EngineAdapter::tableExportError(current);
     if (!error.message.isEmpty()) {
-        (error.field == TableExportField::Tables ? tablesValidation_ : validation_)
-            ->setError(error.message);
+        const auto field = error.field == TableExportField::Tables    ? tablesValidation_
+                           : error.field == TableExportField::Options ? optionsValidation_
+                                                                      : validation_;
+        field->setError(error.message);
         return;
     }
     if (!apply(ExportEvent::Submit, tr("Starting export…")))

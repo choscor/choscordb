@@ -23,7 +23,7 @@ impl std::fmt::Display for StatementPlanError {
             Self::Empty => f.write_str("No executable statement in the document."),
             Self::TooMany => write!(
                 f,
-                "Run all can show up to {MAX_RESULT_TABS} results. Run fewer statements at a time."
+                "Run all can show up to {MAX_RESULT_TABS} results. To run a longer script, use File > Run SQL file."
             ),
         }
     }

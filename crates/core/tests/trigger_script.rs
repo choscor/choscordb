@@ -7,7 +7,8 @@ fn request(driver: &str, table_id: &str, table_name: &str) -> TriggerScriptReque
         table_id: table_id.into(),
         table_name: table_name.into(),
         trigger: "audit\"x".into(),
-        definition: "CREATE TRIGGER audit AFTER INSERT ON orders BEGIN SELECT 1; END;\n".into(),
+        definition:
+            "CREATE TRIGGER \"main\".\"audit\" AFTER INSERT ON orders BEGIN SELECT 1; END;\n".into(),
     }
 }
 
@@ -38,7 +39,14 @@ fn edit_drops_the_trigger_and_recreates_it_from_its_definition() {
     let sqlite = request("sqlite", r#"["main","orders"]"#, "main.orders");
     assert_eq!(
         trigger_script(TriggerScript::Edit, &sqlite).unwrap(),
-        "DROP TRIGGER \"main\".\"audit\"\"x\";\n\nCREATE TRIGGER audit AFTER INSERT ON orders BEGIN SELECT 1; END;"
+        "DROP TRIGGER \"main\".\"audit\"\"x\";\n\nCREATE TRIGGER \"main\".\"audit\" AFTER INSERT ON orders BEGIN SELECT 1; END;"
+    );
+    let attached = request("sqlite", r#"["aux","orders"]"#, "aux.orders");
+    let unqualified = trigger_script(TriggerScript::Edit, &attached).unwrap_err();
+    assert_eq!(unqualified.kind, ErrorKind::InvalidInput);
+    assert_eq!(
+        unqualified.message,
+        "The trigger definition does not name the schema of its table."
     );
     let missing = TriggerScriptRequest {
         definition: " ".into(),

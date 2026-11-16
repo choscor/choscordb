@@ -110,6 +110,7 @@ pub fn profile_tag_options() -> ffi::ProfileTagOptionsDto {
             .map(|level| ffi::SessionSafetyDto {
                 code: level.code().into(),
                 unavailable: level.session_unavailable().unwrap_or("").into(),
+                locks_session: level.locks_session(),
             })
             .collect(),
         max_environment_label_bytes: MAX_ENVIRONMENT_LABEL_BYTES as u32,

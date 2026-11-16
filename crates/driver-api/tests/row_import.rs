@@ -54,7 +54,7 @@ fn skip_policy_ignores_only_key_conflicts_for_each_driver() {
     );
     assert_eq!(
         sql(GridEditDriver::Mysql, "`people`"),
-        "INSERT INTO `people` (`id`, `name`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `id` = `id`"
+        "INSERT IGNORE INTO `people` (`id`, `name`) VALUES (?, ?)"
     );
 }
 

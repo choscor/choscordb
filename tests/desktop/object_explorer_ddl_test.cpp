@@ -101,7 +101,9 @@ class ObjectExplorerDdlTest final : public QObject {
         request.driver = "sqlite";
         const auto plan = EngineAdapter::triggerScript(request);
         QCOMPARE(plan.error, QString());
-        QCOMPARE(plan.sql, "DROP TRIGGER \"main\".\"audit_insert\";\n\n" + definition + ";");
+        QCOMPARE(plan.sql, QString("DROP TRIGGER \"main\".\"audit_insert\";\n\nCREATE TRIGGER "
+                                   "\"main\".\"audit_insert\" AFTER INSERT ON orders BEGIN "
+                                   "INSERT INTO audit VALUES (NEW.id); END;"));
         explorer.restoreObject(std::nullopt, R"(["main","ix"])", "main.ix", "index");
         QVERIFY(!tabs->isTabVisible(6));
     }
