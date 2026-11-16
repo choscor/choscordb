@@ -355,7 +355,7 @@ fn changes_are_validated_before_any_sql_is_built() {
                     ("default", "1; DROP TABLE people"),
                 ],
             ),
-            "The default expression cannot contain ;, --, /*, #, a backslash or a comma outside parentheses.",
+            "The default expression cannot contain ;, --, /*, # or a backslash. A $ must be in a string, and a comma in a string or parentheses.",
         ),
         (
             change(
@@ -373,7 +373,7 @@ fn changes_are_validated_before_any_sql_is_built() {
                     ("default", "1, DROP COLUMN name"),
                 ],
             ),
-            "The default expression cannot contain ;, --, /*, #, a backslash or a comma outside parentheses.",
+            "The default expression cannot contain ;, --, /*, # or a backslash. A $ must be in a string, and a comma in a string or parentheses.",
         ),
         (
             change(K::AddColumn, &[("type", "int")]),
@@ -399,6 +399,8 @@ fn changes_are_validated_before_any_sql_is_built() {
         "'\\'', DROP COLUMN name, ADD COLUMN z INT DEFAULT '\\''",
         "E'\\'', DROP COLUMN name, ADD COLUMN z INT DEFAULT E'\\''",
         "0 # hidden",
+        "\"'\", DROP COLUMN name, ADD COLUMN z INT DEFAULT \"'\"",
+        "$$'$$, DROP COLUMN name, ADD COLUMN z text DEFAULT $$'$$",
     ] {
         assert_eq!(
             error(
@@ -408,7 +410,7 @@ fn changes_are_validated_before_any_sql_is_built() {
                     &[("name", "x"), ("type", "int"), ("default", default)],
                 )]
             ),
-            "Change 1: The default expression cannot contain ;, --, /*, #, a backslash or a comma outside parentheses.",
+            "Change 1: The default expression cannot contain ;, --, /*, # or a backslash. A $ must be in a string, and a comma in a string or parentheses.",
             "{default}"
         );
     }
@@ -430,6 +432,20 @@ fn changes_are_validated_before_any_sql_is_built() {
         [
             "ALTER TABLE \"people\" ADD COLUMN \"price\" numeric(10, 2) DEFAULT coalesce(NULL, 'a, b')"
         ]
+    );
+    assert_eq!(
+        plan(
+            &people,
+            &[change(
+                K::AddColumn,
+                &[
+                    ("name", "label"),
+                    ("type", "text"),
+                    ("default", "'$5, \"a\"'")
+                ],
+            )]
+        ),
+        ["ALTER TABLE \"people\" ADD COLUMN \"label\" text DEFAULT '$5, \"a\"'"]
     );
     assert_eq!(error(&people, &[]), "Add one or more changes.");
 }

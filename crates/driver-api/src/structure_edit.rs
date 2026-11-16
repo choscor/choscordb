@@ -357,15 +357,18 @@ impl Dialect {
     }
 }
 
-fn top_level_comma(text: &str) -> bool {
+fn hides_more_sql(text: &str) -> bool {
     let mut depth = 0usize;
-    let mut quoted = false;
+    let mut quote: Option<char> = None;
     for c in text.chars() {
-        match c {
-            '\'' => quoted = !quoted,
-            '(' if !quoted => depth += 1,
-            ')' if !quoted => depth = depth.saturating_sub(1),
-            ',' if !quoted && depth == 0 => return true,
+        match (quote, c) {
+            (Some(open), _) if c == open => quote = None,
+            (Some(_), _) => {}
+            (None, '\'' | '"') => quote = Some(c),
+            (None, '(') => depth += 1,
+            (None, ')') => depth = depth.saturating_sub(1),
+            (None, ',') if depth == 0 => return true,
+            (None, '$') => return true,
             _ => {}
         }
     }
@@ -374,7 +377,7 @@ fn top_level_comma(text: &str) -> bool {
 
 fn data_type(text: &str) -> Checked<String> {
     let valid = text.len() <= 128
-        && !top_level_comma(text)
+        && !hides_more_sql(text)
         && text
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '(' | ')' | ',' | '.'));
@@ -393,10 +396,10 @@ fn expression(text: &str) -> Checked<String> {
         || text.contains("/*")
         || text.contains('#')
         || text.contains('\\')
-        || top_level_comma(text)
+        || hides_more_sql(text)
     {
         return Err(
-            "The default expression cannot contain ;, --, /*, #, a backslash or a comma outside parentheses."
+            "The default expression cannot contain ;, --, /*, # or a backslash. A $ must be in a string, and a comma in a string or parentheses."
                 .into(),
         );
     }
