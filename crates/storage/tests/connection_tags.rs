@@ -135,3 +135,11 @@ fn safety_levels_gate_statements() {
         "Confirm destructive statements"
     );
 }
+
+#[test]
+fn each_safety_level_has_a_short_name_for_the_toolbar() {
+    assert_eq!(
+        SafetyLevel::ALL.map(SafetyLevel::name),
+        ["Silent", "Confirm writes", "Confirm all", "Read-only"]
+    );
+}

@@ -420,12 +420,16 @@ fn read_json(
             outcome: &mut outcome,
             read: &mut read,
         }
-        .deserialize(&mut deserializer)
-        .and_then(|()| deserializer.end());
+        .deserialize(&mut deserializer);
+        let not_valid = |error: serde_json::Error| format!("The JSON file is not valid: {error}");
         match (outcome, parsed) {
             (Some(stopped), _) => stopped?,
-            (None, parsed) => parsed
-                .map_err(|error| row_error(read, format!("The JSON file is not valid: {error}")))?,
+            (None, parsed) => {
+                parsed.map_err(|error| row_error(read, not_valid(error)))?;
+                deserializer
+                    .end()
+                    .map_err(|error| invalid(not_valid(error)))?;
+            }
         }
         return Ok(columns.names);
     }

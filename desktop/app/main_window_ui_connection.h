@@ -14,7 +14,7 @@ class StatusLine;
 }
 
 struct ConnectionToolbar {
-    QComboBox* safetyLevel;
+    design::Button* safetyLevel;
     design::Button* switchDatabase;
     QComboBox* rowLimit;
     QAction* explain;

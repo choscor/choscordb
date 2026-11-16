@@ -20,6 +20,7 @@ fn profile(id: &str) -> ConnectionProfile {
         tls_credential_ref: None,
         ssh_credential_ref: None,
         ssh_private_key_ref: None,
+        row_limit: 0,
     }
 }
 fn event(engine: &mut Engine) -> Event {
@@ -184,4 +185,39 @@ fn a_missing_connection_error_names_the_connection() {
         } => assert_eq!(error.message, "Connection no longer exists"),
         other => panic!("unexpected {other:?}"),
     }
+}
+#[test]
+fn the_row_limit_of_a_profile_is_saved_and_must_be_a_listed_choice() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = EngineConfig {
+        storage_path: Some(dir.path().join("meta.sqlite")),
+        ..Default::default()
+    };
+    let mut engine = Engine::new(config.clone(), vec![]).unwrap();
+    engine.profile_save(profile("one"), 1).unwrap();
+    event(&mut engine);
+    engine.profile_set_row_limit("one".into(), 500, 2).unwrap();
+    assert!(
+        matches!(event(&mut engine), Event::ProfileSaved { request_token: 2, profile, .. } if profile.row_limit == 500)
+    );
+    engine.profile_set_row_limit("one".into(), 123, 3).unwrap();
+    assert!(
+        matches!(event(&mut engine), Event::ProfileFailed { request_token: 3, error } if error.message == "The row limit is not one of the listed choices.")
+    );
+    engine
+        .profile_set_row_limit("missing".into(), 100, 4)
+        .unwrap();
+    assert!(matches!(
+        event(&mut engine),
+        Event::ProfileFailed {
+            request_token: 4,
+            ..
+        }
+    ));
+    drop(engine);
+    let mut engine = Engine::new(config, vec![]).unwrap();
+    engine.profile_list(5).unwrap();
+    assert!(
+        matches!(event(&mut engine), Event::Profiles { profiles, .. } if profiles[0].row_limit == 500)
+    );
 }

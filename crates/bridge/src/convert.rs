@@ -1068,6 +1068,7 @@ pub(crate) fn profile(value: choscordb_core::ConnectionProfile) -> ffi::ProfileD
         tone: tags.tone,
         tag_label: tags.tag_label,
         chip_label: tags.chip_label,
+        row_limit: value.row_limit,
         id: value.id,
         name: value.name,
         group_id: value.group_id.unwrap_or_default(),

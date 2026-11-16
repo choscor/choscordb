@@ -160,6 +160,21 @@ fn encoding_choice_decodes_latin1_and_rejects_invalid_utf8() {
 }
 
 #[test]
+fn text_after_a_json_array_is_a_file_error_without_a_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write(dir.path(), "tail.json", br#"[{"n": 1}, {"n": 2}] extra"#);
+    let error = read_import_file(&json(path), ImportRead::All)
+        .err()
+        .unwrap();
+    assert_eq!(error.failed_statement, None);
+    assert!(
+        error.message.starts_with("The JSON file is not valid"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn json_arrays_keep_the_key_order_and_join_keys_from_all_rows() {
     let dir = tempfile::tempdir().unwrap();
     let path = write(

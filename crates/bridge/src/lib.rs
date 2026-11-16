@@ -595,6 +595,7 @@ pub mod ffi {
         tone: String,
         tag_label: String,
         chip_label: String,
+        row_limit: u32,
     }
     struct ProfileChoiceDto {
         code: String,
@@ -604,6 +605,7 @@ pub mod ffi {
         environments: Vec<ProfileChoiceDto>,
         colors: Vec<ProfileChoiceDto>,
         safety_levels: Vec<ProfileChoiceDto>,
+        safety_names: Vec<ProfileChoiceDto>,
         labelled_environment: String,
         session_locked_safety: String,
         max_environment_label_bytes: u32,
@@ -2315,6 +2317,12 @@ pub mod ffi {
             token: u64,
         ) -> Submit;
         fn profile_delete(engine: &mut BridgeEngine, id: &str, token: u64) -> Submit;
+        fn profile_set_row_limit(
+            engine: &mut BridgeEngine,
+            id: &str,
+            row_limit: u32,
+            token: u64,
+        ) -> Submit;
         fn profile_test(engine: &mut BridgeEngine, profile: ProfileDto, token: u64) -> Submit;
         fn profile_connect(engine: &mut BridgeEngine, profile: ProfileDto) -> Submit;
         fn profile_save_secret(
@@ -3486,11 +3494,15 @@ fn profile_with_session_timeout(
         },
         _ => return Err("Unknown connection driver".into()),
     };
+    if !choscordb_sql_language::ROW_LIMIT_CHOICES.contains(&dto.row_limit) {
+        return Err("The row limit is not one of the listed choices.".into());
+    }
     let mut profile = ConnectionProfile {
         environment,
         environment_label,
         color,
         safety,
+        row_limit: dto.row_limit,
         id: dto.id,
         name: dto.name,
         group_id: (!dto.group_id.is_empty()).then_some(dto.group_id),
@@ -3609,6 +3621,19 @@ pub fn profile_duplicate(
 pub fn profile_delete(engine: &mut BridgeEngine, id: &str, token: u64) -> ffi::Submit {
     submit(engine, |e| {
         e.profile_delete(id.into(), token)
+            .map(|()| token)
+            .map_err(|e| e.to_string())
+    })
+}
+
+pub fn profile_set_row_limit(
+    engine: &mut BridgeEngine,
+    id: &str,
+    row_limit: u32,
+    token: u64,
+) -> ffi::Submit {
+    submit(engine, |e| {
+        e.profile_set_row_limit(id.into(), row_limit, token)
             .map(|()| token)
             .map_err(|e| e.to_string())
     })

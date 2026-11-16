@@ -127,6 +127,7 @@ struct SavedProfile {
     quint16 sshPort = 0;
     QString environment, environmentLabel, color, safety;
     QString tone, tagLabel, chipLabel;
+    quint32 rowLimit = 0;
 };
 struct SavedHistoryEntry {
     QString id, profileId, sql;
@@ -190,7 +191,7 @@ struct ProfileDatabase {
     QString error;
 };
 struct ProfileTagOptions {
-    QList<CodeLabel> environments, colors, safetyLevels;
+    QList<CodeLabel> environments, colors, safetyLevels, safetyNames;
     QString labelledEnvironment;
     QString sessionLockedSafety;
     int maxEnvironmentLabelBytes = 0;
@@ -688,6 +689,7 @@ class EngineAdapter final : public QObject {
     static int profileSecretMaxBytes();
     void duplicateProfile(const QString& source, const QString& name, quint64 token);
     void deleteProfile(const QString& id, quint64 token);
+    void setProfileRowLimit(const QString& id, quint32 rowLimit, quint64 token);
     std::optional<quint64> connectProfile(const SavedProfile& profile);
     bool refreshSqlMode(quint64 connection, quint64 requestToken);
     void nextResultSet(quint64 query);

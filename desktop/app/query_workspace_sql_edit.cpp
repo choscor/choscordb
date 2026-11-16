@@ -1,5 +1,6 @@
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
+#include "bridge/request_token.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QComboBox>
 
@@ -45,9 +46,22 @@ void QueryWorkspace::setupRowLimit() {
         widgets_.rowLimit->addItem(
             choice == 0 ? tr("No row limit") : tr("Limit %L1 rows").arg(choice), choice);
     connect(widgets_.rowLimit, &QComboBox::activated, this, [this](int index) {
-        if (const auto connection = selectedConnection())
-            connectionRowLimits_.insert(*connection, widgets_.rowLimit->itemData(index).toUInt());
+        const auto connection = selectedConnection();
+        if (!connection)
+            return;
+        const auto limit = widgets_.rowLimit->itemData(index).toUInt();
+        connectionRowLimits_.insert(*connection, limit);
+        const auto profile = connectionProfiles_.value(*connection);
+        if (profile.isEmpty())
+            return;
+        rowLimitToken_ = nextRequestToken();
+        adapter_->setProfileRowLimit(profile, limit, rowLimitToken_);
     });
+    connect(adapter_, &EngineAdapter::profileFailed, this,
+            [this](quint64 token, const QString& error) {
+                if (token == rowLimitToken_)
+                    message(tr("Row limit: %1").arg(error));
+            });
     syncRowLimit();
 }
 

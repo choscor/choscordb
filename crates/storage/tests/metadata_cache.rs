@@ -118,6 +118,7 @@ fn sqlite_profile(path: &str, name: &str) -> ConnectionProfile {
         tls_credential_ref: None,
         ssh_credential_ref: None,
         ssh_private_key_ref: None,
+        row_limit: 0,
     }
 }
 

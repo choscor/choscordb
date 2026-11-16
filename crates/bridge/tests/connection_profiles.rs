@@ -469,3 +469,17 @@ fn draft_normalization_derives_the_tags_from_the_edited_environment_and_color() 
         ("", "", "")
     );
 }
+
+#[test]
+fn a_profile_keeps_a_listed_row_limit_and_rejects_another() {
+    let none = ffi::ProfileSecretDraftsDto::default();
+    let mut listed = draft();
+    listed.row_limit = 500;
+    assert_eq!(profile_draft_validate(listed, &none).message, "");
+    let mut other = draft();
+    other.row_limit = 123;
+    assert_eq!(
+        profile_draft_validate(other, &none).message,
+        "Invalid connection options. The row limit is not one of the listed choices."
+    );
+}

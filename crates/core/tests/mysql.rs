@@ -89,6 +89,7 @@ fn mysql_profile_connects_streams_typed_rows_and_disconnects_through_engine() {
                 ssh_credential_ref: None,
                 ssh_private_key_ref: None,
                 configuration: server_profile(),
+                row_limit: 0,
             },
             Some(Secret::new("choscordb-test-password")),
         )

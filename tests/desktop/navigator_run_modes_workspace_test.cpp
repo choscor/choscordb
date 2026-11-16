@@ -321,11 +321,11 @@ void NavigatorSqlWorkspaceTest::runSqlFileReportsEachFailedStatement() {
     QCOMPARE(action->shortcut(), QKeySequence("Ctrl+Alt+O"));
     workspace->connectSqlite(":memory:");
     QTRY_VERIFY(runButton->isEnabled());
-    auto* safety = window.findChild<QComboBox*>("safetyLevel");
+    auto* safety = window.findChild<QMenu*>("safetyLevelMenu");
     const auto setSafety = [safety](const char* code) {
-        const auto index = safety->findData(code);
-        safety->setCurrentIndex(index);
-        emit safety->activated(index);
+        for (auto* level : safety->actions())
+            if (level->data() == code)
+                level->trigger();
     };
     setSafety("silent");
     action->trigger();

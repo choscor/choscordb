@@ -215,6 +215,33 @@ class SqlTextCommandsTest : public QObject {
         run->trigger();
         QTRY_COMPARE(window.findChild<QLabel*>("executionRows")->text(), QString("500 rows"));
     }
+    void theRowLimitIsKeptWithTheSavedConnection() {
+        choscordb::MainWindow window;
+        QVERIFY(openEditor(window));
+        auto* workspace = window.findChild<choscordb::QueryWorkspace*>();
+        auto* adapter = workspace->adapter();
+        choscordb::SavedProfile profile;
+        profile.id = "limited";
+        profile.name = "Limited";
+        profile.driver = "sqlite";
+        profile.path = ":memory:";
+        profile.rowLimit = 300;
+        QSignalSpy saved(adapter, &choscordb::EngineAdapter::profileSaved);
+        adapter->saveProfile(profile, 901);
+        QTRY_COMPARE(saved.count(), 1);
+        QVERIFY(workspace->connectSavedProfile(
+            saved.takeFirst().at(1).value<choscordb::SavedProfile>()));
+        auto* limit = window.findChild<QComboBox*>("rowLimit");
+        QTRY_VERIFY(limit->isEnabled());
+        QCOMPARE(limit->currentData().toUInt(), 300u);
+        const auto index = limit->findData(1000u);
+        limit->setCurrentIndex(index);
+        emit limit->activated(index);
+        QTRY_COMPARE(saved.count(), 1);
+        const auto stored = saved.takeFirst().at(1).value<choscordb::SavedProfile>();
+        QCOMPARE(stored.id, QString("limited"));
+        QCOMPARE(stored.rowLimit, 1000u);
+    }
     void formatErrorsReachTheMessagesAndKeepTheText() {
         choscordb::MainWindow window;
         auto* editor = openEditor(window);

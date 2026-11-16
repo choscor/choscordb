@@ -95,6 +95,8 @@ pub struct ConnectionProfile {
     pub color: ConnectionColor,
     #[serde(default, skip_serializing_if = "is_default")]
     pub safety: SafetyLevel,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub row_limit: u32,
 }
 
 fn is_default<T: Default + PartialEq>(value: &T) -> bool {
@@ -257,6 +259,14 @@ impl SafetyLevel {
             Self::Silent => "Run without confirmation",
             Self::ConfirmWrites => "Confirm destructive statements",
             Self::ConfirmAll => "Confirm each statement",
+            Self::ReadOnly => "Read-only",
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Silent => "Silent",
+            Self::ConfirmWrites => "Confirm writes",
+            Self::ConfirmAll => "Confirm all",
             Self::ReadOnly => "Read-only",
         }
     }

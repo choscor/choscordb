@@ -1,9 +1,13 @@
 #include "app/connection_tone.h"
 #include "app/query_workspace.h"
 #include "bridge/engine_adapter.h"
-#include <QComboBox>
+#include "design_system/menu/menu.h"
+#include <QActionGroup>
 #include <QLabel>
+#include <QMenu>
+#include <QPushButton>
 #include <QStyle>
+#include <algorithm>
 
 namespace choscordb {
 void QueryWorkspace::rememberProfile(quint64 connection, const SavedProfile& profile) {
@@ -12,6 +16,16 @@ void QueryWorkspace::rememberProfile(quint64 connection, const SavedProfile& pro
     connectionDrivers_.insert(connection, profile.driver);
     connectionTags_.insert(connection,
                            {profile.safety, profile.safety, profile.chipLabel, profile.tone});
+    connectionRowLimits_.insert(connection, profile.rowLimit);
+}
+
+void QueryWorkspace::refreshProfileTag(const SavedProfile& profile) {
+    for (auto tag = connectionTags_.begin(); tag != connectionTags_.end(); ++tag)
+        if (connectionProfiles_.value(tag.key()) == profile.id) {
+            tag->label = profile.chipLabel;
+            tag->tone = profile.tone;
+        }
+    syncConnectionTag();
 }
 
 std::optional<SavedProfile> QueryWorkspace::connectionSource(quint64 connection) const {
@@ -24,11 +38,24 @@ std::optional<SavedProfile> QueryWorkspace::connectionSource(quint64 connection)
 void QueryWorkspace::setupSafetyLevel() {
     if (!widgets_.safetyLevel)
         return;
-    for (const auto& level : EngineAdapter::profileTagOptions().safetyLevels)
-        widgets_.safetyLevel->addItem(level.label, level.code);
-    connect(widgets_.safetyLevel, &QComboBox::activated, this, [this](int index) {
+    auto* menu = new QMenu(widgets_.safetyLevel);
+    safetyMenu_ = menu;
+    menu->setObjectName("safetyLevelMenu");
+    auto* levels = new QActionGroup(menu);
+    for (const auto& level : EngineAdapter::profileTagOptions().safetyLevels) {
+        auto* action = menu->addAction(level.label);
+        action->setData(level.code);
+        action->setCheckable(true);
+        levels->addAction(action);
+    }
+    connect(levels, &QActionGroup::triggered, this, [this](QAction* action) {
         if (const auto connection = selectedConnection())
-            connectionTags_[*connection].safety = widgets_.safetyLevel->itemData(index).toString();
+            connectionTags_[*connection].safety = action->data().toString();
+        syncConnectionTag();
+    });
+    connect(widgets_.safetyLevel, &QPushButton::clicked, menu, [this, menu] {
+        design::popupContextMenu(
+            *menu, widgets_.safetyLevel->mapToGlobal(widgets_.safetyLevel->rect().bottomLeft()));
     });
     syncConnectionTag();
 }
@@ -36,12 +63,24 @@ void QueryWorkspace::setupSafetyLevel() {
 void QueryWorkspace::syncConnectionTag() {
     const auto connection = selectedConnection();
     const auto tag = connection ? connectionTags_.value(*connection) : ConnectionTag{};
-    if (widgets_.safetyLevel) {
+    if (widgets_.safetyLevel && safetyMenu_) {
         const auto locked =
             tag.profileSafety == EngineAdapter::profileTagOptions().sessionLockedSafety;
         widgets_.safetyLevel->setEnabled(connection.has_value() && !locked);
-        const auto index = widgets_.safetyLevel->findData(tag.safety);
-        widgets_.safetyLevel->setCurrentIndex(index >= 0 ? index : 0);
+        const auto actions = safetyMenu_->actions();
+        const auto current =
+            std::find_if(actions.cbegin(), actions.cend(),
+                         [&tag](const QAction* action) { return action->data() == tag.safety; });
+        auto* shown = current != actions.cend() ? *current : actions.value(0);
+        if (shown) {
+            shown->setChecked(true);
+            const auto& names = EngineAdapter::profileTagOptions().safetyNames;
+            const auto name =
+                std::find_if(names.cbegin(), names.cend(), [shown](const CodeLabel& choice) {
+                    return choice.code == shown->data().toString();
+                });
+            widgets_.safetyLevel->setText(name != names.cend() ? name->label : shown->text());
+        }
     }
     if (!widgets_.connectionTag)
         return;

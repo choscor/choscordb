@@ -112,6 +112,7 @@ fn profile(driver: &str, authentication: Option<SshAuthentication>) -> Connectio
         safety: Default::default(),
         tls_credential_ref: None,
         ssh_credential_ref: Some("stale-ssh".into()),
+        row_limit: 0,
     }
 }
 #[test]

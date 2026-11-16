@@ -51,6 +51,7 @@ inline ProfileDto profileDto(const SavedProfile& value) {
     dto.environment_label = toRust(value.environmentLabel);
     dto.color = toRust(value.color);
     dto.safety = toRust(value.safety);
+    dto.row_limit = value.rowLimit;
     return dto;
 }
 inline ProfileSecretDraftsDto secretDraftsDto(const ProfileSecretDrafts& value) {

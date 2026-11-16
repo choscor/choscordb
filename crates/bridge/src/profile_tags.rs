@@ -103,6 +103,7 @@ pub fn profile_tag_options() -> ffi::ProfileTagOptionsDto {
             ConnectionColor::label,
         ),
         safety_levels: choices(&SafetyLevel::ALL, SafetyLevel::code, SafetyLevel::label),
+        safety_names: choices(&SafetyLevel::ALL, SafetyLevel::code, SafetyLevel::name),
         labelled_environment: ConnectionEnvironment::Custom.code().into(),
         session_locked_safety: SafetyLevel::ReadOnly.code().into(),
         max_environment_label_bytes: MAX_ENVIRONMENT_LABEL_BYTES as u32,

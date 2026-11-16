@@ -61,6 +61,7 @@ SavedProfile savedProfile(const ProfileDto& dto) {
     value.tone = fromRust(dto.tone);
     value.tagLabel = fromRust(dto.tag_label);
     value.chipLabel = fromRust(dto.chip_label);
+    value.rowLimit = dto.row_limit;
     return value;
 }
 void assignAppearance(AppearanceLayout& value, const AppearanceLayoutDto& dto) {
@@ -543,6 +544,16 @@ void EngineAdapter::deleteProfile(const QString& id, quint64 token) {
     }
     const auto bytes = id.toUtf8();
     auto result = profile_delete(*d_->engine, utf8View(bytes), token);
+    if (!result.accepted)
+        emit profileFailed(token, fromRust(result.error));
+}
+void EngineAdapter::setProfileRowLimit(const QString& id, quint32 rowLimit, quint64 token) {
+    if (d_->closing || d_->stopping) {
+        emit profileFailed(token, tr("Workspace is closing."));
+        return;
+    }
+    const auto bytes = id.toUtf8();
+    auto result = profile_set_row_limit(*d_->engine, utf8View(bytes), rowLimit, token);
     if (!result.accepted)
         emit profileFailed(token, fromRust(result.error));
 }

@@ -74,7 +74,7 @@ class QueryWorkspace final : public QObject {
         QLabel* visibleSizeMetric = nullptr;
         QLabel* editReason = nullptr;
         QComboBox* rowLimit = nullptr;
-        QComboBox* safetyLevel = nullptr;
+        QPushButton* safetyLevel = nullptr;
         QLabel* connectionTag = nullptr;
         QTabBar* statementResults = nullptr;
         QAction* stopOnFirstError = nullptr;
@@ -116,6 +116,7 @@ class QueryWorkspace final : public QObject {
     std::optional<quint64> connectSqlite(const QString& path);
     std::optional<quint64> connectSavedProfile(const SavedProfile& profile);
     std::optional<SavedProfile> connectionSource(quint64 connection) const;
+    void refreshProfileTag(const SavedProfile& profile);
     std::optional<quint64> selectedConnection() const;
     void runSqlFile();
     void stepResultPage(bool next);
@@ -248,6 +249,7 @@ class QueryWorkspace final : public QObject {
     QString columnContext_;
     QStringList hiddenColumns_;
     quint64 hiddenColumnsToken_ = 0;
+    quint64 rowLimitToken_ = 0;
     bool quickFilterAvailable(const QPersistentModelIndex& clicked) const;
     void appendQuickFilterActions(QMenu& menu, const QPersistentModelIndex& clicked);
     void activateQuickFilter(const QPersistentModelIndex& clicked, quint64 query,
@@ -410,6 +412,7 @@ class QueryWorkspace final : public QObject {
         QString profileSafety, safety, label, tone;
     };
     QHash<quint64, ConnectionTag> connectionTags_;
+    QMenu* safetyMenu_ = nullptr;
     void rememberProfile(quint64 connection, const SavedProfile& profile);
     void setupSafetyLevel();
     void syncConnectionTag();

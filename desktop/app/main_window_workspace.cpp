@@ -438,7 +438,12 @@ void MainWindow::connectWorkspace(const Ui& ui, const QString& storagePath) {
             syncVisible();
         });
     connect(workspace_->adapter(), &EngineAdapter::profileSaved, this,
-            [refreshProfiles] { refreshProfiles(); });
+            [this, refreshProfiles](quint64, const SavedProfile& profile, const QString&) {
+                workspace_->refreshProfileTag(profile);
+                if (scheduleTabTags_)
+                    scheduleTabTags_();
+                refreshProfiles();
+            });
     connect(workspace_->adapter(), &EngineAdapter::profileDeleted, this,
             [this, refreshProfiles, syncVisible](quint64, const QString& id, const QString&) {
                 selectedProfileIds_.remove(id);

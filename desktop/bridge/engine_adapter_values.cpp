@@ -754,8 +754,9 @@ const ProfileTagOptions& EngineAdapter::profileTagOptions() {
         };
         return ProfileTagOptions{
             choices(dto.environments),           choices(dto.colors),
-            choices(dto.safety_levels),          fromRust(dto.labelled_environment),
-            fromRust(dto.session_locked_safety), int(dto.max_environment_label_bytes)};
+            choices(dto.safety_levels),          choices(dto.safety_names),
+            fromRust(dto.labelled_environment),  fromRust(dto.session_locked_safety),
+            int(dto.max_environment_label_bytes)};
     }();
     return options;
 }

@@ -26,8 +26,13 @@ QString tr(const char* text) {
 }
 
 ConnectionToolbar buildConnectionToolbar(QToolBar* toolbar, QMenu* queryMenu) {
-    auto* safety = addSelect(toolbar, "safetyLevel", tr("Safety level"),
-                             tr("Safety level for this connection"));
+    auto* safety = new design::Button({}, toolbar);
+    safety->setObjectName("safetyLevel");
+    safety->setAccessibleName(tr("Safety level"));
+    safety->setToolTip(tr("Safety level for this connection"));
+    safety->setVariant(design::ButtonVariant::Outline);
+    safety->setButtonSize(design::ButtonSize::Small);
+    toolbar->addWidget(safety);
     auto* database = new design::Button({}, toolbar);
     database->setObjectName("switchDatabaseButton");
     database->setAccessibleName(tr("Switch database…"));

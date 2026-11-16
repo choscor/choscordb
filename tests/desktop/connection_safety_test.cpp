@@ -6,10 +6,11 @@
 #include "design_system/tabs/tabs_style.h"
 #include "widgets/sql_editor/sql_editor.h"
 #include <QAction>
-#include <QComboBox>
 #include <QHelpEvent>
 #include <QLabel>
+#include <QMenu>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QTabWidget>
 #include <QTableView>
 #include <QtTest>
@@ -57,9 +58,9 @@ class ConnectionSafetyTest : public QObject {
         QVERIFY(tag && tag->isVisible());
         QCOMPARE(tag->text(), QString("Production"));
         QCOMPARE(tag->property("variant").toString(), QString("error"));
-        auto* safety = window.findChild<QComboBox*>("safetyLevel");
+        auto* safety = window.findChild<QPushButton*>("safetyLevel");
         QVERIFY(safety && !safety->isEnabled());
-        QCOMPARE(safety->currentData().toString(), QString("read_only"));
+        QCOMPARE(safety->text(), QString("Read-only"));
         auto* messages = window.findChild<QPlainTextEdit*>("queryMessages");
         editor->setText("CREATE TABLE t (a int)");
         window.findChild<QAction*>("runStatement")->trigger();
@@ -106,6 +107,25 @@ class ConnectionSafetyTest : public QObject {
         QCOMPARE(tag->text(), QString("Tagged"));
         QCOMPARE(tag->property("variant").toString(), QString("success"));
     }
+    void aSavedProfileEditUpdatesTheTagOfItsLiveConnection() {
+        choscordb::MainWindow window;
+        auto* editor = connect(window, normalized(profile("development", "silent")));
+        QVERIFY(editor);
+        auto* tabs = window.findChild<QTabWidget*>("editorTabs");
+        auto* bar = dynamic_cast<choscordb::design::DocumentTabBar*>(tabs->tabBar());
+        QTRY_COMPARE(bar->tabTone(tabs->indexOf(editor)),
+                     std::optional(choscordb::design::StatusTone::Success));
+        auto edited = profile("production", "silent");
+        edited.id = "tagged-silent";
+        emit window.findChild<choscordb::QueryWorkspace*>()->adapter()->profileSaved(
+            0, normalized(edited), {});
+        QTRY_COMPARE(bar->tabTone(tabs->indexOf(editor)),
+                     std::optional(choscordb::design::StatusTone::Danger));
+        QCOMPARE(bar->tabTagLabel(tabs->indexOf(editor)), QString("Production"));
+        auto* tag = window.findChild<QLabel*>("connectionTag");
+        QCOMPARE(tag->text(), QString("Production"));
+        QCOMPARE(tag->property("variant").toString(), QString("error"));
+    }
     void confirmAllAsksBeforeEachStatementUntilTheSessionIsSilent() {
         choscordb::MainWindow window;
         auto* editor = connect(window, normalized(profile("development", "confirm_all")));
@@ -121,11 +141,16 @@ class ConnectionSafetyTest : public QObject {
         }
         auto* grid = window.findChild<QTableView*>("queryResults");
         QTRY_COMPARE(grid->model()->rowCount(), 1);
-        auto* safety = window.findChild<QComboBox*>("safetyLevel");
+        auto* safety = window.findChild<QPushButton*>("safetyLevel");
         QVERIFY(safety->isEnabled());
-        const auto silent = safety->findData("silent");
-        safety->setCurrentIndex(silent);
-        emit safety->activated(silent);
+        auto* menu = window.findChild<QMenu*>("safetyLevelMenu");
+        safety->click();
+        QTRY_VERIFY(menu->isVisible());
+        for (auto* level : menu->actions())
+            if (level->data() == "silent")
+                level->trigger();
+        menu->close();
+        QCOMPARE(safety->text(), QString("Silent"));
         editor->setText("DROP TABLE IF EXISTS missing");
         window.findChild<QAction*>("runStatement")->trigger();
         QTRY_VERIFY(window.findChild<QPlainTextEdit*>("queryMessages")

@@ -8,7 +8,7 @@ ChoscorDB is a native, cross-platform SQL client with a Qt 6 Widgets frontend an
 - Keep passwords in the credential store of the operating system. Connect through an SSH tunnel or TLS.
 - Write SQL with completion, search and replace, and run options.
 - Format or minify SQL, and toggle line or block comments.
-- Set a row limit for `SELECT` statements on each connection.
+- Set a row limit for `SELECT` statements on each connection. The connection keeps it.
 - Run all statements and see one result tab for each statement. Name a tab with a `-- name:` comment, pin a tab, and stop on the first error.
 - Switch the database of a SQL tab with the Database toolbar button (Ctrl+K). For SQLite, switch to another database file in the same folder.
 - Move a query tab to another open connection (Ctrl+Shift+K). Go to a tab with Ctrl+1 to Ctrl+9.

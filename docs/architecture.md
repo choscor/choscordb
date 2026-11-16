@@ -74,6 +74,9 @@ SQLite uses `PRAGMA query_only`. PostgreSQL and MySQL make each transaction read
 If a driver has no lock statement, the connection fails with an `Unsupported` error.
 Before a statement runs, `sql_execution_gate` applies the safety level.
 The gate can run the statement, ask for confirmation, or reject a statement that can change data.
+The toolbar safety button shows the short name of the level from `SafetyLevel::name`. Its menu changes the level for the session.
+`SELECT` statements get the row limit of the connection. `apply_row_limit` in `sql-language` adds or caps the `LIMIT`.
+The toolbar choice is stored in `ConnectionProfile::row_limit` through `Engine::profile_set_row_limit`. It must be one of `ROW_LIMIT_CHOICES`.
 
 The engine closes the catalog session when the connection disconnects.
 If the catalog session closes because of a connection error, the next read opens it again.

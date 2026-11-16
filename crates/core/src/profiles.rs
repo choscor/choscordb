@@ -57,6 +57,7 @@ pub(crate) enum Command {
     Resolve(String, oneshot::Sender<Result<Secret, DriverError>>),
     Duplicate(String, String, String, u64),
     Delete(String, u64),
+    SetRowLimit(String, u32, u64),
 }
 impl Command {
     fn token(&self) -> u64 {
@@ -64,7 +65,8 @@ impl Command {
             Self::List(t)
             | Self::Save(_, _, t)
             | Self::Duplicate(_, _, _, t)
-            | Self::Delete(_, t) => *t,
+            | Self::Delete(_, t)
+            | Self::SetRowLimit(_, _, t) => *t,
             Self::Resolve(..) | Self::HistoryWrite(_) | Self::MetadataCache(_) => 0,
             Self::Recovery(command) => command.token(),
         }
@@ -429,6 +431,30 @@ fn execute(
             ),
             warning: None,
         }),
+        Command::SetRowLimit(id, row_limit, request_token) => {
+            if !choscordb_sql_language::ROW_LIMIT_CHOICES.contains(&row_limit) {
+                return Err(DriverError::new(
+                    ErrorKind::InvalidInput,
+                    "The row limit is not one of the listed choices.",
+                ));
+            }
+            let mut profile = storage
+                .profile(&id)
+                .map_err(storage_error)?
+                .ok_or_else(|| {
+                    DriverError::new(
+                        ErrorKind::InvalidInput,
+                        "The connection profile no longer exists.",
+                    )
+                })?;
+            profile.row_limit = row_limit;
+            storage.save_profile(&profile).map_err(storage_error)?;
+            Ok(Event::ProfileSaved {
+                request_token,
+                profile: Box::new(profile),
+                warning: None,
+            })
+        }
         Command::Delete(id, request_token) => {
             storage.delete_profile(&id).map_err(storage_error)?;
             let warning = cleanup(storage, credentials)
@@ -631,6 +657,14 @@ impl Engine {
     ) -> Result<(), SubmitError> {
         self.submit_profile(Command::Duplicate(source, id, name, token))
     }
+    pub fn profile_set_row_limit(
+        &self,
+        id: String,
+        row_limit: u32,
+        token: u64,
+    ) -> Result<(), SubmitError> {
+        self.submit_profile(Command::SetRowLimit(id, row_limit, token))
+    }
     pub fn profile_delete(&self, id: String, token: u64) -> Result<(), SubmitError> {
         self.submit_profile(Command::Delete(id, token))
     }
@@ -643,7 +677,7 @@ impl Engine {
                 bounded(id)?;
                 bounded(name)?;
             }
-            Command::Delete(id, _) => bounded(id)?,
+            Command::Delete(id, _) | Command::SetRowLimit(id, _, _) => bounded(id)?,
             Command::List(_)
             | Command::Resolve(..)
             | Command::Recovery(_)

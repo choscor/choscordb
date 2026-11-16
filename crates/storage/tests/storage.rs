@@ -20,6 +20,7 @@ fn profile() -> ConnectionProfile {
         tls_credential_ref: None,
         ssh_credential_ref: None,
         ssh_private_key_ref: None,
+        row_limit: 0,
     }
 }
 
@@ -466,6 +467,7 @@ fn postgres_profile_persists_only_credential_references() {
         tls_credential_ref: None,
         ssh_credential_ref: None,
         ssh_private_key_ref: None,
+        row_limit: 0,
     };
     let mut store = Storage::open(&path).unwrap();
     store.save_profile(&p).unwrap();
