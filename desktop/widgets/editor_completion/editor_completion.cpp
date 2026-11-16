@@ -58,7 +58,8 @@ void EditorCompletionController::setEditor(SqlEditor* editor) {
             requestCompletion(false);
     }));
     editorConnections_.append(connect(editor, &SqlEditor::cursorPositionChanged, this, [this] {
-        if (!inserting_)
+        if (!inserting_ &&
+            quint64(editor_->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS)) != launchedCursor_)
             dismiss();
     }));
     editorConnections_.append(connect(editor, &QObject::destroyed, this, [this] {
@@ -139,6 +140,7 @@ void EditorCompletionController::launch() {
         editor_->isIoBusy() || !editor_->hasFocus())
         return;
     const auto cursor = quint64(editor_->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS));
+    launchedCursor_ = cursor;
     if (cursor != quint64(editor_->SendScintilla(QsciScintilla::SCI_GETANCHOR)) ||
         !CompletionService::sourceSupported(
             quint64(editor_->SendScintilla(QsciScintilla::SCI_GETLENGTH))))

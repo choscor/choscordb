@@ -12,6 +12,7 @@
 #include <QCompleter>
 #include <QIcon>
 #include <QTabWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QtTest>
 #include <memory>
@@ -360,6 +361,27 @@ class EditorCompletionTest : public QObject {
         QTRY_VERIFY(
             completer->popup()->isVisible() &&
             completer->completionModel()->index(0, 0).data().toString().startsWith("pick_b"));
+    }
+    void lateCaretNotificationKeepsTheRequestedCompletion() {
+        choscordb::SqlEditor editor;
+        editor.show();
+        editor.setFocus();
+        QTRY_VERIFY(editor.hasFocus());
+        choscordb::EditorCompletionController controller(choscordb::objectKindIcon);
+        controller.setEditor(&editor);
+        controller.setCatalog(choscordb::CompletionService({{"pick_a", "SELECT 'a';", "snippet"}}));
+        editor.setText("pick");
+        editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 4L);
+        QCoreApplication::processEvents();
+        auto* launch = controller.findChild<QTimer*>();
+        QVERIFY(launch);
+        connect(launch, &QTimer::timeout, &editor,
+                [&editor] { emit editor.cursorPositionChanged(0, 4); });
+        controller.requestCompletion();
+        auto* completer = controller.findChild<QCompleter*>();
+        QTRY_VERIFY(completer->popup()->isVisible());
+        editor.SendScintilla(QsciScintilla::SCI_GOTOPOS, 2L);
+        QTRY_VERIFY(!completer->popup()->isVisible());
     }
 };
 QTEST_MAIN(EditorCompletionTest)

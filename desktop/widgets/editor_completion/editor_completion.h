@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QPointer>
 #include <functional>
+#include <limits>
 class QCompleter;
 class QModelIndex;
 class QStandardItemModel;
@@ -37,6 +38,7 @@ class EditorCompletionController final : public QObject {
     QList<QMetaObject::Connection> editorConnections_;
     quint64 generation_ = 0, shownGeneration_ = 0, shownRevision_ = 0;
     quint64 shownStart_ = 0, shownEnd_ = 0;
+    quint64 launchedCursor_ = std::numeric_limits<quint64>::max();
     bool busy_ = false, pending_ = false, requested_ = false, inserting_ = false;
 };
 }
